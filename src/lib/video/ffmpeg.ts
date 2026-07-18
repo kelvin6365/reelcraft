@@ -49,7 +49,12 @@ export async function composeShot(input: ComposeShotInput, outPath: string): Pro
 
   const filters: string[] = [];
   if (input.subtitle && (await hasDrawtext())) {
-    const safe = input.subtitle.replace(/\\/g, "\\\\").replace(/'/g, "\\'").replace(/:/g, "\\:");
+    // escape drawtext metacharacters incl. % (text-macro expansion like %{pts})
+    const safe = input.subtitle
+      .replace(/\\/g, "\\\\")
+      .replace(/'/g, "\\'")
+      .replace(/:/g, "\\:")
+      .replace(/%/g, "\\%");
     filters.push(
       `drawtext=text='${safe}':fontcolor=white:fontsize=h/18:borderw=2:bordercolor=black@0.8:x=(w-text_w)/2:y=h-text_h-h/12`,
     );

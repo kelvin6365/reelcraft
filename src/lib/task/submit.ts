@@ -8,7 +8,7 @@ import { publishTaskEvent } from "@/lib/task/events";
 import { getQueueForTaskType, type TaskType } from "@/lib/task/types";
 import { estimateTaskCost } from "@/lib/billing/quote";
 import { freezeBalance, rollbackTaskFreeze, InsufficientBalanceError } from "@/lib/billing/ledger";
-import { checkDailyQuota, dailyApiTypeForTask } from "@/lib/quota/daily";
+import { checkDailyQuota, dailyApiTypeForTask, refundDailyQuota } from "@/lib/quota/daily";
 
 export interface SubmitTaskInput {
   userId: string;
@@ -56,20 +56,31 @@ export async function submitTask(input: SubmitTaskInput): Promise<SubmitResult> 
     });
   }
 
-  const task = await prisma.task.create({
-    data: {
-      id: newId(),
-      userId: input.userId,
-      projectId: input.projectId,
-      episodeId: input.episodeId,
-      type: input.type,
-      targetType: input.targetType ?? "",
-      targetId: input.targetId ?? "",
-      dedupeKey,
-      payload: (input.payload ?? {}) as object,
-      maxAttempts: input.maxAttempts ?? 3,
-    },
-  });
+  let task;
+  try {
+    task = await prisma.task.create({
+      data: {
+        id: newId(),
+        userId: input.userId,
+        projectId: input.projectId,
+        episodeId: input.episodeId,
+        type: input.type,
+        targetType: input.targetType ?? "",
+        targetId: input.targetId ?? "",
+        dedupeKey,
+        payload: (input.payload ?? {}) as object,
+        maxAttempts: input.maxAttempts ?? 3,
+      },
+    });
+  } catch (err) {
+    // Race: a concurrent identical submit won the unique dedupeKey. Return theirs
+    // rather than 500 — the point of dedupe is that only one runs.
+    if (err && typeof err === "object" && "code" in err && (err as { code: string }).code === "P2002") {
+      const winner = await prisma.task.findUnique({ where: { dedupeKey } });
+      if (winner) return { taskId: winner.id, deduped: true };
+    }
+    throw err;
+  }
 
   audit(input.userId, "task.submit", {
     targetType: "task",
@@ -88,6 +99,7 @@ export async function submitTask(input: SubmitTaskInput): Promise<SubmitResult> 
       await freezeBalance(input.userId, quoteUsd, task.id, task.id);
     } catch (err) {
       if (err instanceof InsufficientBalanceError) {
+        await refundDailyQuota(input.userId, input.type); // never ran → give the slot back
         await prisma.task.update({
           where: { id: task.id },
           data: { status: "failed", errorCode: "INSUFFICIENT_BALANCE", errorMessage: err.message, finishedAt: new Date() },
@@ -108,6 +120,7 @@ export async function submitTask(input: SubmitTaskInput): Promise<SubmitResult> 
     await addTaskJob(getQueueForTaskType(input.type), task.id);
   } catch (err) {
     await rollbackTaskFreeze(task.id); // release the reservation — the worker will never run this task
+    await refundDailyQuota(input.userId, input.type); // never ran → give the slot back
     await prisma.task.update({
       where: { id: task.id },
       data: { status: "failed", errorCode: "ENQUEUE_FAILED", errorMessage: String(err), finishedAt: new Date() },

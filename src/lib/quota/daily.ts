@@ -56,11 +56,28 @@ function limitFor(apiType: DailyApiType): number {
  * user is over. INCR-then-check: the returned value is the post-increment count, so
  * the caller that trips the limit is the one rejected.
  */
+// INCR + EXPIRE-on-first atomically (a crash between the two would otherwise
+// leak a TTL-less key). Returns the post-increment count.
+const INCR_LUA = `
+local v = redis.call('INCR', KEYS[1])
+if v == 1 then redis.call('EXPIRE', KEYS[1], ARGV[1]) end
+return v`;
+
 export async function checkDailyQuota(userId: string, apiType: DailyApiType): Promise<void> {
   const key = dailyKey(userId, apiType);
-  const used = await redis.incr(key);
-  if (used === 1) await redis.expire(key, TTL_SEC);
+  const used = (await redis.eval(INCR_LUA, 1, key, String(TTL_SEC))) as number;
 
   const limit = limitFor(apiType);
   if (used > limit) throw new QuotaExceededError(apiType, limit, used);
+}
+
+// Give back a counted slot when a submission is rejected BEFORE it ever ran
+// (insufficient balance, enqueue failure) — those never touched a provider, so
+// they shouldn't burn the user's daily cap. Floor at 0.
+export async function refundDailyQuota(userId: string, type: TaskType): Promise<void> {
+  const apiType = dailyApiTypeForTask(type);
+  if (!apiType) return;
+  const key = dailyKey(userId, apiType);
+  const v = await redis.decr(key);
+  if (v < 0) await redis.set(key, "0");
 }

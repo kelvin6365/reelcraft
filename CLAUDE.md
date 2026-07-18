@@ -17,6 +17,10 @@ AI 短劇生產平台（設計階段）。開工前先讀 `docs/plans/2026-07-18
 
 參考項目 huobao-drama（CC BY-NC-SA）、Toonflow（Apache+商業限制）、waoowaoo（CC BY-NC-SA）嘅**程式碼同 prompt 原文一律不得複製**——只用架構模式與思想，全部從零實作。
 
+## 開發陷阱
+
+- **改咗 schema.prisma / 跑咗 migration 之後,一定要重啟 dev server**(同 worker)。Next dev 揸住舊 `@prisma/client`,新 model 會係 `undefined` → route 500。`npx prisma generate` 唔夠,要重啟個 process。
+
 ## 工作法
 
 - 每個 PR 一條薄片：交付必須駁通「貼文→出嘢」某一段。

@@ -49,10 +49,14 @@ export async function withTaskLifecycle(taskId: string, handler: TaskHandler): P
 
   try {
     const result = await handler({ task, reportProgress });
-    await prisma.task.update({
-      where: { id: taskId },
+    // Status-guarded terminal write: if the watchdog requeued this row mid-flight
+    // (stale heartbeat) and another worker already took over, count===0 → we do
+    // NOT overwrite its state, settle, or emit — this worker's result is discarded.
+    const won = await prisma.task.updateMany({
+      where: { id: taskId, status: "processing" },
       data: { status: "completed", progress: 100, result: (result ?? null) as object, finishedAt: new Date() },
     });
+    if (won.count === 0) return;
     await settleTaskFreeze(taskId); // ENFORCE: charge actual (from ai_call_logs), refund the rest
     publishTaskEvent(task.projectId, { taskId, taskType: task.type, eventType: "COMPLETED", progress: 100 });
   } catch (err) {
@@ -61,19 +65,21 @@ export async function withTaskLifecycle(taskId: string, handler: TaskHandler): P
     if (retryable && task.attempt < task.maxAttempts) {
       // App-layer retry: reset to queued and re-enqueue with exponential backoff.
       const delayMs = Math.min(2_000 * 2 ** (task.attempt - 1), 30_000);
-      await prisma.task.update({
-        where: { id: taskId },
+      const requeued = await prisma.task.updateMany({
+        where: { id: taskId, status: "processing" },
         data: { status: "queued", heartbeatAt: null, errorCode: code, errorMessage: message.slice(0, 1000) },
       });
+      if (requeued.count === 0) return; // another worker owns it now
       publishTaskEvent(task.projectId, { taskId, taskType: task.type, eventType: "RETRYING", errorCode: code });
       await addTaskJob(getQueueForTaskType(task.type as TaskType), taskId, delayMs);
       return;
     }
 
-    await prisma.task.update({
-      where: { id: taskId },
+    const failed = await prisma.task.updateMany({
+      where: { id: taskId, status: "processing" },
       data: { status: "failed", errorCode: code, errorMessage: message.slice(0, 1000), finishedAt: new Date() },
     });
+    if (failed.count === 0) return;
     await rollbackTaskFreeze(taskId); // ENFORCE: terminal failure — release the whole reservation
     publishTaskEvent(task.projectId, { taskId, taskType: task.type, eventType: "FAILED", errorCode: code });
   } finally {

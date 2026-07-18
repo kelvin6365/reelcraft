@@ -16,9 +16,10 @@ const schema = z.object({
   BETTER_AUTH_SECRET: z.string().min(8),
   BETTER_AUTH_URL: z.string().url(),
 
-  // BYO-Key envelope encryption. Falling back to BETTER_AUTH_SECRET couples two
-  // trust boundaries (waoowaoo lesson) — so this is REQUIRED, no fallback.
-  API_ENCRYPTION_KEY: z.string().min(16).default("dev-only-encryption-key-change-me"),
+  // BYO-Key envelope master key. A default here would encrypt every tenant's
+  // provider key under a repo-public constant — so there is no default, and the
+  // dev-only literal is rejected outside development (see refine below).
+  API_ENCRYPTION_KEY: z.string().min(16),
 
   OPENROUTER_API_KEY: z.string().optional().default(""),
   FAL_KEY: z.string().optional().default(""),
@@ -47,6 +48,22 @@ if (!parsed.success) {
     .map((i) => `  ${i.path.join(".")}: ${i.message}`)
     .join("\n");
   throw new Error(`[env] invalid environment:\n${issues}`);
+}
+
+// Fail closed: the dev-only encryption/auth secrets must never reach production.
+const DEV_ONLY_SECRETS = new Set(["dev-only-encryption-key-change-me", "dev-only-change-me"]);
+if (parsed.data.NODE_ENV === "production") {
+  if (DEV_ONLY_SECRETS.has(parsed.data.API_ENCRYPTION_KEY)) {
+    throw new Error("[env] API_ENCRYPTION_KEY is still the dev placeholder — set a real secret in production");
+  }
+  if (DEV_ONLY_SECRETS.has(parsed.data.BETTER_AUTH_SECRET)) {
+    throw new Error("[env] BETTER_AUTH_SECRET is still the dev placeholder — set a real secret in production");
+  }
+  // Local storage serves permanent unauthenticated /api/files URLs — prod must use
+  // S3/R2 signed URLs (CLAUDE.md #4). Enforce the invariant both audits called out.
+  if (parsed.data.STORAGE_TYPE === "local") {
+    throw new Error("[env] STORAGE_TYPE=local is dev-only — use s3 in production");
+  }
 }
 
 export const env = parsed.data;

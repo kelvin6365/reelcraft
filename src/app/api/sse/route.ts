@@ -32,49 +32,60 @@ export async function GET(req: NextRequest) {
         }
       };
 
-      // Replay missed events
-      if (lastEventId) {
-        const missed = await prisma.taskEvent.findMany({
-          where: { id: { gt: BigInt(lastEventId) }, task: { projectId, userId } },
-          orderBy: { id: "asc" },
-          take: 500,
-          include: { task: { select: { type: true } } },
-        });
-        for (const ev of missed) {
-          send(
-            String(ev.id),
-            JSON.stringify({ taskId: ev.taskId, taskType: ev.task.type, eventType: ev.eventType, ...(ev.payload as object) }),
-          );
-        }
-      }
-
-      await subscriber.subscribe(projectChannel(projectId));
-      subscriber.on("message", (_ch, message) => {
-        try {
-          const parsed = JSON.parse(message) as { id?: string };
-          send(parsed.id ?? "0", message);
-        } catch {
-          /* skip malformed */
-        }
-      });
-
-      const keepalive = setInterval(() => {
-        try {
-          controller.enqueue(encoder.encode(`: keepalive\n\n`));
-        } catch {
-          clearInterval(keepalive);
-        }
-      }, 25_000);
-
-      req.signal.addEventListener("abort", () => {
-        clearInterval(keepalive);
+      // Register cleanup IMMEDIATELY — before any await — so a disconnect during
+      // replay or subscribe still quits the dedicated Redis connection (no leak).
+      let keepalive: ReturnType<typeof setInterval> | undefined;
+      let closed = false;
+      const cleanup = () => {
+        if (closed) return;
+        closed = true;
+        if (keepalive) clearInterval(keepalive);
         void subscriber.quit().catch(() => {});
         try {
           controller.close();
         } catch {
           /* already closed */
         }
-      });
+      };
+      req.signal.addEventListener("abort", cleanup);
+
+      try {
+        // Replay missed events
+        if (lastEventId) {
+          const missed = await prisma.taskEvent.findMany({
+            where: { id: { gt: BigInt(lastEventId) }, task: { projectId, userId } },
+            orderBy: { id: "asc" },
+            take: 500,
+            include: { task: { select: { type: true } } },
+          });
+          for (const ev of missed) {
+            send(
+              String(ev.id),
+              JSON.stringify({ taskId: ev.taskId, taskType: ev.task.type, eventType: ev.eventType, ...(ev.payload as object) }),
+            );
+          }
+        }
+
+        await subscriber.subscribe(projectChannel(projectId));
+        subscriber.on("message", (_ch, message) => {
+          try {
+            const parsed = JSON.parse(message) as { id?: string };
+            send(parsed.id ?? "0", message);
+          } catch {
+            /* skip malformed */
+          }
+        });
+
+        keepalive = setInterval(() => {
+          try {
+            controller.enqueue(encoder.encode(`: keepalive\n\n`));
+          } catch {
+            cleanup();
+          }
+        }, 25_000);
+      } catch {
+        cleanup(); // Redis blip during setup — don't leak the connection
+      }
     },
   });
 

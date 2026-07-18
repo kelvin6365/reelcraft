@@ -10,8 +10,21 @@ import { AiError } from "@/lib/ai/types";
 const QUEUE_BASE = "https://queue.fal.run";
 const POLL_INTERVAL_MS = 3_000;
 const POLL_TIMEOUT_MS = 10 * 60 * 1_000;
+const FETCH_TIMEOUT_MS = 60_000; // per-request cap — a stalled TCP conn must not hang a worker slot forever
 
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
+
+// fetch with a hard per-request timeout; a timed-out request is retryable.
+async function timedFetch(url: string, init: RequestInit = {}): Promise<Response> {
+  try {
+    return await fetch(url, { ...init, signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) });
+  } catch (err) {
+    if (err instanceof DOMException && err.name === "TimeoutError") {
+      throw new AiError("FAL_FETCH_TIMEOUT", `fal request to ${url} timed out`, true);
+    }
+    throw new AiError("FAL_FETCH_ERROR", String(err instanceof Error ? err.message : err), true);
+  }
+}
 
 // fal image_size named presets; explicit {width,height} where a portrait short-form
 // ratio has no named preset. Videos use aspect_ratio strings directly.
@@ -40,7 +53,7 @@ function classify(status: number, body: string): AiError {
 }
 
 async function submit(modelId: string, apiKey: string, input: Record<string, unknown>): Promise<string> {
-  const res = await fetch(`${QUEUE_BASE}/${modelId}`, {
+  const res = await timedFetch(`${QUEUE_BASE}/${modelId}`, {
     method: "POST",
     headers: { Authorization: `Key ${apiKey}`, "Content-Type": "application/json" },
     body: JSON.stringify(input),
@@ -60,7 +73,7 @@ async function pollUntilDone(modelId: string, requestId: string, apiKey: string)
   const headers = { Authorization: `Key ${apiKey}` };
   const deadline = Date.now() + POLL_TIMEOUT_MS;
   for (;;) {
-    const res = await fetch(`${QUEUE_BASE}/${appRoot(modelId)}/requests/${requestId}/status`, { headers });
+    const res = await timedFetch(`${QUEUE_BASE}/${appRoot(modelId)}/requests/${requestId}/status`, { headers });
     if (!res.ok) throw classify(res.status, await res.text().catch(() => ""));
     const json = (await res.json()) as FalStatus;
     if (json.status === "COMPLETED") return;
@@ -73,7 +86,7 @@ async function pollUntilDone(modelId: string, requestId: string, apiKey: string)
 }
 
 async function fetchResult(modelId: string, requestId: string, apiKey: string): Promise<Record<string, unknown>> {
-  const res = await fetch(`${QUEUE_BASE}/${appRoot(modelId)}/requests/${requestId}`, {
+  const res = await timedFetch(`${QUEUE_BASE}/${appRoot(modelId)}/requests/${requestId}`, {
     headers: { Authorization: `Key ${apiKey}` },
   });
   if (!res.ok) throw classify(res.status, await res.text().catch(() => ""));

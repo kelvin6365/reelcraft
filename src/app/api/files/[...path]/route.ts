@@ -1,7 +1,7 @@
-// PUBLIC: local dev file serving, keys are unguessable UUIDs
-// Serves objects written by the local storage provider. In s3 mode this route
-// is unused (signed URLs point straight at the bucket). 404 on missing or any
-// path that escapes the storage root.
+// PUBLIC: local-dev file serving. Keys embed a random UUIDv7 suffix (~74 random
+// bits) so URLs are impractical to guess, but this route is intentionally
+// dev-only — env.ts rejects STORAGE_TYPE=local in production, where signed S3/R2
+// URLs point straight at the bucket instead. 404 on missing / path-escape.
 import { LocalStorageProvider } from "@/lib/storage/local";
 
 const local = new LocalStorageProvider();
@@ -43,6 +43,7 @@ export async function GET(_req: Request, ctx: { params: Promise<{ path: string[]
       "Content-Type": mimeForKey(key),
       "Content-Length": String(buffer.byteLength),
       "Cache-Control": "private, max-age=3600",
+      "X-Content-Type-Options": "nosniff",
     },
   });
 }
