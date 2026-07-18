@@ -12,6 +12,6 @@ AI 短劇生產平台 — 先內部（2rocks studio）驗證，架構預留多�
 
 ## 技術棧（規劃）
 
-Next.js 15 · PostgreSQL + Prisma · BullMQ + Redis · MinIO/R2 · Better-Auth
+Next.js 16 · PostgreSQL + Prisma · BullMQ + Redis · MinIO/R2 · Better-Auth
 
 MVP 廠商：OpenRouter（text）· fal（image/video/TTS）· AtlasCloud（媒體副選）

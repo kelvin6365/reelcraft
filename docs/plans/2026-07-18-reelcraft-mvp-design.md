@@ -54,7 +54,7 @@
 ### 技術棧
 
 ```
-Next.js 15 (App Router) ─ 前端 + API routes 一個倉
+Next.js 16 (App Router, Turbopack) ─ 前端 + API routes 一個倉
 PostgreSQL + Prisma     ─ 所有表帶 userId
 BullMQ + Redis          ─ 4 條佇列 (text/image/video/voice) + watchdog
 S3 相容儲存             ─ 開發 MinIO docker，上線可轉 Cloudflare R2
