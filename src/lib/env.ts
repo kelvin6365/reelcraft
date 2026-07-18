@@ -7,6 +7,7 @@ const schema = z.object({
   DATABASE_URL: z.string().url(),
   REDIS_URL: z.string().url(),
 
+  STORAGE_TYPE: z.enum(["local", "s3"]).default("local"),
   STORAGE_ENDPOINT: z.string().url(),
   STORAGE_ACCESS_KEY: z.string().min(1),
   STORAGE_SECRET_KEY: z.string().min(1),
