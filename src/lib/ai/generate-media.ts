@@ -7,7 +7,7 @@ import { prisma } from "@/lib/db";
 import { env } from "@/lib/env";
 import { parseModelKeyStrict } from "@/lib/ai/model-key";
 import { getProviderKey } from "@/lib/ai/provider-key";
-import { priceMedia } from "@/lib/ai/capabilities";
+import { getCapabilities, priceMedia } from "@/lib/ai/capabilities";
 import { AiError, type CallContext } from "@/lib/ai/types";
 import { fakeImage, fakeTts, fakeVideo } from "@/lib/ai/adapters/fake-media";
 import { falImage, falTts, falVideo } from "@/lib/ai/adapters/fal";
@@ -154,7 +154,17 @@ export async function generateImage(ctx: CallContext, req: ImageGenRequest): Pro
   });
 }
 
+// Snap a requested duration to the model's supported set (nearest, ties → longer).
+// Models like Kling only accept fixed durations; sending 3s would 422.
+function clampDuration(modelKey: string, requested: number): number {
+  const caps = getCapabilities(modelKey);
+  const allowed = caps?.durationsSec;
+  if (!allowed || allowed.length === 0) return requested;
+  return [...allowed].sort((a, b) => Math.abs(a - requested) - Math.abs(b - requested) || a - b)[0];
+}
+
 export async function generateVideo(ctx: CallContext, req: VideoGenRequest): Promise<MediaObject> {
+  req = { ...req, durationSec: clampDuration(req.modelKey, req.durationSec) };
   return generate(ctx, "video", req.modelKey, async ({ provider, modelId }) => {
     if (provider === "fake") {
       const { buffer, mimeType } = await fakeVideo(req.prompt, req.durationSec, req.aspectRatio);
