@@ -1,0 +1,74 @@
+{
+  "prompts": [
+    {
+      "id": "episode_split",
+      "path": "pipeline/episode_split.zh.txt",
+      "version": "1",
+      "variables": ["source_text", "target_episode_seconds"],
+      "description": "長篇原文切分集邊界，回傳每集起訖文字錨點（JSON）。"
+    },
+    {
+      "id": "extract_assets",
+      "path": "pipeline/extract_assets.zh.txt",
+      "version": "1",
+      "variables": ["script_text"],
+      "description": "從劇本抽角色與場景資產，含去重與外貌字數量化規則（JSON）。"
+    },
+    {
+      "id": "rewrite_script",
+      "path": "pipeline/rewrite_script.zh.txt",
+      "version": "1",
+      "variables": ["novel_text", "style_note"],
+      "description": "小說改寫成分場短劇劇本，30-60 秒/場，防偷懶（純文字）。"
+    },
+    {
+      "id": "build_scenes",
+      "path": "pipeline/build_scenes.zh.txt",
+      "version": "1",
+      "variables": ["script_text"],
+      "description": "劇本切場景，只回傳起訖文字錨點供程式定位，約 20 元素/場（JSON）。"
+    },
+    {
+      "id": "storyboard_plan",
+      "path": "pipeline/storyboard_plan.zh.txt",
+      "version": "1",
+      "variables": ["scene_text"],
+      "description": "分鏡第①階段規劃：場景切鏡頭清單，約 15 字/鏡，每鏡帶 source_text（JSON）。"
+    },
+    {
+      "id": "storyboard_photography",
+      "path": "pipeline/storyboard_photography.zh.txt",
+      "version": "1",
+      "variables": ["shot_list_json"],
+      "description": "分鏡第②階段攝影：逐鏡光線/景深/色調，對白多臉強制淺景深（JSON）。"
+    },
+    {
+      "id": "storyboard_acting",
+      "path": "pipeline/storyboard_acting.zh.txt",
+      "version": "1",
+      "variables": ["shot_list_json"],
+      "description": "分鏡第③階段表演：抽象情緒詞翻成可見動作與表情（JSON）。"
+    },
+    {
+      "id": "storyboard_detail",
+      "path": "pipeline/storyboard_detail.zh.txt",
+      "version": "1",
+      "variables": ["shot_list_json", "scene_type"],
+      "description": "分鏡第④階段細節：按場景類型套景別/視角/運鏡鏡頭語言庫（JSON）。"
+    },
+    {
+      "id": "voice_analyze",
+      "path": "pipeline/voice_analyze.zh.txt",
+      "version": "1",
+      "variables": ["scene_text", "shot_list_json"],
+      "description": "抽對白台詞，標說話者/情緒/情緒強度(≤0.5)/對應鏡頭（JSON）。"
+    },
+    {
+      "id": "image_prompt_shot",
+      "path": "pipeline/image_prompt_shot.zh.txt",
+      "version": "1",
+      "variables": ["shot_json", "locked_assets", "style_suffix"],
+      "description": "鏡頭分鏡轉英文生圖 prompt，內容先風格後，引用鎖定資產（JSON）。"
+    }
+  ]
+}

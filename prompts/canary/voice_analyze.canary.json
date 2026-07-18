@@ -1,0 +1,14 @@
+{
+  "promptId": "voice_analyze",
+  "variables": {
+    "scene_text": "【第1場】咖啡館・夜\n阿May：你等很久了嗎？\n阿Ken：不久，剛坐下。",
+    "shot_list_json": "[{\"index\": 1, \"subject\": \"阿May推門\", \"dialogue\": \"你等很久了嗎？\"}, {\"index\": 2, \"subject\": \"阿Ken遞茶\", \"dialogue\": \"不久，剛坐下。\"}]"
+  },
+  "mustContain": [
+    "只輸出純 JSON",
+    "emotionStrength",
+    "硬性上限 0.5",
+    "0.1 至 0.5",
+    "matchedShotIndex"
+  ]
+}

@@ -1,0 +1,7 @@
+{
+  "name": "Anime 01",
+  "prefix": "modern anime key visual, clean cel shading, crisp lineart, soft gradient lighting, vivid but controlled palette, expressive eyes, detailed background art, 2d animation style",
+  "negativePrompt": "photorealistic, 3d render, realistic skin texture, muddy colors, sketchy lines, extra fingers, deformed hands, text, watermark, signature",
+  "bannedWords": ["film grain", "grain", "noise", "photo", "realistic skin pores"],
+  "notes": "現代日系動畫感。乾淨線條與 cel shading，避免寫實化污染。內容描述行先，本 prefix 作為 style_suffix 接在生圖 prompt 尾部。"
+}

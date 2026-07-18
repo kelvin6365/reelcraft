@@ -1,0 +1,12 @@
+{
+  "promptId": "build_scenes",
+  "variables": {
+    "script_text": "【第1場】咖啡館・夜\n在場：阿May、阿Ken\n（阿May推門而入，雨水順著傘尖滴落）\n阿May：你等很久了嗎？\n阿Ken：不久，剛坐下。\n（阿Ken把熱茶推到她面前）"
+  },
+  "mustContain": [
+    "只輸出純 JSON",
+    "錨點不得改寫",
+    "20 個內容元素",
+    "你絕對不要改寫"
+  ]
+}
