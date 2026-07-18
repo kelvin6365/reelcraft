@@ -33,6 +33,64 @@ export interface EpisodeListItem {
   updatedAt?: string;
 }
 
+// ---------- episode planning (docs/plans/2026-07-19-episode-planning-design.md) ----------
+export type RiskLevel = "ok" | "review" | "problem";
+export type RiskFlag =
+  | "weak_hook"
+  | "too_long"
+  | "too_short"
+  | "low_density"
+  | "mid_scene_cut"
+  | "dialogue_overflow";
+
+export interface EpisodeRisk {
+  level: RiskLevel;
+  flags: RiskFlag[];
+  note: string;
+}
+
+export interface PlannedEpisode {
+  index: number;
+  title: string;
+  summary: string;
+  startAnchor: string;
+  endAnchor: string;
+  hook: string;
+  risk: EpisodeRisk;
+}
+
+export type PlanStatus = "none" | "planning" | "planned";
+
+export interface PlanConfigView {
+  anchor: "length" | "count";
+  seconds?: number;
+  count?: number;
+  hookStrength: "normal" | "strong";
+}
+
+export interface PlanRisk {
+  total: number;
+  problem: number;
+  review: number;
+  ok: number;
+}
+
+// GET /api/projects/:id — extends ProjectSummary with the planning fields.
+export interface ProjectPlanView extends ProjectSummary {
+  sourceText: string;
+  planStatus: PlanStatus;
+  planConfig: PlanConfigView | null;
+  planResult: { episodes: PlannedEpisode[] } | null;
+  planRisk: PlanRisk | null;
+  episodes: EpisodeListItem[];
+}
+
+// PATCH /api/projects/:id/plan → { episodes, risk }
+export interface PlanEditResult {
+  episodes: PlannedEpisode[];
+  risk: PlanRisk;
+}
+
 export interface CharacterView {
   id: string;
   name: string;

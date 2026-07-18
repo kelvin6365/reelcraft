@@ -726,6 +726,239 @@ table.usage tr:last-child td {
   margin-top: 8px;
 }
 
+/* ---------- episode planning ---------- */
+.plan-panel {
+  margin-bottom: 4px;
+}
+.plan-note {
+  font-size: 13px;
+  color: var(--warn);
+  background: rgba(240, 176, 58, 0.08);
+  border: 1px solid rgba(240, 176, 58, 0.3);
+  border-radius: var(--radius-sm);
+  padding: 8px 12px;
+  margin: 12px 0 0;
+}
+
+.plan-target {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+}
+.plan-target-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.plan-radio {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  cursor: pointer;
+}
+.plan-radio input[type="radio"] {
+  width: auto;
+  accent-color: var(--accent-strong);
+}
+.plan-num {
+  width: 76px;
+  padding: 6px 8px;
+  text-align: center;
+}
+.plan-num:disabled {
+  opacity: 0.4;
+}
+.chip-toggle {
+  border: 1px solid var(--border-strong);
+  background: var(--bg-elev-2);
+  color: var(--text-dim);
+  border-radius: 999px;
+  padding: 4px 13px;
+  font-size: 13px;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+.chip-toggle.on {
+  background: var(--accent-ink);
+  border-color: var(--accent-strong);
+  color: var(--accent);
+}
+
+/* review-by-exception */
+.plan-review-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding-bottom: 14px;
+  margin-bottom: 14px;
+  border-bottom: 1px solid var(--border);
+}
+.plan-tally {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  font-size: 15px;
+}
+.plan-tally .tally-dot {
+  font-size: 14px;
+  color: var(--text-dim);
+  font-variant-numeric: tabular-nums;
+}
+.plan-filter {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 13px;
+  color: var(--text-dim);
+  cursor: pointer;
+}
+.plan-filter input {
+  width: auto;
+  accent-color: var(--accent-strong);
+}
+
+.plan-ep-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.plan-all-clear {
+  text-align: center;
+  color: var(--good);
+  padding: 20px;
+}
+.plan-ep-card {
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-elev-2);
+  padding: 14px 16px;
+}
+.plan-ep-card.lv-review {
+  border-left-color: var(--warn);
+}
+.plan-ep-card.lv-problem {
+  border-left-color: var(--danger);
+}
+.plan-ep-card.lv-ok {
+  border-left-color: var(--good);
+}
+.plan-ep-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.plan-ep-idx {
+  font-size: 12px;
+  color: var(--text-faint);
+  white-space: nowrap;
+}
+.plan-ep-title {
+  flex: 1;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  padding: 5px 8px;
+  font-size: 15px;
+  font-weight: 600;
+}
+.plan-ep-title:hover:not(:disabled) {
+  border-color: var(--border);
+}
+.plan-ep-title:focus {
+  background: var(--bg-elev);
+  border-color: var(--accent-strong);
+}
+.plan-ep-badge {
+  font-size: 15px;
+}
+.plan-ep-summary {
+  font-size: 14px;
+  color: var(--text);
+  margin: 8px 0 0;
+}
+.plan-ep-hook {
+  font-size: 13px;
+  color: var(--text-dim);
+  margin: 6px 0 0;
+}
+.plan-ep-anchors {
+  font-size: 12px;
+  color: var(--text-faint);
+  margin: 6px 0 0;
+  line-height: 1.5;
+}
+.plan-ep-hook .faint,
+.plan-ep-anchors .faint {
+  margin-right: 6px;
+}
+.plan-ep-risk {
+  margin-top: 10px;
+}
+.plan-flags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.risk-chip {
+  font-size: 12px;
+  padding: 2px 9px;
+  border-radius: 999px;
+  border: 1px solid var(--border-strong);
+  background: var(--bg-elev);
+  color: var(--text-dim);
+}
+.risk-chip.lv-review {
+  color: var(--warn);
+  border-color: rgba(240, 176, 58, 0.4);
+  background: rgba(240, 176, 58, 0.08);
+}
+.risk-chip.lv-problem {
+  color: var(--danger);
+  border-color: #4a2b2d;
+  background: var(--danger-bg);
+}
+.plan-ep-note {
+  font-size: 13px;
+  color: var(--text-dim);
+  margin: 8px 0 0;
+}
+.plan-ep-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+.plan-green-row {
+  border: 1px dashed var(--border-strong);
+  background: transparent;
+  color: var(--good);
+  border-radius: var(--radius-sm);
+  padding: 12px;
+  text-align: center;
+  font-size: 14px;
+}
+.plan-green-row:hover {
+  background: var(--good-bg);
+}
+.plan-confirm-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  flex-wrap: wrap;
+  margin-top: 18px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+}
+
 /* M3: storyboard confirm cost preview */
 .cost-preview {
   background: rgba(230, 170, 60, 0.08);

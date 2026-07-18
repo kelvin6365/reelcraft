@@ -57,9 +57,12 @@ if (!parsed.success) {
   throw new Error(`[env] invalid environment:\n${issues}`);
 }
 
-// Fail closed: the dev-only encryption/auth secrets must never reach production.
+// Fail closed: the dev-only encryption/auth secrets must never reach production —
+// but only at RUNTIME, not during `next build` (which forces NODE_ENV=production
+// before real secrets are injected). NEXT_PHASE marks the build phase.
 const DEV_ONLY_SECRETS = new Set(["dev-only-encryption-key-change-me", "dev-only-change-me"]);
-if (parsed.data.NODE_ENV === "production") {
+const isBuildPhase = process.env.NEXT_PHASE === "phase-production-build";
+if (parsed.data.NODE_ENV === "production" && !isBuildPhase) {
   if (DEV_ONLY_SECRETS.has(parsed.data.API_ENCRYPTION_KEY)) {
     throw new Error("[env] API_ENCRYPTION_KEY is still the dev placeholder — set a real secret in production");
   }

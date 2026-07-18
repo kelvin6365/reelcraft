@@ -1,9 +1,11 @@
 "use client";
-import { use, useEffect, useState } from "react";
+import { use, useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { api, ApiClientError } from "@/ui/api";
 import { TopBar } from "@/ui/TopBar";
-import type { EpisodeListItem, ProjectSummary } from "@/ui/types";
+import { PlanSetup } from "@/ui/planning/PlanSetup";
+import { PlanReview } from "@/ui/planning/PlanReview";
+import type { EpisodeListItem, ProjectPlanView } from "@/ui/types";
 
 const STATUS_LABEL: Record<string, string> = {
   draft: "草稿",
@@ -19,24 +21,39 @@ const STATUS_LABEL: Record<string, string> = {
 export default function ProjectDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
   const router = useRouter();
-  const [project, setProject] = useState<(ProjectSummary & { episodes: EpisodeListItem[] }) | null>(null);
+  const [project, setProject] = useState<ProjectPlanView | null>(null);
   const [rawText, setRawText] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const [reviewOpen, setReviewOpen] = useState(false);
 
-  function reload() {
-    api
-      .get<ProjectSummary & { episodes: EpisodeListItem[] }>(`/api/projects/${id}`)
-      .then(setProject)
-      .catch((e: ApiClientError) => {
-        if (e.code === "UNAUTHORIZED") router.replace("/signin");
-        else setErr(e.message);
-      });
-  }
+  const reload = useCallback(async () => {
+    try {
+      const p = await api.get<ProjectPlanView>(`/api/projects/${id}`);
+      setProject(p);
+      setErr(null);
+    } catch (e) {
+      const ce = e as ApiClientError;
+      if (ce.code === "UNAUTHORIZED") router.replace("/signin");
+      else setErr(ce.message);
+    }
+  }, [id, router]);
 
-  useEffect(reload, [id]);
+  useEffect(() => {
+    void reload();
+  }, [reload]);
+
+  // Poll while EPISODE_SPLIT is running; stop once planned (or on any other state).
+  useEffect(() => {
+    if (project?.planStatus !== "planning") return;
+    const t = setInterval(() => void reload(), 1500);
+    return () => clearInterval(t);
+  }, [project?.planStatus, reload]);
 
   const isSrt = project?.inputType === "srt";
+  const planned = project?.planStatus === "planned";
+  const episodes = project?.episodes ?? [];
+  const hasEpisodes = episodes.length > 0;
 
   async function createEpisode() {
     if (!rawText.trim()) {
@@ -71,12 +88,55 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
               <span className="badge">{project.videoRatio}</span>
             </div>
 
-            <div className="card">
+            {/* ---------- episode planning (novels only) ---------- */}
+            {!isSrt && (
+              <div className="section-gap">
+                {!planned && (
+                  <PlanSetup
+                    id={id}
+                    initialSourceText={project.sourceText}
+                    initialConfig={project.planConfig}
+                    planStatus={project.planStatus}
+                    refetch={reload}
+                  />
+                )}
+
+                {planned && project.planResult && (
+                  hasEpisodes && !reviewOpen ? (
+                    <div className="card plan-panel">
+                      <div className="plan-review-head">
+                        <div className="plan-tally">
+                          <strong>已規劃 {project.planRisk?.total ?? project.planResult.episodes.length} 集</strong>
+                          <span className="tally-dot">🔴 {project.planRisk?.problem ?? 0}</span>
+                          <span className="tally-dot">🟡 {project.planRisk?.review ?? 0}</span>
+                          <span className="tally-dot">🟢 {project.planRisk?.ok ?? 0}</span>
+                        </div>
+                        <button className="btn btn-sm" onClick={() => setReviewOpen(true)}>
+                          展開規劃
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <PlanReview
+                      id={id}
+                      episodes={project.planResult.episodes}
+                      risk={project.planRisk}
+                      planConfig={project.planConfig}
+                      hasEpisodes={hasEpisodes}
+                      refetch={reload}
+                    />
+                  )
+                )}
+              </div>
+            )}
+
+            {/* ---------- manual single-episode create (legacy path kept) ---------- */}
+            <div className="card section-gap">
               <h2 style={{ fontSize: 18, marginBottom: 4 }}>新增一集</h2>
               <p className="muted" style={{ marginTop: 0, fontSize: 14 }}>
                 {isSrt
                   ? "貼上 SRT 字幕，系統會按字幕逐句建立分鏡與配音，然後帶你行流程。"
-                  : "貼上小說原文，系統會建立新一集，然後帶你行八站流程。"}
+                  : "唔想規劃整部小說？貼上單集原文，系統會直接建立一集帶你行八站流程。"}
               </p>
               <textarea
                 value={rawText}
@@ -93,11 +153,11 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
 
             <div className="section-gap">
               <h2 style={{ fontSize: 18, marginBottom: 14 }}>劇集</h2>
-              {project.episodes.length === 0 ? (
-                <div className="empty">仲未有劇集。喺上面貼原文建立第一集。</div>
+              {episodes.length === 0 ? (
+                <div className="empty">仲未有劇集。喺上面規劃分集或貼原文建立第一集。</div>
               ) : (
                 <div className="grid">
-                  {project.episodes.map((ep) => (
+                  {episodes.map((ep: EpisodeListItem) => (
                     <div
                       key={ep.id}
                       className="card project-card"
