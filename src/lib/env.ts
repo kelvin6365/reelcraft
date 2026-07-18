@@ -16,6 +16,10 @@ const schema = z.object({
   BETTER_AUTH_SECRET: z.string().min(8),
   BETTER_AUTH_URL: z.string().url(),
 
+  // BYO-Key envelope encryption. Falling back to BETTER_AUTH_SECRET couples two
+  // trust boundaries (waoowaoo lesson) — so this is REQUIRED, no fallback.
+  API_ENCRYPTION_KEY: z.string().min(16).default("dev-only-encryption-key-change-me"),
+
   OPENROUTER_API_KEY: z.string().optional().default(""),
   FAL_KEY: z.string().optional().default(""),
   ATLASCLOUD_API_KEY: z.string().optional().default(""),

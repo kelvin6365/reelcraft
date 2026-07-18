@@ -36,6 +36,10 @@ model User {
   auditLogs  AuditLog[]
   aiCallLogs AiCallLog[]
   usageCosts UsageCost[]
+  providerKeys UserProviderKey[]
+  balance      UserBalance?
+  freezes      BalanceFreeze[]
+  transactions BalanceTransaction[]
 
   @@map("users")
 }
@@ -93,6 +97,7 @@ model Project {
   userId          String
   user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   name            String
+  budgetUsd       Decimal? @db.Decimal(18, 6) // per-project spend cap; null = uncapped
   stylePackId     String   @default("cinematic-01")
   videoRatio      String   @default("9:16")
   videoResolution String   @default("720p")
@@ -361,6 +366,69 @@ model AiCallLog {
   @@index([taskId])
   @@index([modelKey, at])
   @@map("ai_call_logs")
+}
+
+// ========== M3: BYO-Key + billing ledger + quotas ==========
+
+model UserProviderKey {
+  id         String   @id
+  userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  provider   String // 'openrouter' | 'fal' | 'atlascloud'
+  // AES-256-GCM envelope: iv:authTag:ciphertext (hex). NEVER returned by any API.
+  encryptedKey String @db.Text
+  last4      String   @default("")
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@unique([userId, provider])
+  @@map("user_provider_keys")
+}
+
+model UserBalance {
+  userId       String  @id
+  user         User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  balanceUsd   Decimal @default(0) @db.Decimal(18, 6)
+  frozenUsd    Decimal @default(0) @db.Decimal(18, 6)
+  totalSpentUsd Decimal @default(0) @db.Decimal(18, 6)
+  updatedAt    DateTime @updatedAt
+
+  @@map("user_balances")
+}
+
+model BalanceFreeze {
+  id             String    @id
+  userId         String
+  user           User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  amountUsd      Decimal   @db.Decimal(18, 6)
+  // 'pending' | 'confirmed' | 'rolled_back'
+  status         String    @default("pending")
+  taskId         String?
+  idempotencyKey String    @unique
+  createdAt      DateTime  @default(now())
+  resolvedAt     DateTime?
+
+  @@index([userId, status])
+  @@map("balance_freezes")
+}
+
+model BalanceTransaction {
+  id             BigInt   @id @default(autoincrement())
+  userId         String
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  // 'recharge' | 'consume' | 'refund' | 'adjust'
+  type           String
+  amountUsd      Decimal  @db.Decimal(18, 6)
+  balanceAfterUsd Decimal @db.Decimal(18, 6)
+  freezeId       String?
+  idempotencyKey String
+  note           String   @default("")
+  metadata       Json     @default("{}")
+  createdAt      DateTime @default(now())
+
+  @@unique([userId, type, idempotencyKey])
+  @@index([userId, createdAt])
+  @@map("balance_transactions")
 }
 
 model UsageCost {
