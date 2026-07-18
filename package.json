@@ -12,9 +12,14 @@
     "db:deploy": "prisma migrate deploy",
     "db:generate": "prisma generate",
     "smoke:ai": "tsx --env-file=.env scripts/smoke-ai.ts",
+    "worker": "tsx --env-file=.env src/lib/workers/index.ts",
+    "watchdog": "tsx --env-file=.env src/lib/workers/watchdog.ts",
+    "smoke:task": "tsx --env-file=.env scripts/smoke-task.ts",
     "test": "vitest run"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.1090.0",
+    "@aws-sdk/s3-request-presigner": "^3.1090.0",
     "@prisma/client": "^6.5.0",
     "better-auth": "^1.2.0",
     "bullmq": "^5.34.0",
