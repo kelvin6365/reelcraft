@@ -3,9 +3,9 @@
     {
       "id": "episode_split",
       "path": "pipeline/episode_split.zh.txt",
-      "version": "1",
-      "variables": ["source_text", "target_episode_seconds"],
-      "description": "長篇原文切分集邊界，回傳每集起訖文字錨點（JSON）。"
+      "version": "2",
+      "variables": ["source_text", "target_hint", "hook_strength"],
+      "description": "長篇原文切分集邊界 + 每集自評風險，回傳起訖錨點（JSON）。"
     },
     {
       "id": "extract_assets",

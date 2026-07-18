@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/db";
 import { withAuth } from "@/lib/api/with-auth";
 import { ApiError, ok } from "@/lib/api/errors";
+import { planResultFromJson, summarizeRisk } from "@/lib/planning/plan";
 
 async function getOwned(userId: string, id: string) {
   const project = await prisma.project.findFirst({ where: { id, userId } });
@@ -16,7 +17,8 @@ export const GET = withAuth(async ({ userId, params }) => {
     orderBy: { episodeNumber: "asc" },
     select: { id: true, episodeNumber: true, status: true, updatedAt: true },
   });
-  return ok({ ...project, episodes });
+  const planEpisodes = planResultFromJson(project.planResult).episodes;
+  return ok({ ...project, episodes, planRisk: summarizeRisk(planEpisodes) });
 });
 
 export const PATCH = withAuth(
@@ -28,6 +30,7 @@ export const PATCH = withAuth(
       videoRatio: string;
       modelDefaults: Record<string, string>;
       budgetUsd: number | null;
+      sourceText: string;
     }>;
     const project = await prisma.project.update({
       where: { id: params.id },
@@ -37,6 +40,7 @@ export const PATCH = withAuth(
         videoRatio: body.videoRatio,
         modelDefaults: body.modelDefaults as object | undefined,
         budgetUsd: body.budgetUsd === undefined ? undefined : body.budgetUsd,
+        sourceText: body.sourceText,
       },
     });
     return ok(project);

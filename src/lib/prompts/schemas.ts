@@ -5,20 +5,36 @@ import { z } from "zod";
 
 const timeOfDay = z.enum(["早", "日", "黃昏", "夜"]);
 
-// episode_split
+// episode_split — per-episode risk self-evaluation powers review-by-exception.
+export const RISK_FLAGS = [
+  "weak_hook",
+  "too_long",
+  "too_short",
+  "low_density",
+  "mid_scene_cut",
+  "dialogue_overflow",
+] as const;
+
+export const EpisodeRisk = z.object({
+  level: z.enum(["ok", "review", "problem"]).default("ok"),
+  flags: z.array(z.enum(RISK_FLAGS)).default([]),
+  note: z.string().optional().default(""),
+});
+export type EpisodeRisk = z.infer<typeof EpisodeRisk>;
+
+export const PlannedEpisode = z.object({
+  index: z.number().int().positive(),
+  title: z.string(),
+  startAnchor: z.string().min(1),
+  endAnchor: z.string().min(1),
+  summary: z.string(),
+  hook: z.string().optional().default(""),
+  risk: EpisodeRisk.optional().default({ level: "ok", flags: [], note: "" }),
+});
+export type PlannedEpisode = z.infer<typeof PlannedEpisode>;
+
 export const EpisodeSplitOutput = z.object({
-  episodes: z
-    .array(
-      z.object({
-        index: z.number().int().positive(),
-        title: z.string(),
-        startAnchor: z.string().min(1),
-        endAnchor: z.string().min(1),
-        summary: z.string(),
-        hook: z.string().optional().default(""),
-      }),
-    )
-    .min(1),
+  episodes: z.array(PlannedEpisode).min(1),
 });
 export type EpisodeSplitOutput = z.infer<typeof EpisodeSplitOutput>;
 

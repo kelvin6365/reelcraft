@@ -1,0 +1,15 @@
+{
+  "promptId": "episode_split",
+  "variables": {
+    "source_text": "雨夜，林知夏推開咖啡店的門。陳沉抬起頭，兩人目光相遇。「你遲到了。」她說。他從包裡拿出文件推到桌上。",
+    "target_hint": "每集約 90 秒的成片時長",
+    "hook_strength": "strong"
+  },
+  "mustContain": [
+    "只輸出純 JSON",
+    "錨點不得改寫",
+    "自評每集風險",
+    "weak_hook",
+    "結尾都要留強烈懸念"
+  ]
+}

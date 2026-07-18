@@ -1,6 +1,7 @@
 // Registers all pipeline handlers (imported for side effects by the worker entry).
 import { registerHandler } from "@/lib/workers/registry";
-import { TASK_TYPE, TaskError } from "@/lib/task/types";
+import { TASK_TYPE } from "@/lib/task/types";
+import { episodeSplitHandler } from "@/lib/workers/handlers/planning-handler";
 import {
   buildScenesHandler,
   extractAssetsHandler,
@@ -31,7 +32,4 @@ registerHandler(TASK_TYPE.VIDEO_SHOT, videoShotHandler);
 registerHandler(TASK_TYPE.TTS_LINE, ttsLineHandler);
 registerHandler(TASK_TYPE.COMPOSE_EPISODE, composeEpisodeHandler);
 
-// EPISODE_SPLIT is an M2 feature (SRT/long-text flows); fail loudly if submitted.
-registerHandler(TASK_TYPE.EPISODE_SPLIT, async () => {
-  throw new TaskError("NOT_IMPLEMENTED", "EPISODE_SPLIT lands in M2", false);
-});
+registerHandler(TASK_TYPE.EPISODE_SPLIT, episodeSplitHandler);

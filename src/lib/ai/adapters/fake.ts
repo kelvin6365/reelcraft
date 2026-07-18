@@ -6,7 +6,28 @@ import type { AdapterMeta, TextAdapter, TextRequest, TextResult } from "@/lib/ai
 
 const canned: Record<string, unknown> = {
   episode_split: {
-    episodes: [{ index: 1, title: "第一集", startAnchor: "@@start@@", endAnchor: "@@end@@", summary: "示範分集", hook: "" }],
+    // anchors match the standard smoke novel (雨夜咖啡店) so offline slicing yields
+    // real multi-episode output; ep 2 is intentionally flagged for review-by-exception.
+    episodes: [
+      {
+        index: 1,
+        title: "雨夜重逢",
+        startAnchor: "雨夜，林知夏推開咖啡店的門",
+        endAnchor: "路上有事。",
+        summary: "林知夏冒雨赴約，與陳沉在咖啡店重逢",
+        hook: "兩人之間的沉默，藏著未說的過去",
+        risk: { level: "ok", flags: [], note: "" },
+      },
+      {
+        index: 2,
+        title: "兩清",
+        startAnchor: "沉默在兩人之間蔓延",
+        endAnchor: "很久都沒有動。",
+        summary: "林知夏拿出文件要求了斷，陳沉遲疑",
+        hook: "他會不會簽？",
+        risk: { level: "review", flags: ["too_short"], note: "偏短，可考慮合併" },
+      },
+    ],
   },
   extract_assets: {
     characters: [
