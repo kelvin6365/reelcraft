@@ -725,3 +725,14 @@ table.usage tr:last-child td {
   font-size: 12px;
   margin-top: 8px;
 }
+
+/* M3: storyboard confirm cost preview */
+.cost-preview {
+  background: rgba(230, 170, 60, 0.08);
+  border: 1px solid rgba(230, 170, 60, 0.35);
+  border-radius: 8px;
+  padding: 10px 14px;
+  margin-bottom: 12px;
+  font-size: 13px;
+  color: var(--warn, #e6aa3c);
+}

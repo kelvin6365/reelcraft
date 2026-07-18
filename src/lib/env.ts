@@ -31,6 +31,12 @@ const schema = z.object({
   WATCHDOG_INTERVAL_MS: z.coerce.number().int().positive().default(30_000),
   TASK_HEARTBEAT_TIMEOUT_MS: z.coerce.number().int().positive().default(90_000),
 
+  // Quotas — per-user concurrent slots (distributed semaphore) + daily API caps.
+  QUOTA_USER_CONCURRENT_IMAGE: z.coerce.number().int().positive().default(4),
+  QUOTA_USER_CONCURRENT_VIDEO: z.coerce.number().int().positive().default(2),
+  QUOTA_DAILY_IMAGE: z.coerce.number().int().positive().default(200),
+  QUOTA_DAILY_VIDEO: z.coerce.number().int().positive().default(50),
+
   BILLING_MODE: z.enum(["OFF", "SHADOW", "ENFORCE"]).default("SHADOW"),
   LOG_LEVEL: z.enum(["debug", "info", "warn", "error"]).default("info"),
 });

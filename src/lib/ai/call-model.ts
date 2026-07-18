@@ -26,7 +26,7 @@ export async function callModel(ctx: CallContext, req: TextRequest): Promise<Tex
   const adapter = textAdapters[parsed.provider];
   if (!adapter) throw new AiError("PROVIDER_UNKNOWN", `no text adapter for provider: ${parsed.provider}`);
 
-  const apiKey = getProviderKey(ctx.userId, parsed.provider);
+  const apiKey = await getProviderKey(ctx.userId, parsed.provider);
   const startedAt = Date.now();
 
   try {

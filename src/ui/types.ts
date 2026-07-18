@@ -106,6 +106,17 @@ export interface EpisodeView {
   stages: StageState[];
   nextAction: NextAction;
   failedTasks: number;
+  cost?: {
+    projectSpendUsd: number;
+    downstream: {
+      pendingImages: number;
+      pendingVideos: number;
+      estImageUsd: number;
+      estVideoUsd: number;
+      totalUsd: number;
+      videoUnitUsd: number | null;
+    } | null;
+  };
 }
 
 export interface FailedTask {
@@ -158,4 +169,15 @@ export interface UsageResponse {
   totals: UsageTotalsView;
   errorTop: { errorCode: string; count: number }[];
   range: { from: string; to: string; groupBy: string };
+}
+
+// ---------- settings: BYO provider keys (GET /api/user/provider-keys) ----------
+export interface ProviderKeyView {
+  provider: string;
+  last4: string;
+  updatedAt: string;
+}
+
+export interface ProviderKeysResponse {
+  keys: ProviderKeyView[];
 }

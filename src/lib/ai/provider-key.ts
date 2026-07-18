@@ -1,29 +1,49 @@
-// Key resolution abstraction. M0: server env keys (userId ignored).
-// M3 swaps the implementation for per-user envelope-encrypted BYO keys —
-// callers never change. Only call-model.ts may import this.
+// Key resolution abstraction. Resolution order (M3 BYO-Key):
+//   1. the user's own UserProviderKey (envelope-decrypted just-in-time), else
+//   2. the server env key (shared fallback), else
+//   3. PROVIDER_KEY_MISSING.
+// Decryption is deferred to the moment of use — plaintext keys are never held
+// beyond a single call and never persisted anywhere but the encrypted envelope.
+// Only call-model.ts / generate-media.ts may import this.
+import { prisma } from "@/lib/db";
 import { env } from "@/lib/env";
+import { decryptKey } from "@/lib/crypto-keys";
 import { AiError } from "@/lib/ai/types";
+import { isByokProvider, type ByokProvider } from "@/lib/providers";
 
-export function getProviderKey(_userId: string, provider: string): string {
+function envKey(provider: ByokProvider): string {
   switch (provider) {
-    case "openrouter": {
-      if (!env.OPENROUTER_API_KEY) throw new AiError("PROVIDER_KEY_MISSING", "OPENROUTER_API_KEY not set");
+    case "openrouter":
       return env.OPENROUTER_API_KEY;
-    }
-    case "fal": {
-      if (!env.FAL_KEY) throw new AiError("PROVIDER_KEY_MISSING", "FAL_KEY not set");
+    case "fal":
       return env.FAL_KEY;
-    }
-    case "atlascloud": {
-      if (!env.ATLASCLOUD_API_KEY) throw new AiError("PROVIDER_KEY_MISSING", "ATLASCLOUD_API_KEY not set");
+    case "atlascloud":
       return env.ATLASCLOUD_API_KEY;
-    }
-    case "fake": {
-      if (env.NODE_ENV === "production") throw new AiError("PROVIDER_NOT_ALLOWED", "fake provider is dev/test only");
-      return "fake-key";
-    }
-    default:
-      // No guessing, no fallback (CLAUDE.md #3)
-      throw new AiError("PROVIDER_UNKNOWN", `unknown provider: ${provider}`);
   }
+}
+
+export async function getProviderKey(userId: string, provider: string): Promise<string> {
+  if (provider === "fake") {
+    if (env.NODE_ENV === "production") throw new AiError("PROVIDER_NOT_ALLOWED", "fake provider is dev/test only");
+    return "fake-key";
+  }
+
+  if (!isByokProvider(provider)) {
+    // No guessing, no fallback (CLAUDE.md #3)
+    throw new AiError("PROVIDER_UNKNOWN", `unknown provider: ${provider}`);
+  }
+
+  // 1. user's own key wins.
+  const row = await prisma.userProviderKey.findUnique({
+    where: { userId_provider: { userId, provider } },
+    select: { encryptedKey: true },
+  });
+  if (row) return decryptKey(row.encryptedKey);
+
+  // 2. shared server env key.
+  const shared = envKey(provider);
+  if (shared) return shared;
+
+  // 3. nothing configured.
+  throw new AiError("PROVIDER_KEY_MISSING", `no key for provider: ${provider}`);
 }

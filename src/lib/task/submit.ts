@@ -2,9 +2,13 @@ import { createHash } from "node:crypto";
 import { prisma } from "@/lib/db";
 import { newId } from "@/lib/ids";
 import { audit } from "@/lib/audit";
+import { env } from "@/lib/env";
 import { addTaskJob } from "@/lib/task/queues";
 import { publishTaskEvent } from "@/lib/task/events";
 import { getQueueForTaskType, type TaskType } from "@/lib/task/types";
+import { estimateTaskCost } from "@/lib/billing/quote";
+import { freezeBalance, rollbackTaskFreeze, InsufficientBalanceError } from "@/lib/billing/ledger";
+import { checkDailyQuota, dailyApiTypeForTask } from "@/lib/quota/daily";
 
 export interface SubmitTaskInput {
   userId: string;
@@ -37,6 +41,13 @@ export async function submitTask(input: SubmitTaskInput): Promise<SubmitResult> 
   if (existing && (existing.status === "queued" || existing.status === "processing")) {
     return { taskId: existing.id, deduped: true };
   }
+
+  // Daily quota — count one paid generation call and reject (throws QuotaExceededError)
+  // when over. Runs after dedupe so an idempotent re-submit doesn't burn the budget,
+  // and before task creation so the client gets a clean error and nothing is enqueued.
+  const apiType = dailyApiTypeForTask(input.type);
+  if (apiType) await checkDailyQuota(input.userId, apiType);
+
   if (existing) {
     // terminal task occupies the key — free it so a fresh run can happen
     await prisma.task.update({
@@ -68,9 +79,35 @@ export async function submitTask(input: SubmitTaskInput): Promise<SubmitResult> 
   });
   publishTaskEvent(input.projectId ?? null, { taskId: task.id, taskType: input.type, eventType: "CREATED" });
 
+  // ENFORCE billing: reserve the worst-case cost before enqueue. The worker
+  // settles this to actual on completion (or rolls it back on failure). An
+  // uncovered balance fails the task terminally — nothing is enqueued.
+  if (env.BILLING_MODE === "ENFORCE") {
+    try {
+      const quoteUsd = await estimateTaskCost(input.type, input.payload ?? {}, input.projectId);
+      await freezeBalance(input.userId, quoteUsd, task.id, task.id);
+    } catch (err) {
+      if (err instanceof InsufficientBalanceError) {
+        await prisma.task.update({
+          where: { id: task.id },
+          data: { status: "failed", errorCode: "INSUFFICIENT_BALANCE", errorMessage: err.message, finishedAt: new Date() },
+        });
+        publishTaskEvent(input.projectId ?? null, {
+          taskId: task.id,
+          taskType: input.type,
+          eventType: "FAILED",
+          errorCode: "INSUFFICIENT_BALANCE",
+        });
+        return { taskId: task.id, deduped: false };
+      }
+      throw err;
+    }
+  }
+
   try {
     await addTaskJob(getQueueForTaskType(input.type), task.id);
   } catch (err) {
+    await rollbackTaskFreeze(task.id); // release the reservation — the worker will never run this task
     await prisma.task.update({
       where: { id: task.id },
       data: { status: "failed", errorCode: "ENQUEUE_FAILED", errorMessage: String(err), finishedAt: new Date() },

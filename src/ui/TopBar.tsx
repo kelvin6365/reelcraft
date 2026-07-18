@@ -3,6 +3,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import type { ReactNode } from "react";
 import { signOut } from "@/ui/auth-client";
+import { BalanceChip } from "@/ui/BalanceChip";
 
 export function TopBar({ children }: { children?: ReactNode }) {
   const router = useRouter();
@@ -16,9 +17,14 @@ export function TopBar({ children }: { children?: ReactNode }) {
           <Link href="/usage" className="topbar-link">
             用量
           </Link>
+          <Link href="/settings" className="topbar-link">
+            設定
+          </Link>
           {children}
         </div>
-        <button
+        <div className="row" style={{ gap: 12 }}>
+          <BalanceChip />
+          <button
           className="btn btn-ghost btn-sm"
           onClick={async () => {
             await signOut();
@@ -26,7 +32,8 @@ export function TopBar({ children }: { children?: ReactNode }) {
           }}
         >
           登出
-        </button>
+          </button>
+        </div>
       </div>
     </div>
   );

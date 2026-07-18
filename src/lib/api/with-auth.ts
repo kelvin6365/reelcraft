@@ -6,6 +6,7 @@ import type { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { audit, type AuditInput } from "@/lib/audit";
 import { ApiError, fail } from "@/lib/api/errors";
+import { checkRateLimit } from "@/lib/api/rate-limit";
 
 export interface AuthedContext {
   userId: string;
@@ -24,6 +25,10 @@ export function withAuth(handler: AuthedHandler, opts: WithAuthOptions = {}) {
     const session = await auth.api.getSession({ headers: await headers() });
     if (!session) return fail("UNAUTHORIZED", 401);
     const userId = session.user.id;
+
+    // Per-user sliding-window rate limit (distributed via Redis). The SSE stream at
+    // GET /api/sse is long-lived and doesn't route through withAuth, so it's exempt.
+    if (!(await checkRateLimit(userId))) return fail("RATE_LIMITED", 429);
 
     try {
       const params = (await routeCtx?.params) ?? {};

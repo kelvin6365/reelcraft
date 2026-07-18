@@ -22,7 +22,13 @@ export const GET = withAuth(async ({ userId, params }) => {
 export const PATCH = withAuth(
   async ({ userId, params, req }) => {
     await getOwned(userId, params.id);
-    const body = (await req.json()) as Partial<{ name: string; stylePackId: string; videoRatio: string; modelDefaults: Record<string, string> }>;
+    const body = (await req.json()) as Partial<{
+      name: string;
+      stylePackId: string;
+      videoRatio: string;
+      modelDefaults: Record<string, string>;
+      budgetUsd: number | null;
+    }>;
     const project = await prisma.project.update({
       where: { id: params.id },
       data: {
@@ -30,6 +36,7 @@ export const PATCH = withAuth(
         stylePackId: body.stylePackId,
         videoRatio: body.videoRatio,
         modelDefaults: body.modelDefaults as object | undefined,
+        budgetUsd: body.budgetUsd === undefined ? undefined : body.budgetUsd,
       },
     });
     return ok(project);

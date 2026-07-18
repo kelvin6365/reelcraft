@@ -2,6 +2,7 @@ import { prisma } from "@/lib/db";
 import { addTaskJob } from "@/lib/task/queues";
 import { publishTaskEvent } from "@/lib/task/events";
 import { classifyError, getQueueForTaskType, type TaskType } from "@/lib/task/types";
+import { settleTaskFreeze, rollbackTaskFreeze } from "@/lib/billing/ledger";
 import type { Task } from "@prisma/client";
 
 export interface HandlerContext {
@@ -52,6 +53,7 @@ export async function withTaskLifecycle(taskId: string, handler: TaskHandler): P
       where: { id: taskId },
       data: { status: "completed", progress: 100, result: (result ?? null) as object, finishedAt: new Date() },
     });
+    await settleTaskFreeze(taskId); // ENFORCE: charge actual (from ai_call_logs), refund the rest
     publishTaskEvent(task.projectId, { taskId, taskType: task.type, eventType: "COMPLETED", progress: 100 });
   } catch (err) {
     const { code, message, retryable } = classifyError(err);
@@ -72,6 +74,7 @@ export async function withTaskLifecycle(taskId: string, handler: TaskHandler): P
       where: { id: taskId },
       data: { status: "failed", errorCode: code, errorMessage: message.slice(0, 1000), finishedAt: new Date() },
     });
+    await rollbackTaskFreeze(taskId); // ENFORCE: terminal failure — release the whole reservation
     publishTaskEvent(task.projectId, { taskId, taskType: task.type, eventType: "FAILED", errorCode: code });
   } finally {
     clearInterval(heartbeat);

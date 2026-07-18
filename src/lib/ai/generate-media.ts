@@ -42,7 +42,7 @@ async function runTemplateProvider(
   const t = templates.get(templateId);
   if (!t) throw new AiError("TEMPLATE_NOT_FOUND", `no template: ${templateId}`);
   if (t.apiType !== apiType) throw new AiError("TEMPLATE_TYPE_MISMATCH", `${templateId} is ${t.apiType}, not ${apiType}`);
-  const apiKey = getProviderKey(ctx.userId, t.apiKeyRef);
+  const apiKey = await getProviderKey(ctx.userId, t.apiKeyRef);
   const { resultUrl } = await runTemplate(t, { ...vars, model: templateId }, apiKey);
   return createMediaFromUrl({ userId: ctx.userId, url: resultUrl, keyPrefix });
 }
@@ -96,6 +96,10 @@ async function generate(
     throw new AiError("PROVIDER_NOT_ALLOWED", "fake provider is dev/test only");
   }
 
+  // Budget guard: every media call checks the project cap first (M3 #11).
+  const { assertWithinBudget } = await import("@/lib/billing/budget");
+  await assertWithinBudget(ctx.projectId);
+
   const startedAt = Date.now();
   try {
     const outcome = await run(parsed);
@@ -130,7 +134,7 @@ export async function generateImage(ctx: CallContext, req: ImageGenRequest): Pro
       return { media, quantity: 1, unit: "image" };
     }
     if (provider === "fal" || provider === "atlascloud") {
-      const apiKey = getProviderKey(ctx.userId, provider);
+      const apiKey = await getProviderKey(ctx.userId, provider);
       const gen = provider === "fal" ? falImage : atlasImage;
       const { url, providerRequestId } = await gen({
         modelId,
@@ -172,7 +176,7 @@ export async function generateVideo(ctx: CallContext, req: VideoGenRequest): Pro
       return { media, quantity: req.durationSec, unit: "second" };
     }
     if (provider === "fal" || provider === "atlascloud") {
-      const apiKey = getProviderKey(ctx.userId, provider);
+      const apiKey = await getProviderKey(ctx.userId, provider);
       // i2v: providers pull the source frame — public signed URL, or data URI in local-dev.
       const imageUrl = req.sourceImageMediaId ? await getOutboundImageUrl(req.sourceImageMediaId) : null;
       const gen = provider === "fal" ? falVideo : atlasVideo;
@@ -209,7 +213,7 @@ export async function generateTts(ctx: CallContext, req: TtsGenRequest): Promise
       return { media, quantity: seconds, unit: "second" };
     }
     if (provider === "fal" || provider === "atlascloud") {
-      const apiKey = getProviderKey(ctx.userId, provider);
+      const apiKey = await getProviderKey(ctx.userId, provider);
       const referenceAudioUrl = req.voiceId ? (await getMediaUrl(req.voiceId)) ?? undefined : undefined;
       const gen = provider === "fal" ? falTts : atlasTts;
       const { url, providerRequestId } = await gen({ modelId, text: req.text, referenceAudioUrl, apiKey });

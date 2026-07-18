@@ -270,7 +270,18 @@ export function StoryboardPanel({ view, progress, refetch }: PanelProps) {
       {shots.length === 0 ? (
         <div className="empty">仲未有分鏡。用右下角「下一步」生成分鏡。</div>
       ) : (
-        <div className="tbl-wrap">
+        <>
+          {/* 成本預覽（M3 預算護欄）：確認前俾用戶睇清楚下游會使幾多錢 */}
+          {view.cost?.downstream && view.cost.downstream.totalUsd > 0 && (
+            <div className="cost-preview">
+              ⚠️ 確認後下游生成預估成本：<b>~US${view.cost.downstream.totalUsd.toFixed(2)}</b>
+              {"　"}（{view.cost.downstream.pendingImages} 圖 ≈ ${view.cost.downstream.estImageUsd.toFixed(2)} ·{" "}
+              {view.cost.downstream.pendingVideos} 視頻 ≈ ${view.cost.downstream.estVideoUsd.toFixed(2)}
+              {view.cost.downstream.videoUnitUsd ? `，每鏡 $${view.cost.downstream.videoUnitUsd.toFixed(2)}` : ""}）
+              {"　"}本專案已使 ${view.cost.projectSpendUsd.toFixed(2)}
+            </div>
+          )}
+          <div className="tbl-wrap">
           <table className="sb">
             <thead>
               <tr>
@@ -295,7 +306,8 @@ export function StoryboardPanel({ view, progress, refetch }: PanelProps) {
               ))}
             </tbody>
           </table>
-        </div>
+          </div>
+        </>
       )}
       {confirm.err && <p className="error-text">{confirm.err}</p>}
     </Station>
