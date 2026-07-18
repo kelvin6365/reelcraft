@@ -55,7 +55,7 @@
 
 ```
 Next.js 15 (App Router) ─ 前端 + API routes 一個倉
-PostgreSQL + Drizzle    ─ 所有表帶 userId
+PostgreSQL + Prisma     ─ 所有表帶 userId
 BullMQ + Redis          ─ 4 條佇列 (text/image/video/voice) + watchdog
 S3 相容儲存             ─ 開發 MinIO docker，上線可轉 Cloudflare R2
 Better-Auth             ─ 內部期 email+password；SaaS 期加 OAuth
