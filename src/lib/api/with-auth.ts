@@ -6,7 +6,7 @@ import type { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { audit, type AuditInput } from "@/lib/audit";
 import { ApiError, fail } from "@/lib/api/errors";
-import { checkRateLimit } from "@/lib/api/rate-limit";
+import { bucketForMethod, checkRateLimit } from "@/lib/api/rate-limit";
 
 export interface AuthedContext {
   userId: string;
@@ -26,9 +26,11 @@ export function withAuth(handler: AuthedHandler, opts: WithAuthOptions = {}) {
     if (!session) return fail("UNAUTHORIZED", 401);
     const userId = session.user.id;
 
-    // Per-user sliding-window rate limit (distributed via Redis). The SSE stream at
-    // GET /api/sse is long-lived and doesn't route through withAuth, so it's exempt.
-    if (!(await checkRateLimit(userId))) return fail("RATE_LIMITED", 429);
+    // Per-user sliding-window rate limit (distributed via Redis), split into a
+    // generous read bucket and a tighter write bucket so fast page navigation
+    // (many GETs) doesn't trip the limit meant for expensive writes. The SSE
+    // stream at GET /api/sse doesn't route through withAuth, so it's exempt.
+    if (!(await checkRateLimit(userId, bucketForMethod(req.method)))) return fail("RATE_LIMITED", 429);
 
     try {
       const params = (await routeCtx?.params) ?? {};

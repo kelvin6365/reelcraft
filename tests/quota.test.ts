@@ -112,14 +112,30 @@ describe("daily quota", () => {
   });
 });
 
-describe("api rate limit — sliding window", () => {
-  it("admits up to the max then rejects within the window", async () => {
+describe("api rate limit — sliding window, split buckets", () => {
+  it("write bucket admits up to its cap then rejects within the window", async () => {
     const user = newUser("rate");
+    const cap = Number(process.env.RATE_LIMIT_WRITE_MAX ?? 120);
     let admitted = 0;
-    for (let i = 0; i < rate.RATE_LIMIT_MAX + 5; i++) {
-      if (await rate.checkRateLimit(user)) admitted++;
+    for (let i = 0; i < cap + 5; i++) {
+      if (await rate.checkRateLimit(user, "write")) admitted++;
     }
-    expect(admitted).toBe(rate.RATE_LIMIT_MAX);
-    expect(await rate.checkRateLimit(user)).toBe(false);
+    expect(admitted).toBe(cap);
+    expect(await rate.checkRateLimit(user, "write")).toBe(false);
+  });
+
+  it("read and write buckets are independent", async () => {
+    const user = newUser("rate");
+    const writeCap = Number(process.env.RATE_LIMIT_WRITE_MAX ?? 120);
+    for (let i = 0; i < writeCap; i++) await rate.checkRateLimit(user, "write");
+    expect(await rate.checkRateLimit(user, "write")).toBe(false); // write exhausted
+    expect(await rate.checkRateLimit(user, "read")).toBe(true); // reads unaffected
+  });
+
+  it("GET maps to read, mutations to write", () => {
+    expect(rate.bucketForMethod("GET")).toBe("read");
+    expect(rate.bucketForMethod("POST")).toBe("write");
+    expect(rate.bucketForMethod("PATCH")).toBe("write");
+    expect(rate.bucketForMethod("DELETE")).toBe("write");
   });
 });

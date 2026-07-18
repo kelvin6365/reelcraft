@@ -38,6 +38,13 @@ const schema = z.object({
   QUOTA_DAILY_IMAGE: z.coerce.number().int().positive().default(200),
   QUOTA_DAILY_VIDEO: z.coerce.number().int().positive().default(50),
 
+  // API rate limit (per user, sliding window). Reads (GET) are generous — a
+  // single workspace page-load fans out many of them; writes are tighter (and
+  // also gated by quota + billing). Raise if legit navigation still trips 429.
+  RATE_LIMIT_WINDOW_SEC: z.coerce.number().int().positive().default(60),
+  RATE_LIMIT_READ_MAX: z.coerce.number().int().positive().default(600),
+  RATE_LIMIT_WRITE_MAX: z.coerce.number().int().positive().default(120),
+
   BILLING_MODE: z.enum(["OFF", "SHADOW", "ENFORCE"]).default("SHADOW"),
   LOG_LEVEL: z.enum(["debug", "info", "warn", "error"]).default("info"),
 });
