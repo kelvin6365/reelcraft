@@ -27,6 +27,13 @@ function imageSizeFor(aspectRatio: string): string | { width: number; height: nu
   return IMAGE_SIZE[aspectRatio] ?? "portrait_16_9";
 }
 
+// Submit uses the full model path (`fal-ai/index-tts-2/text-to-speech`), but
+// status/result URLs must use the APP ROOT only (`fal-ai/index-tts-2`) —
+// polling with the subpath returns 405. Verified against the live API.
+function appRoot(modelId: string): string {
+  return modelId.split("/").slice(0, 2).join("/");
+}
+
 function classify(status: number, body: string): AiError {
   const retryable = status === 429 || status >= 500;
   return new AiError(`HTTP_${status}`, `fal: ${body.slice(0, 500)}`, retryable);
@@ -53,7 +60,7 @@ async function pollUntilDone(modelId: string, requestId: string, apiKey: string)
   const headers = { Authorization: `Key ${apiKey}` };
   const deadline = Date.now() + POLL_TIMEOUT_MS;
   for (;;) {
-    const res = await fetch(`${QUEUE_BASE}/${modelId}/requests/${requestId}/status`, { headers });
+    const res = await fetch(`${QUEUE_BASE}/${appRoot(modelId)}/requests/${requestId}/status`, { headers });
     if (!res.ok) throw classify(res.status, await res.text().catch(() => ""));
     const json = (await res.json()) as FalStatus;
     if (json.status === "COMPLETED") return;
@@ -66,7 +73,7 @@ async function pollUntilDone(modelId: string, requestId: string, apiKey: string)
 }
 
 async function fetchResult(modelId: string, requestId: string, apiKey: string): Promise<Record<string, unknown>> {
-  const res = await fetch(`${QUEUE_BASE}/${modelId}/requests/${requestId}`, {
+  const res = await fetch(`${QUEUE_BASE}/${appRoot(modelId)}/requests/${requestId}`, {
     headers: { Authorization: `Key ${apiKey}` },
   });
   if (!res.ok) throw classify(res.status, await res.text().catch(() => ""));
@@ -152,6 +159,12 @@ export async function falTts(args: FalTtsArgs): Promise<{ url: string; seconds?:
   const input: Record<string, unknown> = { text: args.text };
   if (args.referenceAudioUrl) input.reference_audio_url = args.referenceAudioUrl;
   const { result, url, requestId } = await runQueue(args.modelId, args.apiKey, input, ["audio"]);
-  const seconds = typeof result.duration === "number" ? result.duration : undefined;
+  // duration field varies: index-tts-2 `duration` (s), minimax `duration_ms`
+  const seconds =
+    typeof result.duration === "number"
+      ? result.duration
+      : typeof result.duration_ms === "number"
+        ? result.duration_ms / 1000
+        : undefined;
   return { url, seconds, providerRequestId: requestId };
 }

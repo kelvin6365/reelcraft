@@ -16,6 +16,19 @@ import { loadTemplates, runTemplate, type TemplateVars } from "@/lib/ai/template
 import { createMediaFromBuffer, createMediaFromUrl, getMediaUrl } from "@/lib/media/service";
 import type { MediaObject } from "@prisma/client";
 
+// Outbound media normalization: providers must be able to FETCH the source
+// image. S3/R2 signed URLs are public https; local-dev storage URLs are
+// relative — convert those to a data URI (base64) instead.
+async function getOutboundImageUrl(mediaId: string): Promise<string> {
+  const url = await getMediaUrl(mediaId);
+  if (url?.startsWith("https://")) return url;
+  const media = await prisma.mediaObject.findUnique({ where: { id: mediaId } });
+  if (!media) throw new AiError("SOURCE_IMAGE_MISSING", `source image not found: ${mediaId}`);
+  const { getStorage } = await import("@/lib/storage");
+  const buffer = await getStorage().getObjectBuffer(media.storageKey);
+  return `data:${media.mimeType || "image/png"};base64,${buffer.toString("base64")}`;
+}
+
 // Declarative template provider: modelKey `template::<templateId>` — the JSON
 // file in standards/templates/ defines the whole HTTP conversation.
 async function runTemplateProvider(
@@ -150,11 +163,8 @@ export async function generateVideo(ctx: CallContext, req: VideoGenRequest): Pro
     }
     if (provider === "fal" || provider === "atlascloud") {
       const apiKey = getProviderKey(ctx.userId, provider);
-      // i2v: providers pull the source frame from a signed URL (no base64 upload).
-      const imageUrl = req.sourceImageMediaId ? await getMediaUrl(req.sourceImageMediaId) : null;
-      if (req.sourceImageMediaId && !imageUrl) {
-        throw new AiError("SOURCE_IMAGE_MISSING", `source image not found: ${req.sourceImageMediaId}`);
-      }
+      // i2v: providers pull the source frame — public signed URL, or data URI in local-dev.
+      const imageUrl = req.sourceImageMediaId ? await getOutboundImageUrl(req.sourceImageMediaId) : null;
       const gen = provider === "fal" ? falVideo : atlasVideo;
       const { url, providerRequestId } = await gen({
         modelId,
