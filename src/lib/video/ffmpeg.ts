@@ -10,6 +10,20 @@ import { TaskError } from "@/lib/task/types";
 const exec = promisify(execFile);
 const FFMPEG_TIMEOUT_MS = 10 * 60_000;
 
+// Some ffmpeg builds (e.g. Homebrew without libfreetype) lack drawtext.
+// Detect once; subtitle burning degrades gracefully when unavailable.
+let drawtextAvailable: boolean | null = null;
+export async function hasDrawtext(): Promise<boolean> {
+  if (drawtextAvailable !== null) return drawtextAvailable;
+  try {
+    const { stdout } = await exec("ffmpeg", ["-hide_banner", "-filters"]);
+    drawtextAvailable = stdout.includes(" drawtext ");
+  } catch {
+    drawtextAvailable = false;
+  }
+  return drawtextAvailable;
+}
+
 async function runFfmpeg(args: string[]): Promise<void> {
   try {
     await exec("ffmpeg", ["-y", "-hide_banner", "-loglevel", "error", ...args], {
@@ -34,7 +48,7 @@ export async function composeShot(input: ComposeShotInput, outPath: string): Pro
   if (input.audioPath) args.push("-i", input.audioPath);
 
   const filters: string[] = [];
-  if (input.subtitle) {
+  if (input.subtitle && (await hasDrawtext())) {
     const safe = input.subtitle.replace(/\\/g, "\\\\").replace(/'/g, "\\'").replace(/:/g, "\\:");
     filters.push(
       `drawtext=text='${safe}':fontcolor=white:fontsize=h/18:borderw=2:bordercolor=black@0.8:x=(w-text_w)/2:y=h-text_h-h/12`,

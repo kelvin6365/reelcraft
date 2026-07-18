@@ -29,7 +29,7 @@ export async function callModel(ctx: CallContext, req: TextRequest): Promise<Tex
   const startedAt = Date.now();
 
   try {
-    const result = await adapter.complete(req, apiKey);
+    const result = await adapter.complete(req, apiKey, { promptId: ctx.promptId });
     logAiCall(ctx, req, {
       latencyMs: Date.now() - startedAt,
       status: "ok",

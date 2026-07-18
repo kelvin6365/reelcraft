@@ -34,9 +34,13 @@ export interface TextResult {
   providerRequestId?: string;
 }
 
+export interface AdapterMeta {
+  promptId?: string; // lets dev/test adapters return schema-shaped canned output
+}
+
 export interface TextAdapter {
   readonly provider: string;
-  complete(req: TextRequest, apiKey: string): Promise<TextResult>;
+  complete(req: TextRequest, apiKey: string, meta?: AdapterMeta): Promise<TextResult>;
 }
 
 // ---------- media (M1: fal / atlascloud implement this) ----------

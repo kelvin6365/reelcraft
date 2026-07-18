@@ -15,6 +15,7 @@
     "worker": "tsx --env-file=.env src/lib/workers/index.ts",
     "watchdog": "tsx --env-file=.env src/lib/workers/watchdog.ts",
     "smoke:task": "tsx --env-file=.env scripts/smoke-task.ts",
+    "smoke:pipeline": "tsx --env-file=.env scripts/smoke-pipeline.ts",
     "test": "vitest run"
   },
   "dependencies": {
