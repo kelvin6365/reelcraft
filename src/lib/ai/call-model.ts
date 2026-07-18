@@ -3,6 +3,7 @@
 import { prisma } from "@/lib/db";
 import { parseModelKeyStrict } from "@/lib/ai/model-key";
 import { getProviderKey } from "@/lib/ai/provider-key";
+import { priceText } from "@/lib/ai/capabilities";
 import { openrouterAdapter } from "@/lib/ai/adapters/openrouter";
 import { fakeAdapter } from "@/lib/ai/adapters/fake";
 import {
@@ -30,11 +31,14 @@ export async function callModel(ctx: CallContext, req: TextRequest): Promise<Tex
 
   try {
     const result = await adapter.complete(req, apiKey, { promptId: ctx.promptId });
+    // Blended input+output token cost from the catalog; missing entry → null.
+    const price = priceText(req.modelKey, result.usage.inputTokens, result.usage.outputTokens);
     logAiCall(ctx, req, {
       latencyMs: Date.now() - startedAt,
       status: "ok",
       inputTokens: result.usage.inputTokens,
       outputTokens: result.usage.outputTokens,
+      estCostUsd: price?.estCostUsd ?? null,
       providerRequestId: result.providerRequestId,
     });
     return result;
@@ -53,6 +57,7 @@ interface LogFields {
   status: "ok" | "error";
   inputTokens?: number;
   outputTokens?: number;
+  estCostUsd?: number | null;
   errorCode?: string;
   providerRequestId?: string;
 }
@@ -73,6 +78,7 @@ function logAiCall(ctx: CallContext, req: TextRequest, f: LogFields): void {
         episodeId: ctx.episodeId,
         inputTokens: f.inputTokens,
         outputTokens: f.outputTokens,
+        estCostUsd: f.estCostUsd,
         latencyMs: f.latencyMs,
         status: f.status,
         errorCode: f.errorCode,

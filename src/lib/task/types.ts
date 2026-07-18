@@ -7,6 +7,7 @@ export const TASK_TYPE = {
   REWRITE_SCRIPT: "REWRITE_SCRIPT",
   BUILD_SCENES: "BUILD_SCENES",
   STORYBOARD_RUN: "STORYBOARD_RUN",
+  SRT_BUILD: "SRT_BUILD",
   VOICE_ANALYZE: "VOICE_ANALYZE",
   // image queue
   IMAGE_CHARACTER: "IMAGE_CHARACTER",
@@ -37,6 +38,7 @@ export function getQueueForTaskType(type: TaskType): QueueName {
     case TASK_TYPE.REWRITE_SCRIPT:
     case TASK_TYPE.BUILD_SCENES:
     case TASK_TYPE.STORYBOARD_RUN:
+    case TASK_TYPE.SRT_BUILD:
     case TASK_TYPE.VOICE_ANALYZE:
     case TASK_TYPE.TEST_ECHO:
       return "rc-text";

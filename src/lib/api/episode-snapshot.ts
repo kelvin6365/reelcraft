@@ -46,6 +46,7 @@ export async function buildEpisodeView(userId: string, episodeId: string) {
       withVideo: shots.filter((sh) => sh.videoMediaId).length,
     },
     storyboardConfirmed: CONFIRMED_STATUSES.includes(episode.status),
+    isSrtMode: episode.project.inputType === "srt",
     voiceLines: {
       total: voiceLines.length,
       withAudio: voiceLines.filter((v) => v.audioMediaId).length,

@@ -1,0 +1,81 @@
+[
+  {
+    "modelKey": "fal::fal-ai/nano-banana",
+    "apiType": "image",
+    "capabilities": {
+      "aspectRatios": ["9:16", "16:9", "1:1"]
+    },
+    "pricing": { "mode": "flat", "perUnit": 0.039, "unit": "image", "currency": "USD" }
+  },
+  {
+    "modelKey": "fal::fal-ai/kling-video/v3/standard/image-to-video",
+    "apiType": "video",
+    "capabilities": {
+      "durationsSec": [5, 10],
+      "resolutions": ["720p", "1080p"],
+      "modes": ["i2v"],
+      "aspectRatios": ["9:16", "16:9"]
+    },
+    "pricing": { "mode": "flat", "perUnit": 0.28, "unit": "second", "currency": "USD" }
+  },
+  {
+    "modelKey": "fal::fal-ai/index-tts-2/text-to-speech",
+    "apiType": "tts",
+    "capabilities": {},
+    "pricing": { "mode": "flat", "perUnit": 0.00005, "unit": "character", "currency": "USD" }
+  },
+  {
+    "modelKey": "atlascloud::seedream-3.0",
+    "apiType": "image",
+    "capabilities": {
+      "aspectRatios": ["9:16", "16:9", "1:1"]
+    },
+    "pricing": { "mode": "flat", "perUnit": 0.03, "unit": "image", "currency": "USD" }
+  },
+  {
+    "modelKey": "atlascloud::kling-v2.0",
+    "apiType": "video",
+    "capabilities": {
+      "durationsSec": [5, 10],
+      "modes": ["i2v", "t2v"],
+      "aspectRatios": ["9:16", "16:9"]
+    },
+    "pricing": { "mode": "flat", "perUnit": 0.26, "unit": "second", "currency": "USD" }
+  },
+  {
+    "modelKey": "openrouter::google/gemini-2.5-flash-lite",
+    "apiType": "text",
+    "capabilities": {},
+    "pricing": { "mode": "text", "inputPerMTok": 0.1, "outputPerMTok": 0.4, "currency": "USD" }
+  },
+  {
+    "modelKey": "openrouter::anthropic/claude-sonnet-4.5",
+    "apiType": "text",
+    "capabilities": {},
+    "pricing": { "mode": "text", "inputPerMTok": 3.0, "outputPerMTok": 15.0, "currency": "USD" }
+  },
+  {
+    "modelKey": "fake::image",
+    "apiType": "image",
+    "capabilities": { "aspectRatios": ["9:16", "16:9"] },
+    "pricing": { "mode": "flat", "perUnit": 0, "unit": "image", "currency": "USD" }
+  },
+  {
+    "modelKey": "fake::video",
+    "apiType": "video",
+    "capabilities": { "durationsSec": [5, 10], "aspectRatios": ["9:16", "16:9"] },
+    "pricing": { "mode": "flat", "perUnit": 0, "unit": "second", "currency": "USD" }
+  },
+  {
+    "modelKey": "fake::tts",
+    "apiType": "tts",
+    "capabilities": {},
+    "pricing": { "mode": "flat", "perUnit": 0, "unit": "character", "currency": "USD" }
+  },
+  {
+    "modelKey": "fake::text",
+    "apiType": "text",
+    "capabilities": {},
+    "pricing": { "mode": "text", "inputPerMTok": 0, "outputPerMTok": 0, "currency": "USD" }
+  }
+]

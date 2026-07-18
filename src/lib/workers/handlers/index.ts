@@ -5,6 +5,7 @@ import {
   buildScenesHandler,
   extractAssetsHandler,
   rewriteScriptHandler,
+  srtBuildHandler,
   storyboardRunHandler,
   voiceAnalyzeHandler,
 } from "@/lib/workers/handlers/text-handlers";
@@ -21,6 +22,7 @@ registerHandler(TASK_TYPE.REWRITE_SCRIPT, rewriteScriptHandler);
 registerHandler(TASK_TYPE.EXTRACT_ASSETS, extractAssetsHandler);
 registerHandler(TASK_TYPE.BUILD_SCENES, buildScenesHandler);
 registerHandler(TASK_TYPE.STORYBOARD_RUN, storyboardRunHandler);
+registerHandler(TASK_TYPE.SRT_BUILD, srtBuildHandler);
 registerHandler(TASK_TYPE.VOICE_ANALYZE, voiceAnalyzeHandler);
 registerHandler(TASK_TYPE.IMAGE_CHARACTER, imageCharacterHandler);
 registerHandler(TASK_TYPE.IMAGE_LOCATION, imageLocationHandler);

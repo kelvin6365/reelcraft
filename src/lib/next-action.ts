@@ -12,6 +12,7 @@ export interface EpisodeSnapshot {
   scenes: number;
   shots: { total: number; withImage: number; withVideo: number };
   storyboardConfirmed: boolean;
+  isSrtMode: boolean; // project.inputType === 'srt' — deterministic subtitle pipeline
   voiceLines: { total: number; withAudio: number };
   hasExport: boolean;
   runningTaskTypes: string[]; // active tasks for this episode
@@ -55,7 +56,9 @@ export function computeNextAction(s: EpisodeSnapshot, episodeId: string): NextAc
   if (!s.hasRawText) {
     return { stage: "input", label: "貼上小說原文", endpoint: null, blockedBy: [], busy: false };
   }
-  if (!s.hasScript) {
+  // SRT mode has no script/storyboard-generation stages: subtitle cues build the
+  // structure deterministically (see the storyboard branch below). Skip the script gate.
+  if (!s.isSrtMode && !s.hasScript) {
     return { stage: "script", label: "生成劇本", endpoint: ep("rewrite-script"), blockedBy: [], busy: running(s, "REWRITE_SCRIPT") };
   }
   const assetsTotal = s.characters.total + s.locations.total;
@@ -77,6 +80,9 @@ export function computeNextAction(s: EpisodeSnapshot, episodeId: string): NextAc
     return { stage: "assets", label: `鎖定資產（餘 ${unlocked} 個要揀圖）`, endpoint: null, blockedBy: [], busy: false };
   }
   if (s.scenes === 0 || s.shots.total === 0) {
+    if (s.isSrtMode) {
+      return { stage: "storyboard", label: "解析 SRT 建分鏡", endpoint: ep("srt-build"), blockedBy: [], busy: running(s, "SRT_BUILD") };
+    }
     return { stage: "storyboard", label: "生成分鏡", endpoint: ep("storyboard"), blockedBy: [], busy: running(s, "BUILD_SCENES", "STORYBOARD_RUN") };
   }
   if (!s.storyboardConfirmed) {
@@ -104,6 +110,17 @@ export function computeNextAction(s: EpisodeSnapshot, episodeId: string): NextAc
     return { stage: "voice", label: "分析台詞並配音", endpoint: ep("voice"), blockedBy: [], busy: running(s, "VOICE_ANALYZE") };
   }
   if (s.voiceLines.withAudio < s.voiceLines.total) {
+    // SRT mode creates the voice lines up front (SRT_BUILD), so there is no
+    // VOICE_ANALYZE step that fans out TTS — the user triggers it via tts-all.
+    if (s.isSrtMode) {
+      return {
+        stage: "voice",
+        label: `配音（${s.voiceLines.withAudio}/${s.voiceLines.total}）`,
+        endpoint: ep("tts-all"),
+        blockedBy: [],
+        busy: running(s, "TTS_LINE"),
+      };
+    }
     return {
       stage: "voice",
       label: `配音中（${s.voiceLines.withAudio}/${s.voiceLines.total}）`,

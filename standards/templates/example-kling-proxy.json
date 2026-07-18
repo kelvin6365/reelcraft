@@ -1,0 +1,25 @@
+{
+  "id": "example-kling-proxy",
+  "apiType": "video",
+  "apiKeyRef": "atlascloud",
+  "auth": { "header": "Authorization", "prefix": "Bearer " },
+  "create": {
+    "method": "POST",
+    "url": "https://api.example-proxy.com/v1/video/generations",
+    "body": {
+      "model": "{{model}}",
+      "prompt": "{{prompt}}",
+      "image_url": "{{image_url}}",
+      "duration": "{{duration}}",
+      "aspect_ratio": "{{aspect_ratio}}"
+    }
+  },
+  "createExtract": { "taskId": "$.id" },
+  "status": {
+    "method": "GET",
+    "url": "https://api.example-proxy.com/v1/video/generations/{{task_id}}"
+  },
+  "statusExtract": { "state": "$.status", "resultUrl": "$.output.video_url", "error": "$.error.message" },
+  "states": { "done": ["succeeded", "completed"], "failed": ["failed", "canceled"] },
+  "polling": { "intervalMs": 3000, "timeoutMs": 600000 }
+}

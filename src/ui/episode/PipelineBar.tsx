@@ -33,7 +33,9 @@ export function PipelineBar({
                 生成中 {pct}%
               </div>
             ) : (
-              s?.count && (
+              // hide "0/0" noise on stations whose work hasn't been created yet
+              s?.count &&
+              s.count.total > 0 && (
                 <div className="st-count">
                   {s.count.done}/{s.count.total}
                 </div>

@@ -13,6 +13,9 @@ export function TopBar({ children }: { children?: ReactNode }) {
           <Link href="/projects" className="brand" style={{ textDecoration: "none" }}>
             Reel<span>Craft</span>
           </Link>
+          <Link href="/usage" className="topbar-link">
+            用量
+          </Link>
           {children}
         </div>
         <button

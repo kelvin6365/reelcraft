@@ -36,9 +36,11 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
 
   useEffect(reload, [id]);
 
+  const isSrt = project?.inputType === "srt";
+
   async function createEpisode() {
     if (!rawText.trim()) {
-      setErr("請貼上小說原文。");
+      setErr(isSrt ? "請貼上 SRT 字幕。" : "請貼上小說原文。");
       return;
     }
     setBusy(true);
@@ -72,13 +74,15 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
             <div className="card">
               <h2 style={{ fontSize: 18, marginBottom: 4 }}>新增一集</h2>
               <p className="muted" style={{ marginTop: 0, fontSize: 14 }}>
-                貼上小說原文，系統會建立新一集，然後帶你行八站流程。
+                {isSrt
+                  ? "貼上 SRT 字幕，系統會按字幕逐句建立分鏡與配音，然後帶你行流程。"
+                  : "貼上小說原文，系統會建立新一集，然後帶你行八站流程。"}
               </p>
               <textarea
                 value={rawText}
                 onChange={(e) => setRawText(e.target.value)}
                 rows={8}
-                placeholder="喺呢度貼上小說章節原文…"
+                placeholder={isSrt ? "喺呢度貼上 SRT 字幕內容…" : "喺呢度貼上小說章節原文…"}
               />
               <div className="row-end">
                 <button className="btn btn-primary" onClick={createEpisode} disabled={busy}>

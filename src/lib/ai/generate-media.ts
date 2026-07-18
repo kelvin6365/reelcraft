@@ -6,10 +6,33 @@
 import { prisma } from "@/lib/db";
 import { env } from "@/lib/env";
 import { parseModelKeyStrict } from "@/lib/ai/model-key";
+import { getProviderKey } from "@/lib/ai/provider-key";
+import { priceMedia } from "@/lib/ai/capabilities";
 import { AiError, type CallContext } from "@/lib/ai/types";
 import { fakeImage, fakeTts, fakeVideo } from "@/lib/ai/adapters/fake-media";
-import { createMediaFromBuffer } from "@/lib/media/service";
+import { falImage, falTts, falVideo } from "@/lib/ai/adapters/fal";
+import { atlasImage, atlasTts, atlasVideo } from "@/lib/ai/adapters/atlascloud";
+import { loadTemplates, runTemplate, type TemplateVars } from "@/lib/ai/template/runtime";
+import { createMediaFromBuffer, createMediaFromUrl, getMediaUrl } from "@/lib/media/service";
 import type { MediaObject } from "@prisma/client";
+
+// Declarative template provider: modelKey `template::<templateId>` — the JSON
+// file in standards/templates/ defines the whole HTTP conversation.
+async function runTemplateProvider(
+  ctx: CallContext,
+  apiType: "image" | "video" | "tts",
+  templateId: string,
+  keyPrefix: string,
+  vars: TemplateVars,
+): Promise<MediaObject> {
+  const templates = await loadTemplates();
+  const t = templates.get(templateId);
+  if (!t) throw new AiError("TEMPLATE_NOT_FOUND", `no template: ${templateId}`);
+  if (t.apiType !== apiType) throw new AiError("TEMPLATE_TYPE_MISMATCH", `${templateId} is ${t.apiType}, not ${apiType}`);
+  const apiKey = getProviderKey(ctx.userId, t.apiKeyRef);
+  const { resultUrl } = await runTemplate(t, { ...vars, model: templateId }, apiKey);
+  return createMediaFromUrl({ userId: ctx.userId, url: resultUrl, keyPrefix });
+}
 
 export interface ImageGenRequest {
   modelKey: string;
@@ -40,13 +63,19 @@ interface GenOutcome {
   media: MediaObject;
   quantity: number;
   unit: "image" | "second" | "character";
+  providerRequestId?: string;
+}
+
+interface ParsedProvider {
+  provider: string;
+  modelId: string;
 }
 
 async function generate(
   ctx: CallContext,
   apiType: "image" | "video" | "tts",
   modelKey: string,
-  run: (provider: string) => Promise<GenOutcome>,
+  run: (parsed: ParsedProvider) => Promise<GenOutcome>,
 ): Promise<MediaObject> {
   const parsed = parseModelKeyStrict(modelKey);
   if (!parsed) throw new AiError("INVALID_MODEL_KEY", `modelKey must be provider::modelId, got: ${modelKey}`);
@@ -56,12 +85,18 @@ async function generate(
 
   const startedAt = Date.now();
   try {
-    const outcome = await run(parsed.provider);
+    const outcome = await run(parsed);
+    // Unit price + est cost from the catalog only — user-reported prices never
+    // enter billing (docs 03-provider-layer). Missing entry → null, never throw.
+    const price = priceMedia(modelKey, outcome.quantity);
     logMediaCall(ctx, modelKey, apiType, {
       latencyMs: Date.now() - startedAt,
       status: "ok",
       quantity: outcome.quantity,
       unit: outcome.unit,
+      unitPriceSnapshot: price?.unitPriceSnapshot ?? null,
+      estCostUsd: price?.estCostUsd ?? null,
+      providerRequestId: outcome.providerRequestId,
     });
     return outcome.media;
   } catch (err) {
@@ -75,10 +110,31 @@ async function generate(
 }
 
 export async function generateImage(ctx: CallContext, req: ImageGenRequest): Promise<MediaObject> {
-  return generate(ctx, "image", req.modelKey, async (provider) => {
+  return generate(ctx, "image", req.modelKey, async ({ provider, modelId }) => {
     if (provider === "fake") {
       const { buffer, mimeType } = await fakeImage(req.prompt, req.aspectRatio);
       const media = await createMediaFromBuffer({ userId: ctx.userId, buffer, mimeType, keyPrefix: req.keyPrefix });
+      return { media, quantity: 1, unit: "image" };
+    }
+    if (provider === "fal" || provider === "atlascloud") {
+      const apiKey = getProviderKey(ctx.userId, provider);
+      const gen = provider === "fal" ? falImage : atlasImage;
+      const { url, providerRequestId } = await gen({
+        modelId,
+        prompt: req.prompt,
+        negativePrompt: req.negativePrompt,
+        aspectRatio: req.aspectRatio,
+        apiKey,
+      });
+      const media = await createMediaFromUrl({ userId: ctx.userId, url, keyPrefix: req.keyPrefix });
+      return { media, quantity: 1, unit: "image", providerRequestId };
+    }
+    if (provider === "template") {
+      const media = await runTemplateProvider(ctx, "image", modelId, req.keyPrefix, {
+        prompt: req.prompt,
+        negative_prompt: req.negativePrompt ?? "",
+        aspect_ratio: req.aspectRatio,
+      });
       return { media, quantity: 1, unit: "image" };
     }
     throw new AiError("PROVIDER_NOT_IMPLEMENTED", `image provider not wired yet: ${provider}`);
@@ -86,10 +142,39 @@ export async function generateImage(ctx: CallContext, req: ImageGenRequest): Pro
 }
 
 export async function generateVideo(ctx: CallContext, req: VideoGenRequest): Promise<MediaObject> {
-  return generate(ctx, "video", req.modelKey, async (provider) => {
+  return generate(ctx, "video", req.modelKey, async ({ provider, modelId }) => {
     if (provider === "fake") {
       const { buffer, mimeType } = await fakeVideo(req.prompt, req.durationSec, req.aspectRatio);
       const media = await createMediaFromBuffer({ userId: ctx.userId, buffer, mimeType, keyPrefix: req.keyPrefix });
+      return { media, quantity: req.durationSec, unit: "second" };
+    }
+    if (provider === "fal" || provider === "atlascloud") {
+      const apiKey = getProviderKey(ctx.userId, provider);
+      // i2v: providers pull the source frame from a signed URL (no base64 upload).
+      const imageUrl = req.sourceImageMediaId ? await getMediaUrl(req.sourceImageMediaId) : null;
+      if (req.sourceImageMediaId && !imageUrl) {
+        throw new AiError("SOURCE_IMAGE_MISSING", `source image not found: ${req.sourceImageMediaId}`);
+      }
+      const gen = provider === "fal" ? falVideo : atlasVideo;
+      const { url, providerRequestId } = await gen({
+        modelId,
+        prompt: req.prompt,
+        imageUrl: imageUrl ?? undefined,
+        durationSec: req.durationSec,
+        aspectRatio: req.aspectRatio,
+        apiKey,
+      });
+      const media = await createMediaFromUrl({ userId: ctx.userId, url, keyPrefix: req.keyPrefix });
+      return { media, quantity: req.durationSec, unit: "second", providerRequestId };
+    }
+    if (provider === "template") {
+      const imageUrl = req.sourceImageMediaId ? await getMediaUrl(req.sourceImageMediaId) : null;
+      const media = await runTemplateProvider(ctx, "video", modelId, req.keyPrefix, {
+        prompt: req.prompt,
+        image_url: imageUrl ?? "",
+        duration: String(req.durationSec),
+        aspect_ratio: req.aspectRatio,
+      });
       return { media, quantity: req.durationSec, unit: "second" };
     }
     throw new AiError("PROVIDER_NOT_IMPLEMENTED", `video provider not wired yet: ${provider}`);
@@ -97,11 +182,28 @@ export async function generateVideo(ctx: CallContext, req: VideoGenRequest): Pro
 }
 
 export async function generateTts(ctx: CallContext, req: TtsGenRequest): Promise<MediaObject> {
-  return generate(ctx, "tts", req.modelKey, async (provider) => {
+  return generate(ctx, "tts", req.modelKey, async ({ provider, modelId }) => {
     if (provider === "fake") {
       const { buffer, mimeType, seconds } = await fakeTts(req.text);
       const media = await createMediaFromBuffer({ userId: ctx.userId, buffer, mimeType, keyPrefix: req.keyPrefix });
       return { media, quantity: seconds, unit: "second" };
+    }
+    if (provider === "fal" || provider === "atlascloud") {
+      const apiKey = getProviderKey(ctx.userId, provider);
+      const referenceAudioUrl = req.voiceId ? (await getMediaUrl(req.voiceId)) ?? undefined : undefined;
+      const gen = provider === "fal" ? falTts : atlasTts;
+      const { url, providerRequestId } = await gen({ modelId, text: req.text, referenceAudioUrl, apiKey });
+      const media = await createMediaFromUrl({ userId: ctx.userId, url, keyPrefix: req.keyPrefix });
+      // fal TTS bills per character; quantity = text length (audio seconds are
+      // informational only — the catalog prices IndexTTS-2 per character).
+      return { media, quantity: req.text.length, unit: "character", providerRequestId };
+    }
+    if (provider === "template") {
+      const media = await runTemplateProvider(ctx, "tts", modelId, req.keyPrefix, {
+        text: req.text,
+        voice_id: req.voiceId ?? "",
+      });
+      return { media, quantity: req.text.length, unit: "character" };
     }
     throw new AiError("PROVIDER_NOT_IMPLEMENTED", `tts provider not wired yet: ${provider}`);
   });
@@ -112,6 +214,9 @@ interface MediaLogFields {
   status: "ok" | "error";
   quantity?: number;
   unit?: string;
+  unitPriceSnapshot?: number | null;
+  estCostUsd?: number | null;
+  providerRequestId?: string;
   errorCode?: string;
 }
 
@@ -127,9 +232,12 @@ function logMediaCall(ctx: CallContext, modelKey: string, apiType: string, f: Me
         episodeId: ctx.episodeId,
         quantity: f.quantity,
         unit: f.unit,
+        unitPriceSnapshot: f.unitPriceSnapshot,
+        estCostUsd: f.estCostUsd,
         latencyMs: f.latencyMs,
         status: f.status,
         errorCode: f.errorCode,
+        providerRequestId: f.providerRequestId,
       },
     })
     .catch((err) => console.error("[ai-call-log] media write failed", { modelKey, err: String(err) }));

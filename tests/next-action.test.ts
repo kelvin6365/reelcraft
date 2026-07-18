@@ -9,6 +9,7 @@ const base: EpisodeSnapshot = {
   scenes: 0,
   shots: { total: 0, withImage: 0, withVideo: 0 },
   storyboardConfirmed: false,
+  isSrtMode: false,
   voiceLines: { total: 0, withAudio: 0 },
   hasExport: false,
   runningTaskTypes: [],
@@ -86,6 +87,58 @@ describe("computeNextAction", () => {
     const a = computeNextAction(done, "e1");
     expect(a.endpoint).toBeNull();
     expect(a.label).toContain("完成");
+  });
+});
+
+describe("computeNextAction — SRT mode", () => {
+  const srtBase: EpisodeSnapshot = { ...base, isSrtMode: true };
+
+  it("skips the script stage and goes straight to assets", () => {
+    // hasScript is false in SRT mode (no rewrite step), but we must not ask for a script
+    const a = computeNextAction(srtBase, "e1");
+    expect(a.stage).toBe("assets");
+    expect(a.endpoint).toContain("extract-assets");
+  });
+
+  it("builds structure from SRT instead of the storyboard generator", () => {
+    const locked: EpisodeSnapshot = {
+      ...srtBase,
+      characters: { total: 1, locked: 1, withCandidates: 1 },
+      locations: { total: 0, locked: 0, withCandidates: 0 },
+      scenes: 0,
+      shots: { total: 0, withImage: 0, withVideo: 0 },
+    };
+    const a = computeNextAction(locked, "e1");
+    expect(a.stage).toBe("storyboard");
+    expect(a.endpoint).toContain("srt-build");
+    expect(a.label).toContain("SRT");
+  });
+
+  it("still requires the storyboard confirm gate before images", () => {
+    const built: EpisodeSnapshot = {
+      ...srtBase,
+      characters: { total: 1, locked: 1, withCandidates: 1 },
+      scenes: 1,
+      shots: { total: 4, withImage: 0, withVideo: 0 },
+      storyboardConfirmed: false,
+    };
+    const a = computeNextAction(built, "e1");
+    expect(a.stage).toBe("storyboard");
+    expect(a.endpoint).toBeNull(); // review gate unchanged
+  });
+
+  it("submits TTS via tts-all (no VOICE_ANALYZE) once shots have video", () => {
+    const readyForVoice: EpisodeSnapshot = {
+      ...srtBase,
+      characters: { total: 1, locked: 1, withCandidates: 1 },
+      scenes: 1,
+      shots: { total: 3, withImage: 3, withVideo: 3 },
+      storyboardConfirmed: true,
+      voiceLines: { total: 3, withAudio: 0 }, // created by SRT_BUILD already
+    };
+    const a = computeNextAction(readyForVoice, "e1");
+    expect(a.stage).toBe("voice");
+    expect(a.endpoint).toContain("tts-all");
   });
 });
 

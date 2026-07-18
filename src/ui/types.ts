@@ -127,3 +127,35 @@ export interface SseEvent {
   eventType: string; // QUEUED | STARTED | PROGRESS | COMPLETED | FAILED | ...
   progress?: number;
 }
+
+// ---------- usage dashboard (GET /api/usage) ----------
+export interface UsageRowView {
+  key: string;
+  label: string;
+  calls: number;
+  inputTokens: number;
+  outputTokens: number;
+  estCostUsd: number;
+  uncostedCalls: number;
+  errorCount: number;
+  avgLatencyMs: number;
+  quantityByUnit: Record<string, number>;
+}
+
+export interface UsageTotalsView {
+  calls: number;
+  inputTokens: number;
+  outputTokens: number;
+  estCostUsd: number;
+  uncostedCalls: number;
+  errorCount: number;
+  avgLatencyMs: number;
+  errorRate: number;
+}
+
+export interface UsageResponse {
+  rows: UsageRowView[];
+  totals: UsageTotalsView;
+  errorTop: { errorCode: string; count: number }[];
+  range: { from: string; to: string; groupBy: string };
+}

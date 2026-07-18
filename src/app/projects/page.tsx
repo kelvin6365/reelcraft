@@ -11,6 +11,10 @@ const STYLE_PACKS = [
   { id: "anime-01", label: "動漫 anime-01" },
 ];
 const RATIOS = ["9:16", "16:9"];
+const INPUT_TYPES = [
+  { id: "novel", label: "小說原文" },
+  { id: "srt", label: "SRT 字幕" },
+];
 
 export default function ProjectsPage() {
   const router = useRouter();
@@ -95,6 +99,7 @@ function CreateProjectModal({
   const [name, setName] = useState("");
   const [stylePackId, setStylePackId] = useState(STYLE_PACKS[0].id);
   const [videoRatio, setVideoRatio] = useState(RATIOS[0]);
+  const [inputType, setInputType] = useState(INPUT_TYPES[0].id);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
@@ -106,7 +111,7 @@ function CreateProjectModal({
     setBusy(true);
     setErr(null);
     try {
-      const p = await api.post<ProjectSummary>("/api/projects", { name: name.trim(), stylePackId, videoRatio });
+      const p = await api.post<ProjectSummary>("/api/projects", { name: name.trim(), stylePackId, videoRatio, inputType });
       onCreated({ ...p, episodes: p.episodes ?? [] });
     } catch (e) {
       setErr((e as ApiClientError).message);
@@ -121,6 +126,16 @@ function CreateProjectModal({
         <div className="field">
           <label>專案名稱</label>
           <input value={name} onChange={(e) => setName(e.target.value)} autoFocus placeholder="例：宮鬥短劇 第一部" />
+        </div>
+        <div className="field">
+          <label>輸入類型</label>
+          <select value={inputType} onChange={(e) => setInputType(e.target.value)}>
+            {INPUT_TYPES.map((t) => (
+              <option key={t.id} value={t.id}>
+                {t.label}
+              </option>
+            ))}
+          </select>
         </div>
         <div className="field">
           <label>畫風包</label>
