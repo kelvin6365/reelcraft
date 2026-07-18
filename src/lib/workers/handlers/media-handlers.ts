@@ -7,7 +7,7 @@ import { newId } from "@/lib/ids";
 import { generateImage, generateTts, generateVideo } from "@/lib/ai/generate-media";
 import { getStorage } from "@/lib/storage";
 import { createMediaFromBuffer } from "@/lib/media/service";
-import { composeShot, concatShots, imageToVideoClip, probeDurationMs } from "@/lib/video/ffmpeg";
+import { composeShot, concatAudio, concatShots, imageToVideoClip, probeDurationMs } from "@/lib/video/ffmpeg";
 import { TaskError } from "@/lib/task/types";
 import type { TaskHandler } from "@/lib/workers/lifecycle";
 import { getModelDefaults, loadEpisodeWithProject, textCallJson } from "@/lib/workers/handlers/shared";
@@ -164,7 +164,7 @@ export const composeEpisodeHandler: TaskHandler = async ({ task, reportProgress 
   const shots = await prisma.shot.findMany({
     where: { episodeId: episode.id },
     orderBy: { shotIndex: "asc" },
-    include: { voiceLines: true },
+    include: { voiceLines: { orderBy: { lineIndex: "asc" } } }, // deterministic order; a shot may own several lines
   });
   if (shots.length === 0) throw new TaskError("NO_SHOTS", "nothing to compose", false);
 
@@ -188,16 +188,30 @@ export const composeEpisodeHandler: TaskHandler = async ({ task, reportProgress 
         continue; // skip shots with no visual at all
       }
 
-      const line = shot.voiceLines[0];
+      // A shot can own multiple dialogue lines (many-to-one matchedShotIndex).
+      // Concatenate all their audio into one track and join their text as the
+      // subtitle — dropping the extras would waste the TTS spend and lose dialogue.
+      const linesWithAudio = shot.voiceLines.filter((l) => l.audioMediaId);
       let audioPath: string | undefined;
-      if (line?.audioMediaId) {
-        const media = await prisma.mediaObject.findUniqueOrThrow({ where: { id: line.audioMediaId } });
-        audioPath = join(dir, `aud-${i}.m4a`);
-        await writeFile(audioPath, await storage.getObjectBuffer(media.storageKey));
+      if (linesWithAudio.length > 0) {
+        const partPaths: string[] = [];
+        for (let k = 0; k < linesWithAudio.length; k++) {
+          const media = await prisma.mediaObject.findUniqueOrThrow({ where: { id: linesWithAudio[k].audioMediaId! } });
+          const p = join(dir, `aud-${i}-${k}.m4a`);
+          await writeFile(p, await storage.getObjectBuffer(media.storageKey));
+          partPaths.push(p);
+        }
+        if (partPaths.length === 1) {
+          audioPath = partPaths[0];
+        } else {
+          audioPath = join(dir, `aud-${i}.m4a`);
+          await concatAudio(partPaths, audioPath);
+        }
       }
+      const subtitle = linesWithAudio.map((l) => l.content).join(" ") || undefined;
 
       const outPath = join(dir, `composed-${i}.mp4`);
-      await composeShot({ videoPath: clipPath, audioPath, subtitle: line?.content }, outPath);
+      await composeShot({ videoPath: clipPath, audioPath, subtitle }, outPath);
       composedPaths.push(outPath);
       reportProgress((i / shots.length) * 80);
     }

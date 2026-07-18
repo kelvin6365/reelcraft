@@ -106,7 +106,7 @@ async function generate(
     // Unit price + est cost from the catalog only — user-reported prices never
     // enter billing (docs 03-provider-layer). Missing entry → null, never throw.
     const price = priceMedia(modelKey, outcome.quantity);
-    logMediaCall(ctx, modelKey, apiType, {
+    await logMediaCall(ctx, modelKey, apiType, {
       latencyMs: Date.now() - startedAt,
       status: "ok",
       quantity: outcome.quantity,
@@ -117,7 +117,7 @@ async function generate(
     });
     return outcome.media;
   } catch (err) {
-    logMediaCall(ctx, modelKey, apiType, {
+    await logMediaCall(ctx, modelKey, apiType, {
       latencyMs: Date.now() - startedAt,
       status: "error",
       errorCode: err instanceof AiError ? err.code : "UNKNOWN",
@@ -164,7 +164,9 @@ function clampDuration(modelKey: string, requested: number): number {
   const caps = getCapabilities(modelKey);
   const allowed = caps?.durationsSec;
   if (!allowed || allowed.length === 0) return requested;
-  return [...allowed].sort((a, b) => Math.abs(a - requested) - Math.abs(b - requested) || a - b)[0];
+  // nearest; on an exact tie prefer the LONGER duration (b - a) so a midpoint
+  // request never silently loses footage.
+  return [...allowed].sort((a, b) => Math.abs(a - requested) - Math.abs(b - requested) || b - a)[0];
 }
 
 export async function generateVideo(ctx: CallContext, req: VideoGenRequest): Promise<MediaObject> {
@@ -244,8 +246,9 @@ interface MediaLogFields {
   errorCode?: string;
 }
 
-function logMediaCall(ctx: CallContext, modelKey: string, apiType: string, f: MediaLogFields): void {
-  void prisma.aiCallLog
+// Awaited by callers so the row is durable before ENFORCE settlement sums it.
+function logMediaCall(ctx: CallContext, modelKey: string, apiType: string, f: MediaLogFields): Promise<void> {
+  return prisma.aiCallLog
     .create({
       data: {
         userId: ctx.userId,
@@ -264,5 +267,6 @@ function logMediaCall(ctx: CallContext, modelKey: string, apiType: string, f: Me
         providerRequestId: f.providerRequestId,
       },
     })
+    .then(() => {})
     .catch((err) => console.error("[ai-call-log] media write failed", { modelKey, err: String(err) }));
 }

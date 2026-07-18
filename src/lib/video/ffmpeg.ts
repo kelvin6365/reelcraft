@@ -97,6 +97,15 @@ export async function imageToVideoClip(imagePath: string, seconds: number, outPa
   ]);
 }
 
+// Concatenate audio files into one AAC track (for a shot with several dialogue lines).
+export async function concatAudio(inputs: string[], outPath: string): Promise<void> {
+  if (inputs.length === 0) throw new TaskError("CONCAT_EMPTY", "no audio to concat", false);
+  const args: string[] = [];
+  for (const p of inputs) args.push("-i", p);
+  const filter = inputs.map((_, i) => `[${i}:a:0]`).join("") + `concat=n=${inputs.length}:v=0:a=1[out]`;
+  await runFfmpeg([...args, "-filter_complex", filter, "-map", "[out]", "-c:a", "aac", "-b:a", "128k", outPath]);
+}
+
 export async function probeDurationMs(path: string): Promise<number> {
   try {
     const { stdout } = await exec("ffprobe", [

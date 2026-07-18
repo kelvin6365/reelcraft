@@ -33,7 +33,9 @@ export async function callModel(ctx: CallContext, req: TextRequest): Promise<Tex
     const result = await adapter.complete(req, apiKey, { promptId: ctx.promptId });
     // Blended input+output token cost from the catalog; missing entry → null.
     const price = priceText(req.modelKey, result.usage.inputTokens, result.usage.outputTokens);
-    logAiCall(ctx, req, {
+    // AWAIT the log write: ENFORCE settlement sums ai_call_logs right after the
+    // handler returns, so the row must be durable before we do (else under-charge).
+    await logAiCall(ctx, req, {
       latencyMs: Date.now() - startedAt,
       status: "ok",
       inputTokens: result.usage.inputTokens,
@@ -43,7 +45,7 @@ export async function callModel(ctx: CallContext, req: TextRequest): Promise<Tex
     });
     return result;
   } catch (err) {
-    logAiCall(ctx, req, {
+    await logAiCall(ctx, req, {
       latencyMs: Date.now() - startedAt,
       status: "error",
       errorCode: err instanceof AiError ? err.code : "UNKNOWN",
@@ -62,10 +64,11 @@ interface LogFields {
   providerRequestId?: string;
 }
 
-// Fire-and-forget: logging must never break or slow the main flow,
-// but a dropped log is still surfaced on console.
-function logAiCall(ctx: CallContext, req: TextRequest, f: LogFields): void {
-  void prisma.aiCallLog
+// Awaited by callers so the row is durable before ENFORCE settlement reads it.
+// The insert error is swallowed (a dropped log must not fail generation), but the
+// await still guarantees ordering vs settle. Returns a never-rejecting promise.
+function logAiCall(ctx: CallContext, req: TextRequest, f: LogFields): Promise<void> {
+  return prisma.aiCallLog
     .create({
       data: {
         userId: ctx.userId,
@@ -85,6 +88,7 @@ function logAiCall(ctx: CallContext, req: TextRequest, f: LogFields): void {
         providerRequestId: f.providerRequestId,
       },
     })
+    .then(() => {})
     .catch((err) => {
       console.error("[ai-call-log] write failed", { modelKey: req.modelKey, err: String(err) });
     });
