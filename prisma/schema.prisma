@@ -1,0 +1,381 @@
+// ReelCraft schema — spec: docs/tech/01-data-model.md
+// Invariants: every business table has userId; media stored as *MediaId FK (never *Url);
+// status columns are String + TS union (no DB enums); PKs are UUIDv7 generated app-side.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ========== Auth (Better-Auth managed shape) ==========
+
+model User {
+  id            String    @id
+  name          String
+  email         String    @unique
+  emailVerified Boolean   @default(false)
+  image         String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  sessions   Session[]
+  accounts   Account[]
+  projects   Project[]
+  episodes   Episode[]
+  scenes     Scene[]
+  shots      Shot[]
+  characters Character[]
+  locations  Location[]
+  voiceLines VoiceLine[]
+  media      MediaObject[]
+  tasks      Task[]
+  auditLogs  AuditLog[]
+  aiCallLogs AiCallLog[]
+  usageCosts UsageCost[]
+
+  @@map("users")
+}
+
+model Session {
+  id        String   @id
+  expiresAt DateTime
+  token     String   @unique
+  ipAddress String?
+  userAgent String?
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId])
+  @@map("sessions")
+}
+
+model Account {
+  id                    String    @id
+  accountId             String
+  providerId            String
+  userId                String
+  user                  User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  accessToken           String?
+  refreshToken          String?
+  idToken               String?
+  accessTokenExpiresAt  DateTime?
+  refreshTokenExpiresAt DateTime?
+  scope                 String?
+  password              String?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  @@index([userId])
+  @@map("accounts")
+}
+
+model Verification {
+  id         String   @id
+  identifier String
+  value      String
+  expiresAt  DateTime
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@map("verifications")
+}
+
+// ========== Core domain ==========
+
+model Project {
+  id              String   @id
+  userId          String
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name            String
+  stylePackId     String   @default("cinematic-01")
+  videoRatio      String   @default("9:16")
+  videoResolution String   @default("720p")
+  modelDefaults   Json     @default("{}") // { text:'openrouter::…', image:'fal::…', video:'fal::…', tts:'fal::…' }
+  inputType       String   @default("novel") // 'novel' | 'script' | 'srt'
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  lastAccessedAt  DateTime @default(now())
+
+  episodes   Episode[]
+  characters Character[]
+  locations  Location[]
+
+  @@index([userId, lastAccessedAt])
+  @@map("projects")
+}
+
+model Episode {
+  id            String  @id
+  userId        String
+  user          User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  projectId     String
+  project       Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  episodeNumber Int
+  rawText       String  @default("")
+  scriptText    String  @default("")
+  // 'draft'|'assets'|'script'|'storyboard'|'images'|'videos'|'export'|'done'
+  status        String  @default("draft")
+  exportMediaId String?
+  exportMedia   MediaObject? @relation("EpisodeExport", fields: [exportMediaId], references: [id])
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  scenes     Scene[]
+  shots      Shot[]
+  voiceLines VoiceLine[]
+
+  @@unique([projectId, episodeNumber])
+  @@index([userId])
+  @@map("episodes")
+}
+
+model Scene {
+  id          String  @id
+  userId      String
+  user        User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  episodeId   String
+  episode     Episode @relation(fields: [episodeId], references: [id], onDelete: Cascade)
+  sceneIndex  Int
+  summary     String  @default("")
+  content     String  @default("")
+  anchorStart String  @default("")
+  anchorEnd   String  @default("")
+
+  shots Shot[]
+
+  @@unique([episodeId, sceneIndex])
+  @@map("scenes")
+}
+
+model Shot {
+  id             String  @id
+  userId         String
+  user           User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  episodeId      String
+  episode        Episode @relation(fields: [episodeId], references: [id], onDelete: Cascade)
+  sceneId        String
+  scene          Scene   @relation(fields: [sceneId], references: [id], onDelete: Cascade)
+  shotIndex      Int
+  storyboardJson Json    @default("{}")
+  imagePrompt    String  @default("")
+  imageMediaId   String?
+  imageMedia     MediaObject? @relation("ShotImage", fields: [imageMediaId], references: [id])
+  imageCandidates Json   @default("[]")
+  videoPrompt    String  @default("")
+  videoMediaId   String?
+  videoMedia     MediaObject? @relation("ShotVideo", fields: [videoMediaId], references: [id])
+  // 'pending'|'generating'|'ready'|'failed' (+ stale flag inside storyboardJson meta)
+  status         String  @default("pending")
+  durationMs     Int     @default(0)
+  linkedToNext   Boolean @default(false)
+
+  voiceLines VoiceLine[]
+
+  @@unique([episodeId, shotIndex])
+  @@index([sceneId])
+  @@map("shots")
+}
+
+model Character {
+  id                 String  @id
+  userId             String
+  user               User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  projectId          String
+  project            Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  name               String
+  aliases            Json    @default("[]")
+  profile            String  @default("")
+  appearancePrompt   String  @default("")
+  lockedImageMediaId String?
+  lockedImageMedia   MediaObject? @relation("CharacterLockedImage", fields: [lockedImageMediaId], references: [id])
+  candidates         Json    @default("[]")
+  voiceId            String?
+  locked             Boolean @default(false)
+
+  voiceLines VoiceLine[]
+
+  @@index([projectId])
+  @@map("characters")
+}
+
+model Location {
+  id                 String  @id
+  userId             String
+  user               User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  projectId          String
+  project            Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  name               String
+  summary            String  @default("")
+  prompt             String  @default("")
+  lockedImageMediaId String?
+  lockedImageMedia   MediaObject? @relation("LocationLockedImage", fields: [lockedImageMediaId], references: [id])
+  candidates         Json    @default("[]")
+  locked             Boolean @default(false)
+
+  @@index([projectId])
+  @@map("locations")
+}
+
+model VoiceLine {
+  id              String  @id
+  userId          String
+  user            User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  episodeId       String
+  episode         Episode @relation(fields: [episodeId], references: [id], onDelete: Cascade)
+  lineIndex       Int
+  speaker         String  @default("")
+  content         String  @default("")
+  characterId     String?
+  character       Character? @relation(fields: [characterId], references: [id], onDelete: SetNull)
+  emotion         String  @default("")
+  emotionStrength Float   @default(0.4) // hard cap 0.5, enforced app-side
+  audioMediaId    String?
+  audioMedia      MediaObject? @relation("VoiceLineAudio", fields: [audioMediaId], references: [id])
+  matchedShotId   String?
+  matchedShot     Shot?   @relation(fields: [matchedShotId], references: [id], onDelete: SetNull)
+
+  @@unique([episodeId, lineIndex])
+  @@map("voice_lines")
+}
+
+// ========== Infra domain ==========
+
+model MediaObject {
+  id         String   @id
+  userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  publicId   String   @unique
+  storageKey String   @unique
+  sha256     String   @default("")
+  mimeType   String   @default("")
+  sizeBytes  BigInt   @default(0)
+  width      Int?
+  height     Int?
+  durationMs Int?
+  createdAt  DateTime @default(now())
+
+  episodeExports        Episode[]   @relation("EpisodeExport")
+  shotImages            Shot[]      @relation("ShotImage")
+  shotVideos            Shot[]      @relation("ShotVideo")
+  characterLockedImages Character[] @relation("CharacterLockedImage")
+  locationLockedImages  Location[]  @relation("LocationLockedImage")
+  voiceLineAudios       VoiceLine[] @relation("VoiceLineAudio")
+
+  @@index([userId])
+  @@map("media_objects")
+}
+
+model Task {
+  id           String    @id
+  userId       String
+  user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  projectId    String?
+  episodeId    String?
+  type         String
+  targetType   String    @default("")
+  targetId     String    @default("")
+  // 'queued'|'processing'|'completed'|'failed'|'canceled'
+  status       String    @default("queued")
+  progress     Int       @default(0)
+  attempt      Int       @default(0)
+  maxAttempts  Int       @default(3)
+  dedupeKey    String    @unique
+  payload      Json      @default("{}")
+  result       Json?
+  errorCode    String?
+  errorMessage String?
+  queuedAt     DateTime  @default(now())
+  startedAt    DateTime?
+  finishedAt   DateTime?
+  heartbeatAt  DateTime?
+
+  events TaskEvent[]
+
+  @@index([status])
+  @@index([userId, queuedAt])
+  @@index([heartbeatAt])
+  @@map("tasks")
+}
+
+model TaskEvent {
+  id        BigInt   @id @default(autoincrement())
+  taskId    String
+  task      Task     @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  eventType String
+  payload   Json     @default("{}")
+  createdAt DateTime @default(now())
+
+  @@index([taskId, id])
+  @@map("task_events")
+}
+
+// ========== Audit domain (docs/tech/04-audit.md) ==========
+
+model AuditLog {
+  id         BigInt   @id @default(autoincrement())
+  userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  at         DateTime @default(now())
+  action     String
+  targetType String   @default("")
+  targetId   String   @default("")
+  // 'ui'|'system'|'watchdog'|'agent'
+  source     String   @default("ui")
+  metadata   Json     @default("{}")
+
+  @@index([userId, at])
+  @@index([targetType, targetId])
+  @@map("audit_logs")
+}
+
+model AiCallLog {
+  id                BigInt   @id @default(autoincrement())
+  userId            String
+  user              User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  at                DateTime @default(now())
+  modelKey          String
+  apiType           String // 'text'|'image'|'video'|'tts'
+  promptId          String?
+  promptVersion     String?
+  taskId            String?
+  projectId         String?
+  episodeId         String?
+  inputTokens       Int?
+  outputTokens      Int?
+  quantity          Float?
+  unit              String?
+  unitPriceSnapshot Decimal? @db.Decimal(18, 8)
+  estCostUsd        Decimal? @db.Decimal(18, 6)
+  latencyMs         Int      @default(0)
+  status            String   @default("ok") // 'ok'|'error'
+  errorCode         String?
+  providerRequestId String?
+
+  @@index([userId, at])
+  @@index([taskId])
+  @@index([modelKey, at])
+  @@map("ai_call_logs")
+}
+
+model UsageCost {
+  id        BigInt   @id @default(autoincrement())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  projectId String?
+  apiType   String
+  model     String
+  action    String   @default("")
+  quantity  Float    @default(0)
+  unit      String   @default("")
+  cost      Decimal  @default(0) @db.Decimal(18, 6)
+  createdAt DateTime @default(now())
+
+  @@index([userId, createdAt])
+  @@map("usage_costs")
+}
