@@ -115,7 +115,21 @@ export const buildScenesHandler: TaskHandler = async ({ task, reportProgress }) 
     });
   }
   reportProgress(95);
-  return { scenes: slices.length };
+
+  // one-click chain: /storyboard endpoint asks BUILD_SCENES to auto-run STORYBOARD_RUN
+  const then = (task.payload as { then?: string }).then;
+  if (then === TASK_TYPE.STORYBOARD_RUN) {
+    await submitTask({
+      userId: task.userId,
+      type: TASK_TYPE.STORYBOARD_RUN,
+      targetType: "episode",
+      targetId: episode.id,
+      projectId: project.id,
+      episodeId: episode.id,
+      payload: { chainedFrom: task.id },
+    });
+  }
+  return { scenes: slices.length, chained: then === TASK_TYPE.STORYBOARD_RUN };
 };
 
 export const storyboardRunHandler: TaskHandler = async ({ task, reportProgress }) => {
