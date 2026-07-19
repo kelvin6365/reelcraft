@@ -48,8 +48,15 @@ function appRoot(modelId: string): string {
 }
 
 function classify(status: number, body: string): AiError {
-  const retryable = status === 429 || status >= 500;
-  return new AiError(`HTTP_${status}`, `fal: ${body.slice(0, 500)}`, retryable);
+  // `no_media_generated` (HTTP 422) is a TRANSIENT hiccup of Gemini-family image
+  // models — they occasionally refuse to produce output even for benign prompts,
+  // and the same request succeeds on retry. Treat it as retryable so the app-layer
+  // backoff re-submits (bounded by maxAttempts, so a genuinely unsafe prompt still
+  // goes terminal after a few tries).
+  const transient422 = status === 422 && body.includes("no_media_generated");
+  const retryable = status === 429 || status >= 500 || transient422;
+  const code = transient422 ? "FAL_NO_MEDIA_RETRY" : `HTTP_${status}`;
+  return new AiError(code, `fal: ${body.slice(0, 500)}`, retryable);
 }
 
 async function submit(modelId: string, apiKey: string, input: Record<string, unknown>): Promise<string> {

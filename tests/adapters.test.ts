@@ -103,6 +103,23 @@ describe("fal adapter — error classification", () => {
     expect((err as AiError).retryable).toBe(false);
   });
 
+  it("treats a 422 no_media_generated as RETRYABLE (transient Gemini-image hiccup)", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => res(422, { detail: [{ type: "no_media_generated", msg: "..." }] })));
+
+    const err = await falImage({ modelId: "m", prompt: "x", aspectRatio: "9:16", apiKey: "k" }).catch((e) => e);
+    expect(err).toBeInstanceOf(AiError);
+    expect((err as AiError).code).toBe("FAL_NO_MEDIA_RETRY");
+    expect((err as AiError).retryable).toBe(true);
+  });
+
+  it("still treats a plain 422 (other reasons) as terminal", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => res(422, { detail: "invalid image_size" })));
+
+    const err = await falImage({ modelId: "m", prompt: "x", aspectRatio: "9:16", apiKey: "k" }).catch((e) => e);
+    expect((err as AiError).code).toBe("HTTP_422");
+    expect((err as AiError).retryable).toBe(false);
+  });
+
   it("raises FAILED status as a terminal AiError", async () => {
     vi.stubGlobal(
       "fetch",
