@@ -5,7 +5,7 @@
 import { prisma } from "@/lib/db";
 import { TaskError } from "@/lib/task/types";
 import type { TaskHandler } from "@/lib/workers/lifecycle";
-import { getModelDefaults, sliceByAnchors, textCallJson } from "@/lib/workers/handlers/shared";
+import { resolveTaskModels, sliceByAnchors, textCallJson } from "@/lib/workers/handlers/shared";
 import { applyHeuristicRisk, planConfigFromJson, targetHint } from "@/lib/planning/plan";
 
 const SOURCE_CAP = 30_000; // single-call cap; longer novels are a v2 two-stage flow
@@ -17,7 +17,7 @@ export const episodeSplitHandler: TaskHandler = async ({ task, reportProgress })
 
   const cfg = planConfigFromJson(project.planConfig);
   if (!cfg) throw new TaskError("BAD_CONFIG", "invalid planConfig", false);
-  const models = getModelDefaults(project);
+  const models = await resolveTaskModels(task, project);
 
   reportProgress(10);
   const out = await textCallJson(

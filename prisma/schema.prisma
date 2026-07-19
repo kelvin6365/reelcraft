@@ -37,6 +37,7 @@ model User {
   aiCallLogs AiCallLog[]
   usageCosts UsageCost[]
   providerKeys UserProviderKey[]
+  modelDefaults UserModelDefaults?
   balance      UserBalance?
   freezes      BalanceFreeze[]
   transactions BalanceTransaction[]
@@ -100,6 +101,7 @@ model Project {
   budgetUsd       Decimal? @db.Decimal(18, 6) // per-project spend cap; null = uncapped
   // AI episode planning (docs/plans/2026-07-19-episode-planning-design.md).
   sourceText      String   @default("") // the full novel; episodes are sliced from it on confirm
+  theme           String   @default("") // 中心思想 anchor — injected into episode_split / rewrite_script
   planStatus      String   @default("none") // 'none' | 'planning' | 'planned'
   planConfig      Json     @default("{}") // { anchor:'length'|'count', seconds?, count?, hookStrength }
   planResult      Json     @default("{}") // { episodes: [{index,title,summary,startAnchor,endAnchor,hook,risk}] } — not committed to Episode rows until confirm
@@ -135,6 +137,8 @@ model Episode {
   // episode via computeNextAction (docs/plans/2026-07-19-batch-generation-design.md).
   autorun       Boolean @default(false)
   autorunConfig Json    @default("{}") // { autoConfirmStoryboard, skipVideo }
+  // 劇本體檢 result { scenes: [{index,label,risk}], overall: {level,flags,note} } — informational, not a gate
+  scriptReview  Json    @default("{}")
   exportMediaId String?
   exportMedia   MediaObject? @relation("EpisodeExport", fields: [exportMediaId], references: [id])
   createdAt     DateTime @default(now())
@@ -206,6 +210,8 @@ model Character {
   aliases            Json    @default("[]")
   profile            String  @default("")
   appearancePrompt   String  @default("")
+  // 人物小傳 { age, occupation, personality, painPoint, backstory, note } — 反哺 rewrite_script
+  bio                Json    @default("{}")
   lockedImageMediaId String?
   lockedImageMedia   MediaObject? @relation("CharacterLockedImage", fields: [lockedImageMediaId], references: [id])
   candidates         Json    @default("[]")
@@ -249,6 +255,9 @@ model VoiceLine {
   character       Character? @relation(fields: [characterId], references: [id], onDelete: SetNull)
   emotion         String  @default("")
   emotionStrength Float   @default(0.4) // hard cap 0.5, enforced app-side
+  // 'dialogue' | 'vo' (voice-over 旁白/內心獨白) | 'os' (off-screen 畫外對白)
+  lineType        String  @default("dialogue")
+  cue             String  @default("") // 括號演技/語氣指示，e.g. 冷笑、拍檯大聲
   audioMediaId    String?
   audioMedia      MediaObject? @relation("VoiceLineAudio", fields: [audioMediaId], references: [id])
   matchedShotId   String?
@@ -392,6 +401,21 @@ model UserProviderKey {
 
   @@unique([userId, provider])
   @@map("user_provider_keys")
+}
+
+// Per-user model-defaults (the "user" layer of the 3-layer resolver, design doc
+// 2026-07-19-provider-model-defaults). Sidecar to the Better-Auth users table
+// (mirrors UserProviderKey/UserBalance) so we never touch the managed shape.
+model UserModelDefaults {
+  userId    String   @id
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  // { text?:'provider::modelId', image?, video?, tts? } — a cleared slot is
+  // absent (never stored as ""); resolution falls back to the system layer.
+  defaults  Json     @default("{}")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("user_model_defaults")
 }
 
 model UserBalance {

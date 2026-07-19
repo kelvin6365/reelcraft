@@ -11,7 +11,8 @@
 
 ```ts
 projects        id, userId, name, stylePackId, videoRatio('9:16'), videoResolution('720p'),
-                modelDefaults jsonb,        // { text:'openrouter::…', image:'fal::…', video:'fal::…', tts:'fal::…' }
+                modelDefaults jsonb,        // project 層覆寫 { text, image, video, tts }；三層解析見 03-provider-layer.md
+                                            // （system 預設 → user_model_defaults 表 → 呢度；缺項落上層，唔會落 fake）
                 inputType,                  // 'novel' | 'script' | 'srt'
                 createdAt, updatedAt, lastAccessedAt
 

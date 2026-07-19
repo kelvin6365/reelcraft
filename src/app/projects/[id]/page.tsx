@@ -90,7 +90,13 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
               <span className="badge">{project.videoRatio}</span>
             </div>
 
-            <ModelPicker id={id} modelDefaults={project.modelDefaults} refetch={reload} />
+            <ModelPicker
+              id={id}
+              modelDefaults={project.modelDefaults}
+              videoRatio={project.videoRatio}
+              videoResolution={project.videoResolution ?? "720p"}
+              refetch={reload}
+            />
 
             {/* ---------- episode planning (novels only) ---------- */}
             {!isSrt && (

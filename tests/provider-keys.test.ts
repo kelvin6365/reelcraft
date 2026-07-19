@@ -13,12 +13,35 @@ process.env.API_ENCRYPTION_KEY = "unit-test-encryption-key-0123456789";
 
 type Helpers = typeof import("@/lib/user/provider-keys");
 type TestMod = typeof import("@/lib/ai/key-check");
+type ProvidersMod = typeof import("@/lib/providers");
 let H: Helpers;
 let T: TestMod;
+let P: ProvidersMod;
 
 beforeAll(async () => {
   H = await import("@/lib/user/provider-keys");
   T = await import("@/lib/ai/key-check");
+  P = await import("@/lib/providers");
+});
+
+describe("BYOK_PROVIDERS — derived from the provider registry", () => {
+  it("matches exactly the registry providers marked byok", () => {
+    const fromRegistry = P.PROVIDERS.filter((p) => p.byok).map((p) => p.id).sort();
+    expect([...P.BYOK_PROVIDERS].sort()).toEqual(fromRegistry);
+  });
+
+  it("excludes fake (dev-only, no BYOK) but includes the three real providers", () => {
+    expect(P.isByokProvider("fake")).toBe(false);
+    expect(P.isByokProvider("openrouter")).toBe(true);
+    expect(P.isByokProvider("fal")).toBe(true);
+    expect(P.isByokProvider("atlascloud")).toBe(true);
+  });
+
+  it("registry envKeyName is null exactly for the keyless fake provider", () => {
+    expect(P.getProviderDef("fake")?.envKeyName).toBeNull();
+    expect(P.getProviderDef("openrouter")?.envKeyName).toBe("OPENROUTER_API_KEY");
+    expect(P.getProviderDef("fal")?.envKeyName).toBe("FAL_KEY");
+  });
 });
 
 describe("parsePutBody", () => {

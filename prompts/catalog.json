@@ -23,7 +23,7 @@
     {
       "id": "rewrite_script",
       "path": "pipeline/rewrite_script.zh.txt",
-      "version": "1",
+      "version": "2",
       "variables": [
         "novel_text",
         "style_note"
@@ -79,7 +79,7 @@
     {
       "id": "voice_analyze",
       "path": "pipeline/voice_analyze.zh.txt",
-      "version": "1",
+      "version": "2",
       "variables": [
         "scene_text",
         "shot_list_json"

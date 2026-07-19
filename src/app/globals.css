@@ -1064,3 +1064,24 @@ table.usage tr:last-child td {
   font-size: 13px;
   color: var(--warn, #e6aa3c);
 }
+
+/* PR4: images/videos station header chip — which model + unit price is
+   actually active right now. Mirrors .cost-preview's warning tint for the
+   fake-provider variant, so it reads as the same "pay attention" signal. */
+.model-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  background: var(--bg-elev-2);
+  color: var(--text-dim);
+  border: 1px solid var(--border);
+  white-space: nowrap;
+}
+.model-chip.fake {
+  background: rgba(230, 170, 60, 0.08);
+  border-color: rgba(230, 170, 60, 0.35);
+  color: var(--warn, #e6aa3c);
+}

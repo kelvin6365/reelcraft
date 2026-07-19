@@ -152,6 +152,17 @@
     }
   },
   {
+    "modelKey": "openrouter::google/gemini-2.5-flash",
+    "apiType": "text",
+    "capabilities": {},
+    "pricing": {
+      "mode": "text",
+      "inputPerMTok": 0.3,
+      "outputPerMTok": 2.5,
+      "currency": "USD"
+    }
+  },
+  {
     "modelKey": "openrouter::anthropic/claude-sonnet-4.5",
     "apiType": "text",
     "capabilities": {},

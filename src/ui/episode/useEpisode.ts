@@ -4,7 +4,7 @@
 // feed a per-stage "生成中 x%" indicator.
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, ApiClientError } from "@/ui/api";
-import type { EpisodeView, SseEvent, StageKey } from "@/ui/types";
+import type { EpisodeView, LiveTaskMap, SseEvent, StageKey } from "@/ui/types";
 
 const TASK_TYPE_TO_STAGE: Record<string, StageKey> = {
   REWRITE_SCRIPT: "script",
@@ -24,6 +24,9 @@ export function useEpisode(episodeId: string) {
   const [view, setView] = useState<EpisodeView | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [progress, setProgress] = useState<Partial<Record<StageKey, number>>>({});
+  // per-target in-flight state (`${taskType}:${targetId}`) — drives per-cell
+  // "生成中 x%" indicators and button locking in the media grids
+  const [live, setLive] = useState<LiveTaskMap>({});
 
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -60,10 +63,20 @@ export function useEpisode(episodeId: string) {
         return;
       }
       const stage = TASK_TYPE_TO_STAGE[ev.taskType];
+      const targetKey = ev.targetId ? `${ev.taskType}:${ev.targetId}` : null;
       if (ev.eventType === "PROGRESS" && stage) {
         setProgress((p) => ({ ...p, [stage]: Math.round(ev.progress ?? 0) }));
+        if (targetKey) setLive((m) => ({ ...m, [targetKey]: { progress: Math.round(ev.progress ?? 0) } }));
+      } else if (ev.eventType === "CREATED" || ev.eventType === "PROCESSING" || ev.eventType === "RETRYING") {
+        if (targetKey) setLive((m) => ({ ...m, [targetKey]: { progress: m[targetKey]?.progress } }));
       } else if (ev.eventType === "COMPLETED" || ev.eventType === "FAILED") {
         if (stage) setProgress((p) => ({ ...p, [stage]: undefined }));
+        // Failures surface via the failure drawer (refetch below) — just unlock the cell.
+        if (targetKey)
+          setLive((m) => {
+            const { [targetKey]: _gone, ...rest } = m;
+            return rest;
+          });
         debouncedRefetch();
       }
     };
@@ -79,5 +92,5 @@ export function useEpisode(episodeId: string) {
     };
   }, []);
 
-  return { view, error, progress, refetch };
+  return { view, error, progress, live, refetch };
 }

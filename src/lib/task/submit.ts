@@ -19,6 +19,13 @@ export interface SubmitTaskInput {
   episodeId?: string;
   payload?: Record<string, unknown>;
   maxAttempts?: number;
+  // Manual "generate" buttons use payload {at: Date.now()} so a re-generate after
+  // completion gets a fresh dedupeKey — but that also means every click while a
+  // task is STILL RUNNING would enqueue (and pay for) another one. dedupeActive
+  // collapses those: any active task on the same (type, targetId) wins, regardless
+  // of payload. Tiny findFirst→create race window accepted (the dedupeKey unique
+  // still catches byte-identical payloads).
+  dedupeActive?: boolean;
 }
 
 function buildDedupeKey(input: SubmitTaskInput): string {
@@ -34,6 +41,14 @@ export interface SubmitResult {
 }
 
 export async function submitTask(input: SubmitTaskInput): Promise<SubmitResult> {
+  if (input.dedupeActive && input.targetId) {
+    const running = await prisma.task.findFirst({
+      where: { userId: input.userId, type: input.type, targetId: input.targetId, status: { in: ["queued", "processing"] } },
+      select: { id: true },
+    });
+    if (running) return { taskId: running.id, deduped: true };
+  }
+
   const dedupeKey = buildDedupeKey(input);
 
   // Dedupe: an active task with the same key wins (idempotent submission).
@@ -88,14 +103,14 @@ export async function submitTask(input: SubmitTaskInput): Promise<SubmitResult> 
     source: "system",
     metadata: { type: input.type, targetId: input.targetId },
   });
-  publishTaskEvent(input.projectId ?? null, { taskId: task.id, taskType: input.type, eventType: "CREATED" });
+  publishTaskEvent(input.projectId ?? null, { taskId: task.id, taskType: input.type, targetType: input.targetType, targetId: input.targetId, eventType: "CREATED" });
 
   // ENFORCE billing: reserve the worst-case cost before enqueue. The worker
   // settles this to actual on completion (or rolls it back on failure). An
   // uncovered balance fails the task terminally — nothing is enqueued.
   if (env.BILLING_MODE === "ENFORCE") {
     try {
-      const quoteUsd = await estimateTaskCost(input.type, input.payload ?? {}, input.projectId);
+      const quoteUsd = await estimateTaskCost(input.type, input.userId, input.payload ?? {}, input.projectId);
       await freezeBalance(input.userId, quoteUsd, task.id, task.id);
     } catch (err) {
       if (err instanceof InsufficientBalanceError) {
@@ -107,6 +122,8 @@ export async function submitTask(input: SubmitTaskInput): Promise<SubmitResult> 
         publishTaskEvent(input.projectId ?? null, {
           taskId: task.id,
           taskType: input.type,
+          targetType: input.targetType,
+          targetId: input.targetId,
           eventType: "FAILED",
           errorCode: "INSUFFICIENT_BALANCE",
         });
@@ -128,6 +145,8 @@ export async function submitTask(input: SubmitTaskInput): Promise<SubmitResult> 
     publishTaskEvent(input.projectId ?? null, {
       taskId: task.id,
       taskType: input.type,
+      targetType: input.targetType,
+      targetId: input.targetId,
       eventType: "FAILED",
       errorCode: "ENQUEUE_FAILED",
     });
@@ -149,5 +168,5 @@ export async function retryTask(userId: string, taskId: string): Promise<void> {
   });
   audit(userId, "task.retry", { targetType: "task", targetId: task.id });
   await addTaskJob(getQueueForTaskType(task.type as TaskType), task.id, 1);
-  publishTaskEvent(task.projectId, { taskId: task.id, taskType: task.type, eventType: "RETRYING" });
+  publishTaskEvent(task.projectId, { taskId: task.id, taskType: task.type, targetType: task.targetType, targetId: task.targetId, eventType: "RETRYING" });
 }

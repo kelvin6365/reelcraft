@@ -1,13 +1,15 @@
 "use client";
 import { useState, type ReactNode } from "react";
 import { api, ApiClientError } from "@/ui/api";
-import type { EpisodeView, StageKey, ShotView } from "@/ui/types";
+import type { EpisodeView, LiveTaskMap, StageKey, ShotView } from "@/ui/types";
 import { STATION_BY_KEY } from "./stations";
+import { shortModelName, isFakeModel } from "@/ui/model-format";
 
 interface PanelProps {
   view: EpisodeView;
   progress: Partial<Record<StageKey, number>>;
   refetch: () => Promise<void>;
+  live?: LiveTaskMap; // per-target SSE state — used by the media-grid stations
 }
 
 // ---------- shared shell ----------
@@ -335,15 +337,17 @@ function ShotMediaGrid({
   shots,
   media,
   refetch,
+  live,
 }: {
   shots: ShotView[];
   media: "image" | "video";
   refetch: () => Promise<void>;
+  live?: LiveTaskMap;
 }) {
   return (
     <div className="shot-grid">
       {shots.map((sh) => (
-        <ShotMediaCell key={sh.id} shot={sh} media={media} refetch={refetch} />
+        <ShotMediaCell key={sh.id} shot={sh} media={media} refetch={refetch} live={live} />
       ))}
     </div>
   );
@@ -353,14 +357,26 @@ function ShotMediaCell({
   shot,
   media,
   refetch,
+  live,
 }: {
   shot: ShotView;
   media: "image" | "video";
   refetch: () => Promise<void>;
+  live?: LiveTaskMap;
 }) {
   const { busy, err, run } = useAction(refetch);
   const url = media === "image" ? shot.imageUrl : shot.videoUrl;
   const endpoint = media === "image" ? "generate-image" : "generate-video";
+
+  // In-flight = server said so at view load (survives reloads) OR the live SSE
+  // stream says so now. Locks the button — the server-side dedupeActive guard is
+  // the backstop, this is the UX. Live progress (if any) wins over the snapshot's.
+  const taskType = media === "image" ? "IMAGE_SHOT" : "VIDEO_SHOT";
+  const liveState = live?.[`${taskType}:${shot.id}`];
+  const serverTask = media === "image" ? shot.activeImageTask : shot.activeVideoTask;
+  const inFlight = Boolean(liveState) || Boolean(serverTask);
+  const pct = liveState?.progress ?? serverTask?.progress;
+
   return (
     <div className="shot-cell">
       {url ? (
@@ -371,7 +387,7 @@ function ShotMediaCell({
         )
       ) : (
         <div className="media" style={{ display: "flex", alignItems: "center", justifyContent: "center" }}>
-          <span className="faint">未生成</span>
+          <span className="faint">{inFlight ? <><span className="spinner" /> 生成中{pct ? ` ${pct}%` : "…"}</> : "未生成"}</span>
         </div>
       )}
       <div className="cell-body">
@@ -380,10 +396,18 @@ function ShotMediaCell({
         </span>
         <button
           className="btn btn-sm"
-          disabled={busy}
+          disabled={busy || inFlight}
           onClick={() => run(() => api.post(`/api/shots/${shot.id}/${endpoint}`))}
         >
-          {busy ? <span className="spinner" /> : url ? "重生" : "生成"}
+          {busy || inFlight ? (
+            <>
+              <span className="spinner" /> {inFlight ? `生成中${pct ? ` ${pct}%` : ""}` : ""}
+            </>
+          ) : url ? (
+            "重生"
+          ) : (
+            "生成"
+          )}
         </button>
       </div>
       {err && <p className="error-text" style={{ padding: "0 10px 8px" }}>{err}</p>}
@@ -391,25 +415,56 @@ function ShotMediaCell({
   );
 }
 
-export function ImagesPanel({ view, progress, refetch }: PanelProps) {
+// Station header chip: which model this station will actually generate with
+// right now (resolved system/user/project default) + its per-unit price.
+// fake::* gets a distinct warning tint — the original fix for the "project
+// silently used fake::video and shipped an empty clip" incident.
+function ModelChip({
+  icon,
+  unit,
+  model,
+}: {
+  icon: string;
+  unit: string;
+  model?: { modelKey: string; unitUsd: number | null } | null;
+}) {
+  if (!model) return null;
+  const fake = isFakeModel(model.modelKey);
   return (
-    <Station stage="images" progress={progress}>
+    <span className={`model-chip${fake ? " fake" : ""}`}>
+      {icon} {shortModelName(model.modelKey)}
+      {model.unitUsd !== null && ` · ~$${model.unitUsd.toFixed(2)}/${unit}`}
+    </span>
+  );
+}
+
+export function ImagesPanel({ view, progress, refetch, live }: PanelProps) {
+  return (
+    <Station
+      stage="images"
+      progress={progress}
+      action={<ModelChip icon="🖼️" unit="張" model={view.cost?.activeModels?.image} />}
+    >
       {view.shots.length === 0 ? (
         <div className="empty">先完成分鏡站。</div>
       ) : (
-        <ShotMediaGrid shots={view.shots} media="image" refetch={refetch} />
+        <ShotMediaGrid shots={view.shots} media="image" refetch={refetch} live={live} />
       )}
     </Station>
   );
 }
 
-export function VideosPanel({ view, progress, refetch }: PanelProps) {
+export function VideosPanel({ view, progress, refetch, live }: PanelProps) {
   return (
-    <Station stage="videos" progress={progress}>
+    <Station
+      stage="videos"
+      progress={progress}
+      action={<ModelChip icon="🎬" unit="鏡" model={view.cost?.activeModels?.video} />}
+    >
       {view.shots.length === 0 ? (
         <div className="empty">先完成分鏡站。</div>
       ) : (
-        <ShotMediaGrid shots={view.shots} media="video" refetch={refetch} />
+        <ShotMediaGrid shots={view.shots} media="video" refetch={refetch} live={live} />
       )}
     </Station>
   );
@@ -429,8 +484,21 @@ export function VoicePanel({ view, progress }: PanelProps) {
               <span className="badge" style={{ flexShrink: 0 }}>
                 {v.speaker || "旁白"}
               </span>
+              {v.lineType === "vo" && (
+                <span className="badge" style={{ flexShrink: 0, color: "#c4b5fd" }} title="Voice Over：旁白/內心獨白，場內人聽不到">
+                  VO
+                </span>
+              )}
+              {v.lineType === "os" && (
+                <span className="badge" style={{ flexShrink: 0, color: "#93c5fd" }} title="Off-Screen：人在場景內但不在畫面">
+                  OS
+                </span>
+              )}
               <div style={{ flex: 1, minWidth: 0 }}>
-                <div>{v.content}</div>
+                <div>
+                  {v.cue ? <span className="faint">（{v.cue}）</span> : null}
+                  {v.content}
+                </div>
                 {v.emotion && (
                   <div className="faint" style={{ fontSize: 12 }}>
                     情緒：{v.emotion}（{v.emotionStrength.toFixed(2)}）

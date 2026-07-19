@@ -15,6 +15,7 @@ export const POST = withAuth(
       await submitTask({
         userId, type: TASK_TYPE.VIDEO_SHOT, targetType: "shot", targetId: shot.id,
         projectId: episode.projectId, episodeId: episode.id, payload: { at: Date.now() },
+        dedupeActive: true,
       }),
     );
   },

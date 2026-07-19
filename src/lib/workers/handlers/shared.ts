@@ -4,26 +4,27 @@ import { buildPrompt } from "@/lib/prompts/build-prompt";
 import { safeParseJson } from "@/lib/prompts/parse";
 import { outputSchemas, type OutputSchemaId } from "@/lib/prompts/schemas";
 import { TaskError } from "@/lib/task/types";
+import { resolveModelDefaults, type ResolvedModelDefaults } from "@/lib/model-defaults/resolve";
 import type { Episode, Project, Task } from "@prisma/client";
 import type { z } from "zod";
 
-export interface ModelDefaults {
-  text: string;
-  image: string;
-  video: string;
-  tts: string;
-}
+// Re-export so handlers keep importing the shape from here.
+export type { ModelDefaults } from "@/lib/model-defaults/resolve";
 
-// Missing entries fall back to the fake provider so dev/offline always runs.
-// No silent provider guessing happens here: the key itself still names its provider.
-export function getModelDefaults(project: Project): ModelDefaults {
-  const d = (project.modelDefaults ?? {}) as Partial<ModelDefaults>;
-  return {
-    text: d.text ?? "fake::pipeline",
-    image: d.image ?? "fake::image",
-    video: d.video ?? "fake::video",
-    tts: d.tts ?? "fake::tts",
-  };
+// Resolve the effective models for a task through the three-layer resolver and
+// log the outcome once (which layer won each slot). Replaces the old sync
+// getModelDefaults + its fake::* fallbacks — resolution now bottoms out at real
+// system defaults, never fake (CLAUDE.md #3).
+export async function resolveTaskModels(
+  task: Pick<Task, "id" | "userId">,
+  project?: Pick<Project, "modelDefaults"> | null,
+): Promise<ResolvedModelDefaults> {
+  const models = await resolveModelDefaults(task.userId, project);
+  const s = models.source;
+  console.log(
+    `[model-resolve] task=${task.id} text=${models.text}(${s.text}) image=${models.image}(${s.image}) video=${models.video}(${s.video}) tts=${models.tts}(${s.tts})`,
+  );
+  return models;
 }
 
 export async function loadEpisodeWithProject(task: Task): Promise<{ episode: Episode; project: Project }> {

@@ -22,7 +22,7 @@ export default function EpisodeWorkspacePage({
   params: Promise<{ id: string; episodeId: string }>;
 }) {
   const { episodeId } = use(params);
-  const { view, error, progress, refetch } = useEpisode(episodeId);
+  const { view, error, progress, live, refetch } = useEpisode(episodeId);
 
   if (error && !view) {
     return (
@@ -57,8 +57,8 @@ export default function EpisodeWorkspacePage({
         <AssetsPanel view={view} progress={progress} refetch={refetch} />
         <ScriptPanel view={view} progress={progress} refetch={refetch} />
         <StoryboardPanel view={view} progress={progress} refetch={refetch} />
-        <ImagesPanel view={view} progress={progress} refetch={refetch} />
-        <VideosPanel view={view} progress={progress} refetch={refetch} />
+        <ImagesPanel view={view} progress={progress} refetch={refetch} live={live} />
+        <VideosPanel view={view} progress={progress} refetch={refetch} live={live} />
         <VoicePanel view={view} progress={progress} refetch={refetch} />
         <ExportPanel view={view} progress={progress} refetch={refetch} />
       </main>

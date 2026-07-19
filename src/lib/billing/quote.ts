@@ -4,6 +4,7 @@
 // from ai_call_logs and refunds the difference, so over-reserving is safe.
 import { prisma } from "@/lib/db";
 import { getCapabilityEntry } from "@/lib/ai/capabilities";
+import { resolveModelDefaults } from "@/lib/model-defaults/resolve";
 import { TASK_TYPE, type TaskType } from "@/lib/task/types";
 
 // Text tasks price per-token at run time; we can't know token counts up front,
@@ -21,29 +22,29 @@ const DEFAULT_TTS_CHARS = 500;
 type Payload = Record<string, unknown>;
 
 interface ProjectModels {
-  image: string | null;
-  video: string | null;
-  tts: string | null;
+  image: string;
+  video: string;
+  tts: string;
 }
 
-async function resolveModels(projectId: string | undefined): Promise<ProjectModels> {
-  if (!projectId) return { image: null, video: null, tts: null };
-  const project = await prisma.project.findUnique({
-    where: { id: projectId },
-    select: { modelDefaults: true },
-  });
-  const d = (project?.modelDefaults ?? {}) as { image?: string; video?: string; tts?: string };
-  return { image: d.image ?? null, video: d.video ?? null, tts: d.tts ?? null };
+// Resolve through the shared three-layer resolver — same models the worker will
+// actually run — so a quote prices real system defaults even when the project
+// set no overrides (design doc: empty-defaults projects are no longer $0/fake).
+async function resolveModels(userId: string, projectId: string | undefined): Promise<ProjectModels> {
+  const project = projectId
+    ? await prisma.project.findUnique({ where: { id: projectId }, select: { modelDefaults: true } })
+    : null;
+  const r = await resolveModelDefaults(userId, project);
+  return { image: r.image, video: r.video, tts: r.tts };
 }
 
-function flatUnitPrice(modelKey: string | null, unit: "image" | "second" | "character"): number {
-  if (!modelKey) return 0;
+function flatUnitPrice(modelKey: string, unit: "image" | "second" | "character"): number {
   const pricing = getCapabilityEntry(modelKey)?.pricing;
   return pricing?.mode === "flat" && pricing.unit === unit ? pricing.perUnit : 0;
 }
 
-function worstVideoSeconds(modelKey: string | null): number {
-  const durations = modelKey ? getCapabilityEntry(modelKey)?.capabilities?.durationsSec : undefined;
+function worstVideoSeconds(modelKey: string): number {
+  const durations = getCapabilityEntry(modelKey)?.capabilities?.durationsSec;
   return durations?.length ? Math.max(...durations) : FALLBACK_VIDEO_SEC;
 }
 
@@ -56,13 +57,15 @@ function ttsCharCount(payload: Payload): number {
 }
 
 // Worst-case USD to reserve for one task. Falls to $0 for fake/free providers,
-// which is correct — those tasks cost nothing.
+// which is correct — those tasks cost nothing. Prices the models the resolver
+// picks for this user+project, so needs userId (design doc: quote == run).
 export async function estimateTaskCost(
   type: TaskType,
+  userId: string,
   payload: Payload = {},
   projectId?: string,
 ): Promise<number> {
-  const models = await resolveModels(projectId);
+  const models = await resolveModels(userId, projectId);
 
   switch (type) {
     case TASK_TYPE.IMAGE_CHARACTER:

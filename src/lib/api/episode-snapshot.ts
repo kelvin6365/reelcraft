@@ -15,7 +15,7 @@ const CONFIRMED_STATUSES = ["images", "videos", "export", "done"];
 export async function buildEpisodeSnapshot(
   episode: { id: string; projectId: string; rawText: string; scriptText: string; status: string; exportMediaId: string | null },
   inputType: string,
-): Promise<{ snapshot: EpisodeSnapshot; characters: Awaited<ReturnType<typeof prisma.character.findMany>>; locations: Awaited<ReturnType<typeof prisma.location.findMany>>; shots: Awaited<ReturnType<typeof prisma.shot.findMany>>; voiceLines: Awaited<ReturnType<typeof prisma.voiceLine.findMany>> }> {
+): Promise<{ snapshot: EpisodeSnapshot; characters: Awaited<ReturnType<typeof prisma.character.findMany>>; locations: Awaited<ReturnType<typeof prisma.location.findMany>>; shots: Awaited<ReturnType<typeof prisma.shot.findMany>>; voiceLines: Awaited<ReturnType<typeof prisma.voiceLine.findMany>>; activeTasks: { id: string; type: string; targetId: string; status: string; progress: number }[] }> {
   const episodeId = episode.id;
   const [characters, locations, scenes, shots, voiceLines, activeTasks, failedTasks] = await Promise.all([
     prisma.character.findMany({ where: { projectId: episode.projectId } }),
@@ -23,7 +23,7 @@ export async function buildEpisodeSnapshot(
     prisma.scene.count({ where: { episodeId } }),
     prisma.shot.findMany({ where: { episodeId }, orderBy: { shotIndex: "asc" } }),
     prisma.voiceLine.findMany({ where: { episodeId }, orderBy: { lineIndex: "asc" } }),
-    prisma.task.findMany({ where: { episodeId, status: { in: ACTIVE_STATUSES } }, select: { type: true } }),
+    prisma.task.findMany({ where: { episodeId, status: { in: ACTIVE_STATUSES } }, select: { id: true, type: true, targetId: true, status: true, progress: true } }),
     prisma.task.count({ where: { episodeId, status: "failed" } }),
   ]);
 
@@ -56,7 +56,7 @@ export async function buildEpisodeSnapshot(
     runningTaskTypes: activeTasks.map((t) => t.type),
     failedTasks,
   };
-  return { snapshot, characters, locations, shots, voiceLines };
+  return { snapshot, characters, locations, shots, voiceLines, activeTasks };
 }
 
 export async function buildEpisodeView(userId: string, episodeId: string) {
@@ -66,8 +66,15 @@ export async function buildEpisodeView(userId: string, episodeId: string) {
   });
   if (!episode) throw new ApiError("NOT_FOUND", 404, "episode not found");
 
-  const { snapshot, characters, locations, shots, voiceLines } = await buildEpisodeSnapshot(episode, episode.project.inputType);
+  const { snapshot, characters, locations, shots, voiceLines, activeTasks } = await buildEpisodeSnapshot(episode, episode.project.inputType);
   const failedTasks = snapshot.failedTasks;
+
+  // Per-shot in-flight task state (survives page reloads; live SSE keeps it fresh
+  // afterwards). Keyed maps so the grid cells can lock their buttons + show progress.
+  const activeByKey = new Map<string, { taskId: string; status: string; progress: number }>();
+  for (const t of activeTasks) {
+    if (t.targetId) activeByKey.set(`${t.type}:${t.targetId}`, { taskId: t.id, status: t.status, progress: t.progress });
+  }
 
   const [charactersWithUrls, locationsWithUrls, shotsWithUrls, voiceLinesWithUrls, episodeWithUrl] = await Promise.all([
     attachMediaUrls(characters, ["lockedImageMediaId"]),
@@ -109,7 +116,11 @@ export async function buildEpisodeView(userId: string, episodeId: string) {
     },
     characters: charactersWithUrls,
     locations: locationsWithUrls,
-    shots: shotsWithUrls,
+    shots: shotsWithUrls.map((sh) => ({
+      ...sh,
+      activeImageTask: activeByKey.get(`IMAGE_SHOT:${(sh as { id: string }).id}`) ?? null,
+      activeVideoTask: activeByKey.get(`VIDEO_SHOT:${(sh as { id: string }).id}`) ?? null,
+    })),
     voiceLines: voiceLinesWithUrls,
     stages: computeStages(snapshot),
     nextAction: computeNextAction(snapshot, episodeId),

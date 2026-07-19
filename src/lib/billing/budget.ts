@@ -3,6 +3,7 @@
 import { prisma } from "@/lib/db";
 import { AiError } from "@/lib/ai/types";
 import { getCapabilityEntry } from "@/lib/ai/capabilities";
+import { resolveModelDefaults } from "@/lib/model-defaults/resolve";
 
 export async function getProjectSpendUsd(projectId: string): Promise<number> {
   const agg = await prisma.aiCallLog.aggregate({
@@ -32,6 +33,11 @@ export async function assertWithinBudget(projectId: string | undefined): Promise
   }
 }
 
+export interface ActiveModels {
+  image: { modelKey: string; unitUsd: number | null };
+  video: { modelKey: string; unitUsd: number | null; perSecond: number | null };
+}
+
 export interface DownstreamEstimate {
   pendingImages: number;
   pendingVideos: number;
@@ -39,16 +45,19 @@ export interface DownstreamEstimate {
   estVideoUsd: number;
   totalUsd: number;
   videoUnitUsd: number | null;
+  activeModels: ActiveModels;
 }
 
 // Cost preview for the storyboard confirm gate: what will the remaining
 // pipeline roughly cost with the project's current model defaults?
-export async function estimateDownstreamCost(episodeId: string): Promise<DownstreamEstimate> {
+export async function estimateDownstreamCost(userId: string, episodeId: string): Promise<DownstreamEstimate> {
   const episode = await prisma.episode.findUniqueOrThrow({
     where: { id: episodeId },
     include: { project: { select: { modelDefaults: true } } },
   });
-  const defaults = (episode.project.modelDefaults ?? {}) as { image?: string; video?: string };
+  // Same three-layer resolution the worker runs, so a project with no overrides
+  // is priced from the real system defaults rather than treated as free.
+  const defaults = await resolveModelDefaults(userId, episode.project);
   const shots = await prisma.shot.findMany({
     where: { episodeId },
     select: { imageMediaId: true, videoMediaId: true, durationMs: true },
@@ -57,25 +66,32 @@ export async function estimateDownstreamCost(episodeId: string): Promise<Downstr
   const pendingImages = shots.filter((s) => !s.imageMediaId).length;
   const pendingVideos = shots.filter((s) => !s.videoMediaId).length;
 
-  const imageEntry = defaults.image ? getCapabilityEntry(defaults.image) : null;
-  const videoEntry = defaults.video ? getCapabilityEntry(defaults.video) : null;
+  const imageEntry = getCapabilityEntry(defaults.image);
+  const videoEntry = getCapabilityEntry(defaults.video);
   const imagePricing = imageEntry?.pricing;
   const videoPricing = videoEntry?.pricing;
-  const imageUnit = imagePricing && "unit" in imagePricing && imagePricing.unit === "image" ? Number(imagePricing.perUnit) : 0;
-  const videoPerSec = videoPricing && "unit" in videoPricing && videoPricing.unit === "second" ? Number(videoPricing.perUnit) : 0;
+  // null (not 0) when the catalog has no pricing for this slot — the
+  // billing-gap-as-null convention; the UI renders that as "—" rather than $0.
+  const imageUnitUsd = imagePricing && "unit" in imagePricing && imagePricing.unit === "image" ? Number(imagePricing.perUnit) : null;
+  const videoPerSecUsd = videoPricing && "unit" in videoPricing && videoPricing.unit === "second" ? Number(videoPricing.perUnit) : null;
   // real models snap to allowed durations; assume the smallest allowed (usually 5s)
   const perShotSec = videoEntry?.capabilities?.durationsSec?.length
     ? Math.min(...videoEntry.capabilities.durationsSec)
     : 5;
+  const videoUnitUsd = videoPerSecUsd !== null ? perShotSec * videoPerSecUsd : null;
 
-  const estImageUsd = pendingImages * imageUnit;
-  const estVideoUsd = pendingVideos * perShotSec * videoPerSec;
+  const estImageUsd = pendingImages * (imageUnitUsd ?? 0);
+  const estVideoUsd = pendingVideos * (videoUnitUsd ?? 0);
   return {
     pendingImages,
     pendingVideos,
     estImageUsd,
     estVideoUsd,
     totalUsd: estImageUsd + estVideoUsd,
-    videoUnitUsd: videoPerSec > 0 ? perShotSec * videoPerSec : null,
+    videoUnitUsd,
+    activeModels: {
+      image: { modelKey: defaults.image, unitUsd: imageUnitUsd },
+      video: { modelKey: defaults.video, unitUsd: videoUnitUsd, perSecond: videoPerSecUsd },
+    },
   };
 }

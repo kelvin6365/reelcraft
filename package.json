@@ -15,11 +15,11 @@
     "worker": "tsx watch --env-file=.env src/lib/workers/index.ts",
     "worker:once": "tsx --env-file=.env src/lib/workers/index.ts",
     "watchdog": "tsx watch --env-file=.env src/lib/workers/watchdog.ts",
-    "smoke:task": "tsx --env-file=.env scripts/smoke-task.ts",
-    "smoke:pipeline": "tsx --env-file=.env scripts/smoke-pipeline.ts",
-    "smoke:plan": "tsx --env-file=.env scripts/smoke-plan.ts",
-    "smoke:srt": "tsx --env-file=.env scripts/smoke-srt.ts",
-    "smoke:batch": "tsx --env-file=.env scripts/smoke-batch.ts",
+    "smoke:task": "MODEL_DEFAULTS_PRESET=fake tsx --env-file=.env scripts/smoke-task.ts",
+    "smoke:pipeline": "MODEL_DEFAULTS_PRESET=fake tsx --env-file=.env scripts/smoke-pipeline.ts",
+    "smoke:plan": "MODEL_DEFAULTS_PRESET=fake tsx --env-file=.env scripts/smoke-plan.ts",
+    "smoke:srt": "MODEL_DEFAULTS_PRESET=fake tsx --env-file=.env scripts/smoke-srt.ts",
+    "smoke:batch": "MODEL_DEFAULTS_PRESET=fake tsx --env-file=.env scripts/smoke-batch.ts",
     "test": "vitest run"
   },
   "dependencies": {

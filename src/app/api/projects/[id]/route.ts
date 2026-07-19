@@ -1,7 +1,8 @@
 import { prisma } from "@/lib/db";
 import { withAuth } from "@/lib/api/with-auth";
-import { ApiError, ok } from "@/lib/api/errors";
+import { ApiError, ok, fail } from "@/lib/api/errors";
 import { planResultFromJson, summarizeRisk } from "@/lib/planning/plan";
+import { sanitizeProjectModelDefaults } from "@/lib/model-defaults/sanitize";
 
 async function getOwned(userId: string, id: string) {
   const project = await prisma.project.findFirst({ where: { id, userId } });
@@ -41,13 +42,21 @@ export const PATCH = withAuth(
       budgetUsd: number | null;
       sourceText: string;
     }>;
+
+    let modelDefaults: object | undefined;
+    if (body.modelDefaults !== undefined) {
+      const sanitized = sanitizeProjectModelDefaults(body.modelDefaults);
+      if (!sanitized.ok) return fail(sanitized.error.code, 400, sanitized.error.message);
+      modelDefaults = sanitized.value as object;
+    }
+
     const project = await prisma.project.update({
       where: { id: params.id },
       data: {
         name: body.name,
         stylePackId: body.stylePackId,
         videoRatio: body.videoRatio,
-        modelDefaults: body.modelDefaults as object | undefined,
+        modelDefaults,
         budgetUsd: body.budgetUsd === undefined ? undefined : body.budgetUsd,
         sourceText: body.sourceText,
       },

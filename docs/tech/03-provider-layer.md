@@ -19,6 +19,31 @@ interface MediaAdapter {
 // —— callModel() 靠呢啲寫 AiCallLog，adapter 唔提供 usage 係 bug
 ```
 
+## Provider 註冊表（`src/lib/providers.ts`）
+
+Provider 係一等配置實體（TS const，唔係 JSON——adapter/auth 本身係 code path）：
+
+```ts
+ProviderDef { id, label, envKeyName, authScheme: 'bearer'|'key'|'none', byok, devOnly }
+PROVIDERS = [openrouter, fal, atlascloud, fake]   // v1 只內建；BYOK_PROVIDERS 由此派生
+```
+
+- `/api/models` 由註冊表 + 能力目錄組合出 picker feed：`{ providers:[{id,label,connected}], models:[…] }`。`connected` 只查 key **存在**（user key → `user-key`；env key → `env-key`；否則 `none`），唔 live ping。
+- Guard：`provider-registry-check` —— 目錄入面每條 modelKey 嘅 provider 前綴必須喺註冊表；系統預設必須存在於目錄且 apiType 匹配；禁 `fake::pipeline` / `?? "fake::` 兜底 pattern 迴歸。
+
+## 三層模型預設解析（`src/lib/model-defaults/resolve.ts`）
+
+```
+system（code 常數，真模型）← user（user_model_defaults 表，/settings 設定）← project（projects.modelDefaults）
+按 apiType 逐項解析；最具體且【合法】（目錄有、apiType 啱）嘅一層贏；
+非法項 log + 跳過落上層——永不靜默降級去 fake（鐵律 #3）。
+```
+
+- 系統預設：text=`openrouter::google/gemini-2.5-flash-lite`、image=`fal::fal-ai/nano-banana-pro`、video=`fal::fal-ai/kling-video/v3/standard/image-to-video`、tts=`fal::fal-ai/minimax/speech-02-hd`。
+- **解析喺 run time**（worker `resolveTaskModels`）——唔 snapshot 落 task payload（會炸批量 dedupeKey 確定性 + 重試 UX）。billing（quote/budget）行同一 resolver，報價同執行一致。
+- Dev/CI 冇 key：env `MODEL_DEFAULTS_PRESET=fake` 顯式將 system 層換成 fake::*（顯式配置，唔算降級）。**生產必須留空。**
+- 站 UI（圖像/視頻站 header chip）顯示解析結果 + 單價；fake 亮橙色警告。
+
 ## MVP 三個 adapter
 
 ### openrouter（text 全包）
@@ -52,6 +77,6 @@ interface MediaAdapter {
 
 ## 金鑰
 
-- 內部期：`OPENROUTER_API_KEY` / `FAL_KEY` / `ATLASCLOUD_API_KEY` server env。
-- 抽象：`getProviderKey(userId, provider)` —— MVP 實現係讀 env（無視 userId），SaaS 期換讀 user 加密金鑰。**所有 adapter 經呢個函數攞 key**，guard 掃直接 `process.env.FAL_KEY` 出現喺 adapter 以外。
-- API 永不回傳明文金鑰（將來 BYO-Key 頁只顯示 last4）。
+- 解析順序（`getProviderKey(userId, provider)`）：user BYO key（`user_provider_keys`，AES-256-GCM，即時解密）→ env key（註冊表 `envKeyName`：`OPENROUTER_API_KEY` / `FAL_KEY` / `ATLASCLOUD_API_KEY`）→ `PROVIDER_KEY_MISSING`。Project 永不持有 key。
+- **所有 adapter 經呢個函數攞 key**，guard 掃直接 `process.env.FAL_KEY` 出現喺 adapter 以外。
+- API 永不回傳明文金鑰（BYO-Key 頁只顯示 last4；`/settings` 徽章：已連接·自備金鑰 / 已連接·平台金鑰 / 未連接）。

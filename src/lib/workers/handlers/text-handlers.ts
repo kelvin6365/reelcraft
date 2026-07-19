@@ -8,12 +8,12 @@ import { submitTask } from "@/lib/task/submit";
 import { TASK_TYPE, TaskError } from "@/lib/task/types";
 import { parseSrt } from "@/lib/srt";
 import type { TaskHandler } from "@/lib/workers/lifecycle";
-import { getModelDefaults, loadEpisodeWithProject, sliceByAnchors, textCallJson } from "@/lib/workers/handlers/shared";
+import { resolveTaskModels, loadEpisodeWithProject, sliceByAnchors, textCallJson } from "@/lib/workers/handlers/shared";
 
 export const rewriteScriptHandler: TaskHandler = async ({ task, reportProgress }) => {
   const { episode, project } = await loadEpisodeWithProject(task);
   if (!episode.rawText) throw new TaskError("NO_SOURCE", "episode has no rawText", false);
-  const models = getModelDefaults(project);
+  const models = await resolveTaskModels(task, project);
 
   reportProgress(10);
   const { text, version } = buildPrompt("rewrite_script", {
@@ -35,7 +35,7 @@ export const extractAssetsHandler: TaskHandler = async ({ task, reportProgress }
   const { episode, project } = await loadEpisodeWithProject(task);
   const source = episode.scriptText || episode.rawText;
   if (!source) throw new TaskError("NO_SOURCE", "episode has no script/raw text", false);
-  const models = getModelDefaults(project);
+  const models = await resolveTaskModels(task, project);
 
   reportProgress(10);
   const out = await textCallJson(
@@ -87,7 +87,7 @@ export const buildScenesHandler: TaskHandler = async ({ task, reportProgress }) 
   const { episode, project } = await loadEpisodeWithProject(task);
   const source = episode.scriptText || episode.rawText;
   if (!source) throw new TaskError("NO_SOURCE", "episode has no script/raw text", false);
-  const models = getModelDefaults(project);
+  const models = await resolveTaskModels(task, project);
 
   reportProgress(10);
   const out = await textCallJson(
@@ -135,7 +135,7 @@ export const buildScenesHandler: TaskHandler = async ({ task, reportProgress }) 
 
 export const storyboardRunHandler: TaskHandler = async ({ task, reportProgress }) => {
   const { episode, project } = await loadEpisodeWithProject(task);
-  const models = getModelDefaults(project);
+  const models = await resolveTaskModels(task, project);
   const scenes = await prisma.scene.findMany({ where: { episodeId: episode.id }, orderBy: { sceneIndex: "asc" } });
   if (scenes.length === 0) throw new TaskError("NO_SCENES", "run BUILD_SCENES first", false);
 
@@ -255,7 +255,7 @@ export const srtBuildHandler: TaskHandler = async ({ task, reportProgress }) => 
 
 export const voiceAnalyzeHandler: TaskHandler = async ({ task, reportProgress }) => {
   const { episode, project } = await loadEpisodeWithProject(task);
-  const models = getModelDefaults(project);
+  const models = await resolveTaskModels(task, project);
   const scenes = await prisma.scene.findMany({ where: { episodeId: episode.id }, orderBy: { sceneIndex: "asc" } });
   const shots = await prisma.shot.findMany({ where: { episodeId: episode.id }, orderBy: { shotIndex: "asc" } });
   if (shots.length === 0) throw new TaskError("NO_SHOTS", "run STORYBOARD_RUN first", false);
@@ -289,6 +289,8 @@ export const voiceAnalyzeHandler: TaskHandler = async ({ task, reportProgress })
         speaker: line.speaker,
         content: line.text,
         characterId: character?.id,
+        lineType: line.lineType,
+        cue: line.cue,
         emotion: line.emotion,
         emotionStrength: Math.min(0.5, line.emotionStrength),
         matchedShotId: matched?.id, // hallucinated shot refs become null, not errors

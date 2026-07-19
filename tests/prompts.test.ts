@@ -25,6 +25,18 @@ describe("buildPrompt", () => {
     });
     expect(built.text).toContain("SCENE");
     expect(built.text).toContain("硬性上限 0.5");
+    // VO/OS + parenthetical cue extraction rules (S1)
+    expect(built.text).toContain("lineType");
+    expect(built.text).toContain("dialogue／vo／os");
+    expect(built.text).toContain("cue");
+  });
+
+  it("rewrite_script keeps the VO/OS parenthesis contract", () => {
+    const built = buildPrompt("rewrite_script", { novel_text: "N", style_note: "S" });
+    expect(built.text).toContain("角色（VO）：");
+    expect(built.text).toContain("角色（OS）：");
+    expect(built.text).toContain("VO、OS 是保留字");
+    expect(built.text).toContain("展示不明說");
   });
 
   it("throws PROMPT_NOT_FOUND for an unknown promptId", () => {
@@ -95,6 +107,17 @@ describe("schema parsing", () => {
     });
     const out = parseWithSchema(raw, VoiceAnalyzeOutput);
     expect(out.lines[0].emotionStrength).toBe(0.3);
+    // missing lineType/cue default (backward-compatible with old outputs)
+    expect(out.lines[0].lineType).toBe("dialogue");
+    expect(out.lines[0].cue).toBe("");
+  });
+
+  it("parses vo/os lineType and rejects unknown ones", () => {
+    const mk = (lineType: string) =>
+      JSON.stringify({ lines: [{ index: 1, text: "x", speaker: "s", lineType, cue: "苦笑", emotion: "無奈", emotionStrength: 0.3, matchedShotIndex: 1 }] });
+    expect(parseWithSchema(mk("vo"), VoiceAnalyzeOutput).lines[0].lineType).toBe("vo");
+    expect(parseWithSchema(mk("os"), VoiceAnalyzeOutput).lines[0].cue).toBe("苦笑");
+    expect(() => parseWithSchema(mk("narration"), VoiceAnalyzeOutput)).toThrow();
   });
 
   it("rejects emotionStrength above the 0.5 hard cap", () => {

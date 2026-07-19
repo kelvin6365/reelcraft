@@ -9,6 +9,9 @@
     "emotionStrength",
     "硬性上限 0.5",
     "0.1 至 0.5",
-    "matchedShotIndex"
+    "matchedShotIndex",
+    "lineType",
+    "cue",
+    "dialogue／vo／os"
   ]
 }

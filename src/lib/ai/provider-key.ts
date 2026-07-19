@@ -9,16 +9,23 @@ import { prisma } from "@/lib/db";
 import { env } from "@/lib/env";
 import { decryptKey } from "@/lib/crypto-keys";
 import { AiError } from "@/lib/ai/types";
-import { isByokProvider, type ByokProvider } from "@/lib/providers";
+import { getProviderDef, isByokProvider, type ByokProvider } from "@/lib/providers";
 
+// The env module is the only place allowed to read the raw environment, so we
+// can't index it dynamically by the registry's envKeyName string without losing
+// type safety — map the (small, fixed) set explicitly, keyed off the registry so
+// a provider with no configured env var can never silently resolve to "".
 function envKey(provider: ByokProvider): string {
-  switch (provider) {
-    case "openrouter":
+  const envKeyName = getProviderDef(provider)?.envKeyName;
+  switch (envKeyName) {
+    case "OPENROUTER_API_KEY":
       return env.OPENROUTER_API_KEY;
-    case "fal":
+    case "FAL_KEY":
       return env.FAL_KEY;
-    case "atlascloud":
+    case "ATLASCLOUD_API_KEY":
       return env.ATLASCLOUD_API_KEY;
+    default:
+      return "";
   }
 }
 

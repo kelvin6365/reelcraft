@@ -86,6 +86,22 @@ describe("advanceEpisode", () => {
     expect(submitTask).toHaveBeenCalledWith(expect.objectContaining({ type: "REWRITE_SCRIPT", episodeId: "e1", userId: "u1", projectId: "p1" }));
   });
 
+  it("submits deterministic {at:0} payloads — resolved model keys never enter the payload", async () => {
+    // Model resolution happens at run time in the worker, NOT at enqueue, so the
+    // batch payload must stay the fixed {at:0} that the dedupeKey hash relies on.
+    // A resolved provider::modelId leaking in here would break batch dedupe.
+    mockEpisode();
+    mockSnapshot({});
+    await advanceEpisode("e1");
+    expect(submitTask).toHaveBeenCalledWith(expect.objectContaining({ type: "REWRITE_SCRIPT", payload: { at: 0 } }));
+    const arg = (submitTask.mock.calls[0] as unknown[])[0] as { payload: Record<string, unknown> };
+    const payload = arg.payload;
+    expect(Object.keys(payload)).toEqual(["at"]);
+    for (const slot of ["text", "image", "video", "tts", "modelKey"]) {
+      expect(payload).not.toHaveProperty(slot);
+    }
+  });
+
   it("pauses at the assets lock gate (human review)", async () => {
     mockEpisode();
     mockSnapshot({ hasScript: true, characters: { total: 2, locked: 1, withCandidates: 2 } });

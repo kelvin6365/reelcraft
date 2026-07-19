@@ -72,8 +72,9 @@ const canned: Record<string, unknown> = {
   },
   voice_analyze: {
     lines: [
-      { index: 1, text: "你遲到了。", speaker: "林知夏", emotion: "壓抑的不滿", emotionStrength: 0.4, matchedShotIndex: 3 },
-      { index: 2, text: "路上有事。", speaker: "陳沉", emotion: "平淡", emotionStrength: 0.2, matchedShotIndex: 2 },
+      { index: 1, text: "你遲到了。", speaker: "林知夏", lineType: "dialogue", cue: "壓低聲線", emotion: "壓抑的不滿", emotionStrength: 0.4, matchedShotIndex: 3 },
+      { index: 2, text: "路上有事。", speaker: "陳沉", lineType: "dialogue", cue: "", emotion: "平淡", emotionStrength: 0.2, matchedShotIndex: 2 },
+      { index: 3, text: "他遲到的理由，我其實早就知道了。", speaker: "林知夏", lineType: "vo", cue: "苦笑", emotion: "無奈", emotionStrength: 0.3, matchedShotIndex: 1 },
     ],
   },
   image_prompt_shot: {
@@ -94,7 +95,7 @@ export const fakeAdapter: TextAdapter = {
     if (meta?.promptId && canned[meta.promptId]) {
       text = JSON.stringify(canned[meta.promptId]);
     } else if (meta?.promptId === "rewrite_script") {
-      text = "【第1場】咖啡店·夜\n林知夏推門而入，雨聲隨門縫灌進來。\n林知夏：「你遲到了。」\n陳沉：「路上有事。」\n（兩人對視，沉默三秒）";
+      text = "【第1場】咖啡店·夜\n林知夏推門而入，雨聲隨門縫灌進來。\n林知夏（壓低聲線）：「你遲到了。」\n陳沉：「路上有事。」\n林知夏（VO・苦笑）：他遲到的理由，我其實早就知道了。\n（兩人對視，沉默三秒）";
     } else {
       text = `[fake] ${echo.slice(0, 200)}`;
     }

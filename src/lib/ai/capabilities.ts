@@ -69,6 +69,12 @@ export function getCapabilityEntry(modelKey: string): CapabilityEntry | null {
   return catalog.get(modelKey) ?? null;
 }
 
+// Every catalog entry, in insertion order. For listing surfaces (the /api/models
+// picker catalog); billing/resolution keep using the by-key lookups above.
+export function listCapabilityEntries(): CapabilityEntry[] {
+  return [...catalog.values()];
+}
+
 export function getCapabilities(modelKey: string): CapabilityEntry["capabilities"] | null {
   return catalog.get(modelKey)?.capabilities ?? null;
 }

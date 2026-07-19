@@ -1,7 +1,8 @@
 import { prisma } from "@/lib/db";
+import { env } from "@/lib/env";
 import { addTaskJob } from "@/lib/task/queues";
 import { publishTaskEvent } from "@/lib/task/events";
-import { classifyError, getQueueForTaskType, type TaskType } from "@/lib/task/types";
+import { classifyError, getQueueForTaskType, TaskError, type TaskType } from "@/lib/task/types";
 import { settleTaskFreeze, rollbackTaskFreeze } from "@/lib/billing/ledger";
 import { advanceAfterTask } from "@/lib/batch/advance";
 import type { Task } from "@prisma/client";
@@ -25,6 +26,7 @@ export async function withTaskLifecycle(taskId: string, handler: TaskHandler): P
   if (claimed.count === 0) return; // already terminal/claimed elsewhere — skip silently
 
   const task = await prisma.task.findUniqueOrThrow({ where: { id: taskId } });
+  const evBase = { taskId, taskType: task.type, targetType: task.targetType, targetId: task.targetId };
 
   const heartbeat = setInterval(() => {
     void prisma.task
@@ -38,18 +40,30 @@ export async function withTaskLifecycle(taskId: string, handler: TaskHandler): P
       .updateMany({ where: { id: taskId, status: "processing" }, data: { progress: clamped } })
       .catch(() => {});
     publishTaskEvent(task.projectId, {
-      taskId,
-      taskType: task.type,
+      ...evBase,
       eventType: "PROGRESS",
       progress: clamped,
       data,
     });
   };
 
-  publishTaskEvent(task.projectId, { taskId, taskType: task.type, eventType: "PROCESSING" });
+  publishTaskEvent(task.projectId, { ...evBase, eventType: "PROCESSING" });
+
+  // Hard runtime cap — belt to the watchdog's braces. The watchdog only sees
+  // stale heartbeats (dead worker); a handler stuck on a never-resolving await
+  // keeps heartbeating forever and would hold the slot + lock the UI. Racing a
+  // deadline makes it a normal retryable failure. The abandoned handler promise
+  // can't corrupt anything later: every terminal write below is status-guarded.
+  let runtimeTimer: ReturnType<typeof setTimeout> | undefined;
+  const runtimeCap = new Promise<never>((_, reject) => {
+    runtimeTimer = setTimeout(
+      () => reject(new TaskError("TASK_TIMEOUT", `task exceeded TASK_MAX_RUNTIME_MS (${env.TASK_MAX_RUNTIME_MS}ms)`, true)),
+      env.TASK_MAX_RUNTIME_MS,
+    );
+  });
 
   try {
-    const result = await handler({ task, reportProgress });
+    const result = await Promise.race([handler({ task, reportProgress }), runtimeCap]);
     // Status-guarded terminal write: if the watchdog requeued this row mid-flight
     // (stale heartbeat) and another worker already took over, count===0 → we do
     // NOT overwrite its state, settle, or emit — this worker's result is discarded.
@@ -59,7 +73,7 @@ export async function withTaskLifecycle(taskId: string, handler: TaskHandler): P
     });
     if (won.count === 0) return;
     await settleTaskFreeze(taskId); // ENFORCE: charge actual (from ai_call_logs), refund the rest
-    publishTaskEvent(task.projectId, { taskId, taskType: task.type, eventType: "COMPLETED", progress: 100 });
+    publishTaskEvent(task.projectId, { ...evBase, eventType: "COMPLETED", progress: 100 });
     advanceAfterTask(task.episodeId); // batch autorun: submit the episode's next step (no-op unless autorun)
   } catch (err) {
     const { code, message, retryable } = classifyError(err);
@@ -72,7 +86,7 @@ export async function withTaskLifecycle(taskId: string, handler: TaskHandler): P
         data: { status: "queued", heartbeatAt: null, errorCode: code, errorMessage: message.slice(0, 1000) },
       });
       if (requeued.count === 0) return; // another worker owns it now
-      publishTaskEvent(task.projectId, { taskId, taskType: task.type, eventType: "RETRYING", errorCode: code });
+      publishTaskEvent(task.projectId, { ...evBase, eventType: "RETRYING", errorCode: code });
       await addTaskJob(getQueueForTaskType(task.type as TaskType), taskId, delayMs);
       return;
     }
@@ -83,8 +97,9 @@ export async function withTaskLifecycle(taskId: string, handler: TaskHandler): P
     });
     if (failed.count === 0) return;
     await rollbackTaskFreeze(taskId); // ENFORCE: terminal failure — release the whole reservation
-    publishTaskEvent(task.projectId, { taskId, taskType: task.type, eventType: "FAILED", errorCode: code });
+    publishTaskEvent(task.projectId, { ...evBase, eventType: "FAILED", errorCode: code });
   } finally {
     clearInterval(heartbeat);
+    if (runtimeTimer) clearTimeout(runtimeTimer);
   }
 }

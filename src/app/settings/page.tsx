@@ -4,27 +4,35 @@ import { useRouter } from "next/navigation";
 import { api, ApiClientError } from "@/ui/api";
 import { TopBar } from "@/ui/TopBar";
 import { useSession } from "@/ui/auth-client";
-import type { ProviderKeysResponse, ProviderKeyView } from "@/ui/types";
+import type { ModelsResponse, ProviderKeysResponse, ProviderKeyView, ProviderView } from "@/ui/types";
 import { ProviderKeyRow } from "@/ui/settings/ProviderKeyRow";
+import { UserModelDefaults } from "@/ui/settings/UserModelDefaults";
 
-// 設定：自備金鑰（BYO-Key）。逐個 provider 一行，只顯示 ••••後四碼，
-// 明文只在瀏覽器輸入、送出後清空 —— API 從不回傳金鑰本身。
-const PROVIDERS = [
-  { provider: "openrouter", label: "OpenRouter", hint: "文字模型（劇本、分鏡）。於 OpenRouter 主控台 → Keys 建立金鑰。" },
-  { provider: "fal", label: "fal", hint: "圖像、影片、語音生成。於 fal 主控台 → API Keys 建立金鑰。" },
-  { provider: "atlascloud", label: "AtlasCloud", hint: "圖像、影片備援供應商。於 AtlasCloud 主控台建立金鑰。" },
-] as const;
+// 設定：自備金鑰（BYO-Key）+ 預設模型。逐個 provider 一行，只顯示 ••••後四碼，
+// 明文只在瀏覽器輸入、送出後清空 —— API 從不回傳金鑰本身。供應商清單與連接狀態
+// 由 /api/models 驅動；此處只保留 UI 說明文案。
+const KEY_HINTS: Record<string, string> = {
+  openrouter: "文字模型（劇本、分鏡）。於 OpenRouter 主控台 → Keys 建立金鑰。",
+  fal: "圖像、影片、語音生成。於 fal 主控台 → API Keys 建立金鑰。",
+  atlascloud: "圖像、影片備援供應商。於 AtlasCloud 主控台建立金鑰。",
+};
 
 export default function SettingsPage() {
   const router = useRouter();
   const { data: session, isPending } = useSession();
   const [keys, setKeys] = useState<ProviderKeyView[] | null>(null);
+  const [catalog, setCatalog] = useState<ModelsResponse | null>(null);
   const [loadErr, setLoadErr] = useState<string | null>(null);
 
   const load = useCallback(() => {
-    api
-      .get<ProviderKeysResponse>("/api/user/provider-keys")
-      .then((r) => setKeys(r.keys))
+    Promise.all([
+      api.get<ProviderKeysResponse>("/api/user/provider-keys"),
+      api.get<ModelsResponse>("/api/models"),
+    ])
+      .then(([k, c]) => {
+        setKeys(k.keys);
+        setCatalog(c);
+      })
       .catch((e: ApiClientError) => setLoadErr(e.message));
   }, []);
 
@@ -37,9 +45,12 @@ export default function SettingsPage() {
     load();
   }, [isPending, session, router, load]);
 
-  if (isPending || (!keys && !loadErr)) return <div className="center-screen">載入中…</div>;
+  if (isPending || (!catalog && !loadErr)) return <div className="center-screen">載入中…</div>;
 
   const byProvider = new Map((keys ?? []).map((k) => [k.provider, k]));
+  // BYOK key rows: the /api/models providers we have set-up copy for (excludes the
+  // keyless fake dev provider, which has no hint entry).
+  const keyProviders: ProviderView[] = (catalog?.providers ?? []).filter((p) => p.id in KEY_HINTS);
 
   return (
     <>
@@ -54,16 +65,21 @@ export default function SettingsPage() {
         {loadErr && <p className="error-text">{loadErr}</p>}
 
         <div className="stack" style={{ gap: 12, maxWidth: 560 }}>
-          {PROVIDERS.map((p) => (
+          {keyProviders.map((p) => (
             <ProviderKeyRow
-              key={p.provider}
-              provider={p.provider}
+              key={p.id}
+              provider={p.id}
               label={p.label}
-              hint={p.hint}
-              stored={byProvider.get(p.provider)}
+              hint={KEY_HINTS[p.id]}
+              stored={byProvider.get(p.id)}
+              connected={p.connected}
               onChanged={load}
             />
           ))}
+
+          {catalog && (
+            <UserModelDefaults models={catalog.models} providers={catalog.providers} />
+          )}
         </div>
       </main>
     </>

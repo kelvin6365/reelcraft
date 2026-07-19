@@ -10,7 +10,7 @@ import { createMediaFromBuffer } from "@/lib/media/service";
 import { composeShot, concatAudio, concatShots, imageToVideoClip, probeDurationMs } from "@/lib/video/ffmpeg";
 import { TaskError } from "@/lib/task/types";
 import type { TaskHandler } from "@/lib/workers/lifecycle";
-import { getModelDefaults, loadEpisodeWithProject, textCallJson } from "@/lib/workers/handlers/shared";
+import { resolveTaskModels, loadEpisodeWithProject, textCallJson } from "@/lib/workers/handlers/shared";
 
 interface StylePack {
   prefix?: string;
@@ -35,7 +35,7 @@ function assetImageHandler(kind: "character" | "location"): TaskHandler {
     const row = await (model as typeof prisma.character).findFirst({ where: { id: task.targetId, userId: task.userId } });
     if (!row) throw new TaskError("NOT_FOUND", `${kind} ${task.targetId} not found`, false);
     const project = await prisma.project.findUniqueOrThrow({ where: { id: row.projectId } });
-    const models = getModelDefaults(project);
+    const models = await resolveTaskModels(task, project);
     const style = await loadStyle(project.stylePackId);
 
     const basePrompt = "appearancePrompt" in row && row.appearancePrompt ? row.appearancePrompt : ((row as { prompt?: string }).prompt ?? "");
@@ -89,7 +89,7 @@ export const imageShotHandler: TaskHandler = async ({ task, reportProgress }) =>
   const shot = await prisma.shot.findFirst({ where: { id: task.targetId, userId: task.userId } });
   if (!shot) throw new TaskError("NOT_FOUND", `shot ${task.targetId} not found`, false);
   const { episode, project } = await loadEpisodeWithProject({ ...task, episodeId: shot.episodeId });
-  const models = getModelDefaults(project);
+  const models = await resolveTaskModels(task, project);
   const style = await loadStyle(project.stylePackId);
 
   // Character consistency: collect the LOCKED reference images for the assets that
@@ -156,7 +156,7 @@ export const videoShotHandler: TaskHandler = async ({ task, reportProgress }) =>
   if (!shot) throw new TaskError("NOT_FOUND", `shot ${task.targetId} not found`, false);
   if (!shot.imageMediaId) throw new TaskError("NO_IMAGE", "generate the shot image first", false);
   const { episode, project } = await loadEpisodeWithProject({ ...task, episodeId: shot.episodeId });
-  const models = getModelDefaults(project);
+  const models = await resolveTaskModels(task, project);
 
   const sb = shot.storyboardJson as { plan?: { subject?: string }; detail?: { video_prompt?: string } };
   const durationSec = Math.max(2, Math.round(shot.durationMs / 1000) || 3);
@@ -185,7 +185,7 @@ export const ttsLineHandler: TaskHandler = async ({ task }) => {
   const line = await prisma.voiceLine.findFirst({ where: { id: task.targetId, userId: task.userId } });
   if (!line) throw new TaskError("NOT_FOUND", `voiceLine ${task.targetId} not found`, false);
   const { project } = await loadEpisodeWithProject({ ...task, episodeId: line.episodeId });
-  const models = getModelDefaults(project);
+  const models = await resolveTaskModels(task, project);
 
   const media = await generateTts(
     { userId: task.userId, taskId: task.id, projectId: project.id, episodeId: line.episodeId },

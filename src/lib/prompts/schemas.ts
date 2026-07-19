@@ -147,6 +147,8 @@ export const VoiceAnalyzeOutput = z.object({
       index: z.number().int().positive(),
       text: z.string().min(1),
       speaker: z.string(),
+      lineType: z.enum(["dialogue", "vo", "os"]).default("dialogue"),
+      cue: z.string().default(""), // 括號演技/語氣提示（VO/OS 保留字除外）
       emotion: z.string(),
       emotionStrength: z.number().min(0.1).max(0.5),
       matchedShotIndex: z.number().int(),

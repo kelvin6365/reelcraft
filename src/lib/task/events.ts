@@ -14,6 +14,10 @@ export interface TaskEventPayload {
   taskId: string;
   taskType: string;
   eventType: TaskEventType;
+  // which row this task acts on (e.g. targetType "shot" + shot id) — lets the UI
+  // map events onto individual cells instead of whole stages
+  targetType?: string;
+  targetId?: string;
   progress?: number;
   errorCode?: string | null;
   data?: unknown;
@@ -27,7 +31,7 @@ export function publishTaskEvent(projectId: string | null, ev: TaskEventPayload)
       data: {
         taskId: ev.taskId,
         eventType: ev.eventType,
-        payload: { taskType: ev.taskType, progress: ev.progress, errorCode: ev.errorCode, data: ev.data } as object,
+        payload: { taskType: ev.taskType, targetType: ev.targetType, targetId: ev.targetId, progress: ev.progress, errorCode: ev.errorCode, data: ev.data } as object,
       },
     })
     .then((row) => {

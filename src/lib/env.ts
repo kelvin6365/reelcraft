@@ -25,12 +25,23 @@ const schema = z.object({
   FAL_KEY: z.string().optional().default(""),
   ATLASCLOUD_API_KEY: z.string().optional().default(""),
 
+  // Explicit dev/CI override: when "fake", the SYSTEM layer of model-defaults
+  // resolution becomes fake::* so smoke scripts / keyless dev never call a real
+  // provider. This is a declared configuration, NOT a silent downgrade
+  // (CLAUDE.md #3) — real deployments leave it empty. Only "fake" is meaningful;
+  // any other value (including empty) keeps the real system defaults in place.
+  MODEL_DEFAULTS_PRESET: z.string().optional().default(""),
+
   QUEUE_CONCURRENCY_TEXT: z.coerce.number().int().positive().default(8),
   QUEUE_CONCURRENCY_IMAGE: z.coerce.number().int().positive().default(10),
   QUEUE_CONCURRENCY_VIDEO: z.coerce.number().int().positive().default(4),
   QUEUE_CONCURRENCY_VOICE: z.coerce.number().int().positive().default(8),
   WATCHDOG_INTERVAL_MS: z.coerce.number().int().positive().default(30_000),
   TASK_HEARTBEAT_TIMEOUT_MS: z.coerce.number().int().positive().default(90_000),
+  // Hard per-task runtime cap enforced in withTaskLifecycle. Catches the case the
+  // watchdog can't see: handler hung on a never-resolving await while heartbeats
+  // keep beating. Must exceed the slowest legitimate task (adapter poll caps at 10min).
+  TASK_MAX_RUNTIME_MS: z.coerce.number().int().positive().default(15 * 60 * 1000),
 
   // Quotas — per-user concurrent slots (distributed semaphore) + daily API caps.
   QUOTA_USER_CONCURRENT_IMAGE: z.coerce.number().int().positive().default(4),

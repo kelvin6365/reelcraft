@@ -1,22 +1,30 @@
 "use client";
 import { useState } from "react";
 import { api, ApiClientError } from "@/ui/api";
-import type { ProviderKeyView } from "@/ui/types";
+import type { ConnectionStatus, ProviderKeyView } from "@/ui/types";
 
 // One provider's key row: masked display (••••last4) when stored, a password
 // field to set/replace, plus 測試 and 刪除. The plaintext never leaves this
 // input — it's POSTed once and cleared.
+const CONNECTION_BADGE: Record<ConnectionStatus, { text: string; className: string }> = {
+  "user-key": { text: "已連接·自備金鑰", className: "badge" },
+  "env-key": { text: "已連接·平台金鑰", className: "badge" },
+  none: { text: "未連接", className: "muted" },
+};
+
 export function ProviderKeyRow({
   provider,
   label,
   hint,
   stored,
+  connected,
   onChanged,
 }: {
   provider: string;
   label: string;
   hint: string;
   stored: ProviderKeyView | undefined;
+  connected?: ConnectionStatus;
   onChanged: () => void;
 }) {
   const [value, setValue] = useState("");
@@ -72,7 +80,14 @@ export function ProviderKeyRow({
   return (
     <div className="card stack" style={{ gap: 10 }}>
       <div className="row" style={{ justifyContent: "space-between", alignItems: "baseline" }}>
-        <strong>{label}</strong>
+        <div className="row" style={{ gap: 8, alignItems: "baseline" }}>
+          <strong>{label}</strong>
+          {connected && (
+            <span className={CONNECTION_BADGE[connected].className} style={{ fontSize: 12 }}>
+              {CONNECTION_BADGE[connected].text}
+            </span>
+          )}
+        </div>
         {stored ? (
           <span className="badge" title={`更新於 ${new Date(stored.updatedAt).toLocaleString("zh-HK")}`}>
             ••••{stored.last4}

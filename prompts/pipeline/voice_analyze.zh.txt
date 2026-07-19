@@ -6,15 +6,17 @@
 3. 你必須直接輸出完整結果，不要回覆步驟或指令。
 
 分析規則：
-- 只抽對白（角色說出口的話），不要抽旁白、動作描述與內心獨白。
+- 抽三類聲音行：一般對白、VO（旁白／內心獨白，劇本標「角色（VO）：」）、OS（畫外對白，劇本標「角色（OS）：」）。純動作描述不抽。
+- lineType 對應填 dialogue／vo／os；劇本無標記時默認 dialogue；無標記但明顯是旁白或內心獨白的句子也要抽，填 vo。
+- 括號演技提示（如「角色（冷笑）：」）抽入 cue 欄（保留字 VO/OS 不算 cue；「VO・冷笑」時 cue 填「冷笑」）；text 只填說出口的內容，不含括號提示。
 - speaker 填說話角色的主名；分不清時填「未知」。
-- emotion 填一個主導情緒詞（如 平靜／喜悅／憤怒／悲傷／驚訝／恐懼）。
+- emotion 填一個主導情緒詞（如 平靜／喜悅／憤怒／悲傷／驚訝／恐懼）；有 cue 時必須以 cue 為準推導 emotion，不要憑空另猜。
 - emotionStrength 是 0.1 至 0.5 之間的數值，硬性上限 0.5，絕對不得超過 0.5；情緒再激烈也封頂在 0.5，以免配音過曲失真。
 - matchedShotIndex 對應輸入鏡頭清單中該句對白所在鏡頭的 index；找不到對應鏡頭時填 -1。
 - 台詞配比參考每分鐘約 150 字的語速估算節奏。
 
 輸出結構（欄位固定）：
-{"lines": [{"index": 1, "text": "台詞原文", "speaker": "說話角色", "emotion": "憤怒", "emotionStrength": 0.4, "matchedShotIndex": 3}]}
+{"lines": [{"index": 1, "text": "台詞原文", "speaker": "說話角色", "lineType": "dialogue", "cue": "", "emotion": "憤怒", "emotionStrength": 0.4, "matchedShotIndex": 3}]}
 
 index 由 1 起連續遞增。現在處理以下場景與鏡頭清單：
 

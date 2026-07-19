@@ -27,6 +27,7 @@ cp .env.example .env.prod
 | `POSTGRES_PASSWORD` | compose 用 |
 | `BILLING_MODE` | `SHADOW`（內部）或 `ENFORCE`（收費） |
 | provider keys | 平台代付模式先填；純 BYO-Key 可留空 |
+| `MODEL_DEFAULTS_PRESET` | **生產留空**（系統預設 = 真模型）；只有 dev/CI 冇 key 先設 `fake` |
 
 ```bash
 docker compose -f docker-compose.prod.yml --env-file .env.prod up -d --build

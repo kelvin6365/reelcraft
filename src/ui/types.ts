@@ -22,6 +22,7 @@ export interface ProjectSummary {
   name: string;
   stylePackId: string;
   videoRatio: string;
+  videoResolution?: string;
   inputType?: string;
   episodes: { id: string; episodeNumber: number; status: string; updatedAt?: string }[];
 }
@@ -145,6 +146,16 @@ export interface ShotView {
   videoUrl: string | null;
   status: string;
   durationMs: number;
+  // in-flight task on this shot at view-build time (null when idle) — the live
+  // SSE stream takes over for updates after initial load
+  activeImageTask: ActiveTaskView | null;
+  activeVideoTask: ActiveTaskView | null;
+}
+
+export interface ActiveTaskView {
+  taskId: string;
+  status: string; // queued | processing
+  progress: number;
 }
 
 export interface VoiceLineView {
@@ -152,6 +163,8 @@ export interface VoiceLineView {
   lineIndex: number;
   speaker: string;
   content: string;
+  lineType?: string; // 'dialogue' | 'vo' | 'os'
+  cue?: string; // 括號演技/語氣提示
   emotion: string;
   emotionStrength: number;
   audioMediaId: string | null;
@@ -187,6 +200,14 @@ export interface EpisodeView {
       totalUsd: number;
       videoUnitUsd: number | null;
     } | null;
+    // The model each of the two generation stations will actually use right
+    // now (resolved system/user/project defaults) + its per-unit price, for
+    // the station header chips. null when the downstream estimate itself
+    // failed (e.g. episode not found — should not normally happen here).
+    activeModels?: {
+      image: { modelKey: string; unitUsd: number | null };
+      video: { modelKey: string; unitUsd: number | null; perSecond: number | null };
+    } | null;
   };
 }
 
@@ -206,9 +227,15 @@ export interface FailedTask {
 export interface SseEvent {
   taskId: string;
   taskType: string;
-  eventType: string; // QUEUED | STARTED | PROGRESS | COMPLETED | FAILED | ...
+  eventType: string; // CREATED | PROCESSING | PROGRESS | COMPLETED | FAILED | RETRYING | ...
+  targetType?: string;
+  targetId?: string;
   progress?: number;
+  errorCode?: string | null;
 }
+
+// live per-target task state derived from SSE, keyed `${taskType}:${targetId}`
+export type LiveTaskMap = Record<string, { progress?: number }>;
 
 // ---------- usage dashboard (GET /api/usage) ----------
 export interface UsageRowView {
@@ -251,4 +278,55 @@ export interface ProviderKeyView {
 
 export interface ProviderKeysResponse {
   keys: ProviderKeyView[];
+}
+
+// ---------- settings: model defaults + catalog (GET /api/user/model-defaults, /api/models) ----------
+export type ApiTypeKey = "text" | "image" | "video" | "tts";
+export type DefaultsSource = "system" | "user" | "project";
+
+// GET /api/user/model-defaults: the caller's stored slots, the fully-resolved
+// effective models (+ which layer won each), and the system floor.
+export interface UserModelDefaultsResponse {
+  defaults: ModelDefaults;
+  resolved: {
+    text: string;
+    image: string;
+    video: string;
+    tts: string;
+    source: Record<ApiTypeKey, DefaultsSource>;
+  };
+  system: { text: string; image: string; video: string; tts: string };
+}
+
+export type ConnectionStatus = "user-key" | "env-key" | "none";
+
+export interface ProviderView {
+  id: string;
+  label: string;
+  connected: ConnectionStatus;
+}
+
+export type ModelUnitPrice =
+  | { mode: "flat"; perUnit: number; unit: string }
+  | { mode: "text"; inputPerMTok: number; outputPerMTok: number };
+
+export interface ModelCatalogItem {
+  modelKey: string;
+  apiType: ApiTypeKey;
+  provider: string;
+  capabilities?: {
+    durationsSec?: number[];
+    resolutions?: string[];
+    aspectRatios?: string[];
+    modes?: string[];
+  };
+  unitPrice: ModelUnitPrice;
+}
+
+// GET /api/models — provider connection status + model catalog. generatedImageCount
+// only present when ?projectId= was passed.
+export interface ModelsResponse {
+  providers: ProviderView[];
+  models: ModelCatalogItem[];
+  generatedImageCount?: number;
 }

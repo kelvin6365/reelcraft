@@ -73,4 +73,10 @@ async function shutdown(signal: string) {
 process.on("SIGINT", () => void shutdown("SIGINT"));
 process.on("SIGTERM", () => void shutdown("SIGTERM"));
 
+// Dev convenience: run the watchdog inside the worker process. Without it, a
+// tsx-watch reload mid-task strands 'processing' rows forever (stale heartbeat,
+// nobody requeues → UI shows 生成中 indefinitely). Production keeps its own
+// dedicated watchdog process (Dockerfile) so we skip it there.
+if (env.NODE_ENV !== "production") void import("@/lib/workers/watchdog");
+
 console.log("[worker] started");

@@ -12,7 +12,7 @@ AI 短劇生產平台：真多租戶、任務佇列有 watchdog 兜底、每次 
 - **AI 劇集規劃** — 貼全本小說自動分集（錨定集長或集數），🔴🟡🟢 風險圖示 review-by-exception，唔使逐集深審
 - **角色一致性** — 多視角 turnaround 定妝 + img2img 參考圖鎖定身份（图片N 綁定），跨鏡頭同一張臉
 - **批量出片** — 一鍵全季自動生成：task 完成自動接下一站，分鏡可自動確認，跳視頻省錢模式，全季進度板逐集亮燈
-- **影像模型任揀** — nano-banana / nano-banana-pro / Seedream v4 逐專案切換，成本價目寫入能力目錄
+- **模型三層預設** — 系統預設（真模型）→ 個人預設（/settings）→ 逐專案覆寫，四種模態（文字/圖像/視頻/語音）任揀，按 provider 分組、缺 key 或能力唔匹配自動禁用；站 UI 顯示現用模型 + 單價（fake 亮橙色警告）
 - **Provider 中立** — `provider::modelId` 嚴格契約；OpenRouter / fal / AtlasCloud 內建，或者用一份 JSON 宣告式模板接任意廠商
 - **審計一切** — `callModel()` 唯一入口自動記帳；`/usage` 儀表板睇成本、token、latency
 - **生產級任務系統** — BullMQ ×4 + 心跳 + watchdog 殭屍恢復（kill -9 worker 任務自動續跑）
@@ -23,14 +23,14 @@ AI 短劇生產平台：真多租戶、任務佇列有 watchdog 兜底、每次 
 
 ```bash
 npm install
-cp .env.example .env          # 可以乜都唔填 — fake providers 走全程
+cp .env.example .env          # 冇 API key 就設 MODEL_DEFAULTS_PRESET=fake — fake providers 走全程
 docker compose up -d          # postgres + redis + minio（或用本機 brew 服務）
 npx prisma migrate dev
 npm run dev                   # web
 npm run worker                # 另一個 terminal
 ```
 
-開 http://localhost:3000 → 註冊 → 建專案 → 貼小說 → 跟住右下角張卡撳。冇 API key 都出到片（ffmpeg 生成嘅佔位素材）；填咗 `OPENROUTER_API_KEY` / `FAL_KEY` 就係真嘢。
+開 http://localhost:3000 → 註冊 → 建專案 → 貼小說 → 跟住右下角張卡撳。冇 API key 設 `MODEL_DEFAULTS_PRESET=fake` 都出到片（ffmpeg 生成嘅佔位素材）；填咗 `OPENROUTER_API_KEY` / `FAL_KEY` 就係真嘢（系統預設 = kling-v3 / nano-banana-pro / minimax TTS，`/settings` 或專案頁可改）。
 
 ## 驗證
 
