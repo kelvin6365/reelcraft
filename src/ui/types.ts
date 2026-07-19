@@ -31,6 +31,10 @@ export interface EpisodeListItem {
   episodeNumber: number;
   status: string;
   updatedAt?: string;
+  // Batch/season generation (GET /api/projects/:id): autorun flag + failed-task
+  // count for the season progress board.
+  autorun?: boolean;
+  failedTasks?: number;
 }
 
 // ---------- episode planning (docs/plans/2026-07-19-episode-planning-design.md) ----------

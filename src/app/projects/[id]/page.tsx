@@ -6,6 +6,7 @@ import { TopBar } from "@/ui/TopBar";
 import { PlanSetup } from "@/ui/planning/PlanSetup";
 import { PlanReview } from "@/ui/planning/PlanReview";
 import { ModelPicker } from "@/ui/planning/ModelPicker";
+import { BatchPanel } from "@/ui/batch/BatchPanel";
 import type { EpisodeListItem, ProjectPlanView } from "@/ui/types";
 
 const STATUS_LABEL: Record<string, string> = {
@@ -153,6 +154,8 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
                 </button>
               </div>
             </div>
+
+            {hasEpisodes && <BatchPanel id={id} episodes={episodes} refetch={reload} />}
 
             <div className="section-gap">
               <h2 style={{ fontSize: 18, marginBottom: 14 }}>劇集</h2>

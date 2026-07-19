@@ -15,10 +15,19 @@ export const GET = withAuth(async ({ userId, params }) => {
   const episodes = await prisma.episode.findMany({
     where: { projectId: project.id },
     orderBy: { episodeNumber: "asc" },
-    select: { id: true, episodeNumber: true, status: true, updatedAt: true },
+    select: { id: true, episodeNumber: true, status: true, updatedAt: true, autorun: true },
   });
+  // Failed-task counts per episode drive the batch board's red light. Scoped by
+  // this project's episode ids, so no extra userId filter is needed.
+  const failed = await prisma.task.groupBy({
+    by: ["episodeId"],
+    where: { status: "failed", episodeId: { in: episodes.map((e) => e.id) } },
+    _count: { _all: true },
+  });
+  const failedByEp = new Map(failed.map((f) => [f.episodeId, f._count._all]));
+  const episodesWithFailed = episodes.map((e) => ({ ...e, failedTasks: failedByEp.get(e.id) ?? 0 }));
   const planEpisodes = planResultFromJson(project.planResult).episodes;
-  return ok({ ...project, episodes, planRisk: summarizeRisk(planEpisodes) });
+  return ok({ ...project, episodes: episodesWithFailed, planRisk: summarizeRisk(planEpisodes) });
 });
 
 export const PATCH = withAuth(
