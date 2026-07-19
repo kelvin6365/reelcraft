@@ -19,7 +19,9 @@ AI 短劇生產平台（設計階段）。開工前先讀 `docs/plans/2026-07-18
 
 ## 開發陷阱
 
-- **改咗 schema.prisma / 跑咗 migration 之後,一定要重啟 dev server**(同 worker)。Next dev 揸住舊 `@prisma/client`,新 model 會係 `undefined` → route 500。`npx prisma generate` 唔夠,要重啟個 process。
+- **改咗 schema.prisma / 跑咗 migration 之後,一定要重啟 dev server**。Next dev 揸住舊 `@prisma/client`,新 model 會係 `undefined` → route 500。`npx prisma generate` 唔夠,要重啟個 process。
+- **worker 用 `npm run worker`（tsx watch）會自動 reload code**——改咗 handler/adapter 唔使手動重啟。但 migration 後個 Prisma client 要重生,worker 亦要跟住 reload（改任何 .ts 都會觸發；或者手動重啟）。單次跑用 `npm run worker:once`。
+- dev 要 **web + worker 兩個 process 都行住**（`npm run dev` + `npm run worker`）。worker 死咗 → 生成任務會卡喺 queued（dev 冇 watchdog 兜底，生產先有）。
 
 ## 工作法
 
