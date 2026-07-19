@@ -13,6 +13,7 @@ import { fakeImage, fakeTts, fakeVideo } from "@/lib/ai/adapters/fake-media";
 import { falImage, falTts, falVideo } from "@/lib/ai/adapters/fal";
 import { atlasImage, atlasTts, atlasVideo } from "@/lib/ai/adapters/atlascloud";
 import { loadTemplates, runTemplate, type TemplateVars } from "@/lib/ai/template/runtime";
+import { normalizeReferenceImages } from "@/lib/ai/outbound-image";
 import { createMediaFromBuffer, createMediaFromUrl, getMediaUrl } from "@/lib/media/service";
 import type { MediaObject } from "@prisma/client";
 
@@ -53,6 +54,7 @@ export interface ImageGenRequest {
   negativePrompt?: string;
   aspectRatio: string; // '9:16' | '16:9'
   keyPrefix: string; // storage prefix, e.g. `projects/{id}/characters`
+  referenceMediaIds?: string[]; // locked asset images → img2img for character consistency
 }
 
 export interface VideoGenRequest {
@@ -127,6 +129,11 @@ async function generate(
 }
 
 export async function generateImage(ctx: CallContext, req: ImageGenRequest): Promise<MediaObject> {
+  // Resolve locked-asset reference images once (order preserved for the 图片N legend).
+  const referenceImages = req.referenceMediaIds?.length
+    ? await normalizeReferenceImages(req.referenceMediaIds)
+    : undefined;
+
   return generate(ctx, "image", req.modelKey, async ({ provider, modelId }) => {
     if (provider === "fake") {
       const { buffer, mimeType } = await fakeImage(req.prompt, req.aspectRatio);
@@ -135,8 +142,19 @@ export async function generateImage(ctx: CallContext, req: ImageGenRequest): Pro
     }
     if (provider === "fal" || provider === "atlascloud") {
       const apiKey = await getProviderKey(ctx.userId, provider);
-      const gen = provider === "fal" ? falImage : atlasImage;
-      const { url, providerRequestId } = await gen({
+      if (provider === "fal") {
+        const { url, providerRequestId } = await falImage({
+          modelId,
+          prompt: req.prompt,
+          negativePrompt: req.negativePrompt,
+          aspectRatio: req.aspectRatio,
+          apiKey,
+          referenceImages,
+        });
+        const media = await createMediaFromUrl({ userId: ctx.userId, url, keyPrefix: req.keyPrefix });
+        return { media, quantity: 1, unit: "image", providerRequestId };
+      }
+      const { url, providerRequestId } = await atlasImage({
         modelId,
         prompt: req.prompt,
         negativePrompt: req.negativePrompt,

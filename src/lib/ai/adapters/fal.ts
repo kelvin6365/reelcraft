@@ -136,15 +136,31 @@ export interface FalImageArgs {
   negativePrompt?: string;
   aspectRatio: string;
   apiKey: string;
+  referenceImages?: string[]; // data-URIs; when present → image-to-image (character consistency)
+}
+
+// nano-banana (and pro) expose a separate reference/edit endpoint that accepts
+// `image_urls`. Base `fal-ai/nano-banana` → `/edit`; a `.../base` id → `.../edit`.
+function editEndpointFor(modelId: string): string {
+  if (modelId.endsWith("/base")) return modelId.slice(0, -"/base".length) + "/edit";
+  if (modelId.endsWith("/edit")) return modelId;
+  return `${modelId}/edit`;
 }
 
 export async function falImage(args: FalImageArgs): Promise<{ url: string; providerRequestId: string }> {
+  const refs = args.referenceImages ?? [];
+  const hasRefs = refs.length > 0;
+
   const input: Record<string, unknown> = {
     prompt: args.prompt,
-    image_size: imageSizeFor(args.aspectRatio),
+    ...(hasRefs
+      ? { image_urls: refs } // edit/reference path — model conditions on these images
+      : { image_size: imageSizeFor(args.aspectRatio) }), // text-to-image path
   };
   if (args.negativePrompt) input.negative_prompt = args.negativePrompt;
-  const { url, requestId } = await runQueue(args.modelId, args.apiKey, input, ["images", "image"]);
+
+  const endpoint = hasRefs ? editEndpointFor(args.modelId) : args.modelId;
+  const { url, requestId } = await runQueue(endpoint, args.apiKey, input, ["images", "image"]);
   return { url, providerRequestId: requestId };
 }
 

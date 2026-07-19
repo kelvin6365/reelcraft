@@ -72,13 +72,31 @@ export const imageShotHandler: TaskHandler = async ({ task, reportProgress }) =>
   const models = getModelDefaults(project);
   const style = await loadStyle(project.stylePackId);
 
-  // locked assets referenced by name for consistency
-  const characters = await prisma.character.findMany({ where: { projectId: project.id, locked: true } });
-  const locations = await prisma.location.findMany({ where: { projectId: project.id, locked: true } });
-  const lockedAssets = [
-    ...characters.map((c) => `${c.name}: ${c.appearancePrompt}`),
-    ...locations.map((l) => `${l.name}: ${l.prompt}`),
-  ].join("\n");
+  // Character consistency: collect the LOCKED reference images for the assets that
+  // actually appear in THIS shot, ordered. The prompt binds each by a 图片N legend
+  // so the model conditions identity on the injected pixels, not on the name.
+  const lockedCharacters = await prisma.character.findMany({ where: { projectId: project.id, locked: true } });
+  const lockedLocations = await prisma.location.findMany({ where: { projectId: project.id, locked: true } });
+
+  const plan = (shot.storyboardJson as { plan?: { characters?: string[] } }).plan;
+  const shotCharNames = plan?.characters ?? [];
+  const nameMatches = (assetName: string) =>
+    shotCharNames.some((n) => assetName.includes(n) || n.includes(assetName));
+  // characters named in this shot (fall back to all locked chars if the plan named none)
+  const shotCharacters = shotCharNames.length
+    ? lockedCharacters.filter((c) => nameMatches(c.name))
+    : lockedCharacters;
+  // location: v1 uses the first locked location (per-scene binding is M2)
+  const shotLocation = lockedLocations[0];
+
+  const refAssets = [
+    ...shotCharacters.filter((c) => c.lockedImageMediaId).map((c) => ({ mediaId: c.lockedImageMediaId!, label: `${c.name}（角色）`, prompt: c.appearancePrompt })),
+    ...(shotLocation?.lockedImageMediaId ? [{ mediaId: shotLocation.lockedImageMediaId, label: `${shotLocation.name}（場景）`, prompt: shotLocation.prompt }] : []),
+  ];
+  const referenceMediaIds = refAssets.map((a) => a.mediaId);
+  // 图片1=林知夏（角色）；图片2=咖啡店·夜（場景）
+  const referenceLegend = refAssets.map((a, i) => `图片${i + 1}=${a.label}`).join("；") || "（無參考圖）";
+  const lockedAssets = refAssets.map((a, i) => `图片${i + 1}（${a.label}）: ${a.prompt}`).join("\n") || "（無鎖定資產）";
 
   reportProgress(10);
   const out = await textCallJson(
@@ -87,7 +105,8 @@ export const imageShotHandler: TaskHandler = async ({ task, reportProgress }) =>
     "image_prompt_shot",
     {
       shot_json: JSON.stringify(shot.storyboardJson),
-      locked_assets: lockedAssets || "（無鎖定資產）",
+      locked_assets: lockedAssets,
+      reference_legend: referenceLegend,
       style_suffix: style.prefix ?? "",
     },
   );
@@ -101,6 +120,7 @@ export const imageShotHandler: TaskHandler = async ({ task, reportProgress }) =>
       negativePrompt: out.negativePrompt || style.negativePrompt,
       aspectRatio: project.videoRatio,
       keyPrefix: `projects/${project.id}/shots/${shot.id}`,
+      referenceMediaIds,
     },
   );
 

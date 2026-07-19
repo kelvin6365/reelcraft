@@ -57,6 +57,28 @@ describe("fal adapter — Queue submit→poll→completed", () => {
     });
   });
 
+  it("falImage with references switches to the /edit endpoint and sends image_urls", async () => {
+    const fetchMock = stubFalQueue({ result: { images: [{ url: "https://cdn.fal/ref-out.png" }] } });
+    const refs = ["data:image/jpeg;base64,AAA", "data:image/jpeg;base64,BBB"];
+
+    const out = await falImage({
+      modelId: "fal-ai/nano-banana",
+      prompt: "林知夏 pushing the cafe door",
+      aspectRatio: "9:16",
+      apiKey: "k",
+      referenceImages: refs,
+    });
+
+    expect(out.url).toBe("https://cdn.fal/ref-out.png");
+    const [submitUrl, submitInit] = fetchMock.mock.calls[0];
+    expect(String(submitUrl)).toBe("https://queue.fal.run/fal-ai/nano-banana/edit"); // reference/edit endpoint
+    const body = JSON.parse(submitInit?.body as string);
+    expect(body.image_urls).toEqual(refs); // references in image_urls
+    expect(body.image_size).toBeUndefined(); // no text-to-image sizing when conditioning on refs
+    // status/result polling uses the app root, not the /edit subpath
+    expect(String(fetchMock.mock.calls[1][0])).toContain("/fal-ai/nano-banana/requests/");
+  });
+
   it("falVideo passes image_url + aspect_ratio and reads result.video.url", async () => {
     const fetchMock = stubFalQueue({ result: { video: { url: "https://cdn.fal/out.mp4" } } });
 

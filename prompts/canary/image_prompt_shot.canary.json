@@ -1,0 +1,16 @@
+{
+  "promptId": "image_prompt_shot",
+  "variables": {
+    "shot_json": "{\"plan\":{\"subject\":\"林知夏推門入店\",\"characters\":[\"林知夏\"]},\"detail\":{\"shotSize\":\"全景\",\"camera\":\"固定\"}}",
+    "reference_legend": "图片1=林知夏（角色）；图片2=咖啡店·夜（場景）",
+    "locked_assets": "图片1（林知夏（角色））: 二十多歲女性，及肩黑髮",
+    "style_suffix": "cinematic still, warm lighting"
+  },
+  "mustContain": [
+    "只輸出純 JSON",
+    "@图N",
+    "不要只用名字",
+    "Match the reference images exactly",
+    "Only framing, camera angle, action and expression may change"
+  ]
+}
