@@ -139,11 +139,14 @@ export interface FalImageArgs {
   referenceImages?: string[]; // data-URIs; when present → image-to-image (character consistency)
 }
 
-// nano-banana (and pro) expose a separate reference/edit endpoint that accepts
-// `image_urls`. Base `fal-ai/nano-banana` → `/edit`; a `.../base` id → `.../edit`.
+// Reference/edit endpoint per model. fal exposes an `/edit` variant that accepts
+// `image_urls` for nano-banana, nano-banana-pro, and Seedream. The text-to-image
+// suffix (or /base) is swapped for /edit; a bare model id gets /edit appended.
 function editEndpointFor(modelId: string): string {
-  if (modelId.endsWith("/base")) return modelId.slice(0, -"/base".length) + "/edit";
   if (modelId.endsWith("/edit")) return modelId;
+  for (const suffix of ["/text-to-image", "/image-to-image", "/base"]) {
+    if (modelId.endsWith(suffix)) return modelId.slice(0, -suffix.length) + "/edit";
+  }
   return `${modelId}/edit`;
 }
 

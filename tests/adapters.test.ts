@@ -103,6 +103,17 @@ describe("fal adapter — Queue submit→poll→completed", () => {
     expect(String(fetchMock.mock.calls[1][0])).toContain("/fal-ai/nano-banana/requests/");
   });
 
+  it("derives the /edit endpoint per model (pro, seedream text-to-image)", async () => {
+    for (const [modelId, expected] of [
+      ["fal-ai/nano-banana-pro", "https://queue.fal.run/fal-ai/nano-banana-pro/edit"],
+      ["fal-ai/bytedance/seedream/v4/text-to-image", "https://queue.fal.run/fal-ai/bytedance/seedream/v4/edit"],
+    ] as const) {
+      const fetchMock = stubFalQueue({ result: { images: [{ url: "https://cdn.fal/o.png" }] } });
+      await falImage({ modelId, prompt: "x", aspectRatio: "9:16", apiKey: "k", referenceImages: ["data:image/jpeg;base64,AAA"] });
+      expect(String(fetchMock.mock.calls[0][0])).toBe(expected);
+    }
+  });
+
   it("falVideo passes image_url + aspect_ratio and reads result.video.url", async () => {
     const fetchMock = stubFalQueue({ result: { video: { url: "https://cdn.fal/out.mp4" } } });
 
