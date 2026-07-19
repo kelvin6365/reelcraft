@@ -39,7 +39,23 @@ function assetImageHandler(kind: "character" | "location"): TaskHandler {
     const style = await loadStyle(project.stylePackId);
 
     const basePrompt = "appearancePrompt" in row && row.appearancePrompt ? row.appearancePrompt : ((row as { prompt?: string }).prompt ?? "");
-    const fullPrompt = `${basePrompt}. ${style.prefix ?? ""}`.trim();
+    // Reference-optimized framing: a character asset is meant to be REUSED as an
+    // img2img reference across every shot, so generate it as a clean reference
+    // portrait — front-facing, neutral even lighting, plain background, full
+    // subject visible — which maximizes identity info and avoids baking in a
+    // scene's lighting (lighting comes from the scene reference at shot time).
+    const refFraming =
+      kind === "character"
+        ? "character reference sheet, front-facing, neutral even lighting, plain light-grey background, full head and upper body clearly visible, sharp focus on face"
+        : "establishing reference view, even neutral lighting, clear wide framing";
+    const fullPrompt = `${basePrompt}. ${refFraming}. ${style.prefix ?? ""}`.trim();
+
+    // Self-referencing regeneration (M2a): if the asset already has a locked image
+    // and the caller asks to keep identity, feed that image as a reference so the
+    // regenerated candidates keep the same face/identity while pose/outfit can
+    // change (waoowaoo/Toonflow's canonical-image trick).
+    const keepIdentity = (task.payload as { keepIdentity?: boolean }).keepIdentity === true;
+    const identityRef = keepIdentity && row.lockedImageMediaId ? [row.lockedImageMediaId] : undefined;
 
     const mediaIds: string[] = [];
     for (let i = 0; i < CANDIDATE_COUNT; i++) {
@@ -51,6 +67,7 @@ function assetImageHandler(kind: "character" | "location"): TaskHandler {
           negativePrompt: style.negativePrompt,
           aspectRatio: "9:16",
           keyPrefix: `projects/${project.id}/${kind}s/${row.id}`,
+          referenceMediaIds: identityRef,
         },
       );
       mediaIds.push(media.id);
