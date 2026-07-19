@@ -131,6 +131,10 @@ model Episode {
   scriptText    String  @default("")
   // 'draft'|'assets'|'script'|'storyboard'|'images'|'videos'|'export'|'done'
   status        String  @default("draft")
+  // Batch/season generation: when true, each completed task auto-advances this
+  // episode via computeNextAction (docs/plans/2026-07-19-batch-generation-design.md).
+  autorun       Boolean @default(false)
+  autorunConfig Json    @default("{}") // { autoConfirmStoryboard, skipVideo }
   exportMediaId String?
   exportMedia   MediaObject? @relation("EpisodeExport", fields: [exportMediaId], references: [id])
   createdAt     DateTime @default(now())

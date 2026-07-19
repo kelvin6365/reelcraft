@@ -3,6 +3,7 @@ import { addTaskJob } from "@/lib/task/queues";
 import { publishTaskEvent } from "@/lib/task/events";
 import { classifyError, getQueueForTaskType, type TaskType } from "@/lib/task/types";
 import { settleTaskFreeze, rollbackTaskFreeze } from "@/lib/billing/ledger";
+import { advanceAfterTask } from "@/lib/batch/advance";
 import type { Task } from "@prisma/client";
 
 export interface HandlerContext {
@@ -59,6 +60,7 @@ export async function withTaskLifecycle(taskId: string, handler: TaskHandler): P
     if (won.count === 0) return;
     await settleTaskFreeze(taskId); // ENFORCE: charge actual (from ai_call_logs), refund the rest
     publishTaskEvent(task.projectId, { taskId, taskType: task.type, eventType: "COMPLETED", progress: 100 });
+    advanceAfterTask(task.episodeId); // batch autorun: submit the episode's next step (no-op unless autorun)
   } catch (err) {
     const { code, message, retryable } = classifyError(err);
 

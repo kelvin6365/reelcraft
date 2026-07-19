@@ -9,13 +9,14 @@ import { ACTIVE_STATUSES } from "@/lib/task/types";
 // storyboard is "confirmed" once the episode has advanced past the review gate
 const CONFIRMED_STATUSES = ["images", "videos", "export", "done"];
 
-export async function buildEpisodeView(userId: string, episodeId: string) {
-  const episode = await prisma.episode.findFirst({
-    where: { id: episodeId, userId },
-    include: { project: true },
-  });
-  if (!episode) throw new ApiError("NOT_FOUND", 404, "episode not found");
-
+// Builds the pure state snapshot for an episode. Shared by the episode view
+// (GET /api/episodes/:id) AND the batch auto-advance engine — keep it the single
+// source of pipeline-state truth.
+export async function buildEpisodeSnapshot(
+  episode: { id: string; projectId: string; rawText: string; scriptText: string; status: string; exportMediaId: string | null },
+  inputType: string,
+): Promise<{ snapshot: EpisodeSnapshot; characters: Awaited<ReturnType<typeof prisma.character.findMany>>; locations: Awaited<ReturnType<typeof prisma.location.findMany>>; shots: Awaited<ReturnType<typeof prisma.shot.findMany>>; voiceLines: Awaited<ReturnType<typeof prisma.voiceLine.findMany>> }> {
+  const episodeId = episode.id;
   const [characters, locations, scenes, shots, voiceLines, activeTasks, failedTasks] = await Promise.all([
     prisma.character.findMany({ where: { projectId: episode.projectId } }),
     prisma.location.findMany({ where: { projectId: episode.projectId } }),
@@ -46,7 +47,7 @@ export async function buildEpisodeView(userId: string, episodeId: string) {
       withVideo: shots.filter((sh) => sh.videoMediaId).length,
     },
     storyboardConfirmed: CONFIRMED_STATUSES.includes(episode.status),
-    isSrtMode: episode.project.inputType === "srt",
+    isSrtMode: inputType === "srt",
     voiceLines: {
       total: voiceLines.length,
       withAudio: voiceLines.filter((v) => v.audioMediaId).length,
@@ -55,6 +56,18 @@ export async function buildEpisodeView(userId: string, episodeId: string) {
     runningTaskTypes: activeTasks.map((t) => t.type),
     failedTasks,
   };
+  return { snapshot, characters, locations, shots, voiceLines };
+}
+
+export async function buildEpisodeView(userId: string, episodeId: string) {
+  const episode = await prisma.episode.findFirst({
+    where: { id: episodeId, userId },
+    include: { project: true },
+  });
+  if (!episode) throw new ApiError("NOT_FOUND", 404, "episode not found");
+
+  const { snapshot, characters, locations, shots, voiceLines } = await buildEpisodeSnapshot(episode, episode.project.inputType);
+  const failedTasks = snapshot.failedTasks;
 
   const [charactersWithUrls, locationsWithUrls, shotsWithUrls, voiceLinesWithUrls, episodeWithUrl] = await Promise.all([
     attachMediaUrls(characters, ["lockedImageMediaId"]),
