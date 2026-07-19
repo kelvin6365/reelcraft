@@ -16,8 +16,10 @@
 - prompt 全部英文、逗號分隔短語式；把中文分鏡資訊翻成準確的英文攝影／表演詞彙。
 - 把 style_suffix 原樣接在最尾。
 
+- 角色參考圖可能是「多角度設定表（turnaround sheet）」——你要當它是同一個人的不同角度樣板，取需要的角度來畫，但**輸出必須是單一電影鏡頭畫面，不是設定表、不是多格拼貼**。
+
 在 prompt 結尾固定加入以下連續性條款（英文，一字不改語意）：
-"Match the reference images exactly for face, hairstyle and wardrobe. Only framing, camera angle, action and expression may change. Do not introduce any character not present in the reference images."
+"Render as ONE single cinematic frame, not a character sheet or grid. Match the reference images exactly for face, hairstyle and wardrobe. Only framing, camera angle, action and expression may change. Do not introduce any character not present in the reference images."
 
 輸入：
 - 鏡頭分鏡 shot_json：{shot_json}

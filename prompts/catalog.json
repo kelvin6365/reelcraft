@@ -89,7 +89,7 @@
     {
       "id": "image_prompt_shot",
       "path": "pipeline/image_prompt_shot.zh.txt",
-      "version": "3",
+      "version": "4",
       "variables": [
         "shot_json",
         "reference_legend",

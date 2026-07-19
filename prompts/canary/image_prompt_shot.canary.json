@@ -10,7 +10,7 @@
     "只輸出純 JSON",
     "@图N",
     "不要只用名字",
-    "Match the reference images exactly",
-    "Only framing, camera angle, action and expression may change"
+    "Render as ONE single cinematic frame",
+    "turnaround sheet"
   ]
 }

@@ -39,15 +39,18 @@ function assetImageHandler(kind: "character" | "location"): TaskHandler {
     const style = await loadStyle(project.stylePackId);
 
     const basePrompt = "appearancePrompt" in row && row.appearancePrompt ? row.appearancePrompt : ((row as { prompt?: string }).prompt ?? "");
-    // Reference-optimized framing: a character asset is meant to be REUSED as an
-    // img2img reference across every shot, so generate it as a clean reference
-    // portrait — front-facing, neutral even lighting, plain background, full
-    // subject visible — which maximizes identity info and avoids baking in a
-    // scene's lighting (lighting comes from the scene reference at shot time).
+    // Reference-optimized framing: a character asset is REUSED as an img2img
+    // reference across every shot, so a single front view isn't enough — the model
+    // would have to hallucinate side/back angles and drift. Generate a proper
+    // multi-view TURNAROUND sheet (front / 3-4 / side / back of the SAME identity)
+    // on a neutral background with flat even lighting, so every shot angle has a
+    // reference to lock to and no scene lighting is baked in.
     const refFraming =
       kind === "character"
-        ? "character reference sheet, front-facing, neutral even lighting, plain light-grey background, full head and upper body clearly visible, sharp focus on face"
+        ? "full character turnaround model sheet: the SAME single character shown in a row from multiple angles — front view, three-quarter view, side profile, and back view — identical face, hairstyle, outfit and body across all views, neutral standing pose, plain light-grey background, flat even studio lighting, no cast shadows, full body visible"
         : "establishing reference view, even neutral lighting, clear wide framing";
+    // A turnaround needs a wide frame to fit the angles side by side; locations keep the video ratio.
+    const assetRatio = kind === "character" ? "16:9" : "9:16";
     const fullPrompt = `${basePrompt}. ${refFraming}. ${style.prefix ?? ""}`.trim();
 
     // Self-referencing regeneration (M2a): if the asset already has a locked image
@@ -65,7 +68,7 @@ function assetImageHandler(kind: "character" | "location"): TaskHandler {
           modelKey: models.image,
           prompt: `${fullPrompt} (variant ${i + 1})`,
           negativePrompt: style.negativePrompt,
-          aspectRatio: "9:16",
+          aspectRatio: assetRatio,
           keyPrefix: `projects/${project.id}/${kind}s/${row.id}`,
           referenceMediaIds: identityRef,
         },
