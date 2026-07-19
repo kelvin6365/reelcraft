@@ -1,0 +1,15 @@
+{
+  "promptId": "storyboard_detail",
+  "variables": {
+    "shot_list_json": "[{\"index\":1,\"subject\":\"林知夏推門入店\",\"characters\":[\"林知夏\"],\"dialogue\":\"\"}]",
+    "scene_type": "daily"
+  },
+  "mustContain": [
+    "只輸出純 JSON",
+    "video_prompt",
+    "motion-ready",
+    "silent",
+    "一鏡一運鏡",
+    "no morphing"
+  ]
+}

@@ -125,7 +125,7 @@ export const ActingOutput = z.object({
 });
 export type ActingOutput = z.infer<typeof ActingOutput>;
 
-// storyboard_detail
+// storyboard_detail — also emits a motion-ready i2v video_prompt per shot.
 export const DetailOutput = z.object({
   shots: z.array(
     z.object({
@@ -133,6 +133,7 @@ export const DetailOutput = z.object({
       shotSize: z.string(),
       angle: z.string(),
       camera: z.string(),
+      video_prompt: z.string().optional().default(""),
       note: z.string().optional().default(""),
     }),
   ),

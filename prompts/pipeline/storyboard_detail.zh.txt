@@ -11,8 +11,17 @@
 - 運鏡（camera）：固定／推／拉／搖／移／跟／手持，只能七選一。情緒推進用推，交代空間用搖或移，緊張感用手持。
 - 全場鏡頭遵守 180 度軸線守恆：同一段對話的機位不要跳軸，維持人物左右關係一致。
 
+另外，為每個鏡頭寫一條 **video_prompt**（英文，image-to-video 用）——這是「時間＋動作＋運鏡」的動態描述，跟單幀構圖不同，規則：
+- 全英文，motion-ready，一句到兩句連貫散文；描述鏡頭裡發生的具體動作與鏡頭運動。
+- 情緒必須靠可見動作表達，不可用抽象情緒詞：❌ "she is sad" → ✅ "her shoulders slump, head lowers slowly".
+- 指代角色用「年齡＋性別」措辭（例如 "the young woman"、"the man in his thirties"），不要用中文名，以穩定 i2v 身份不漂移。
+- 運鏡用英文對應詞：固定→static camera、推→slow push in、拉→pull back、搖→pan、移→dolly、跟→tracking shot、手持→handheld。
+- 一鏡一運鏡，single continuous take, no cuts。
+- 台詞口型：對白角色標 "speaking"，畫面內不講話的角色明確標 "silent"（避免生錯口型）；內心獨白/畫外音一律 "silent"。
+- 結尾固定接："single continuous shot, natural motion, no morphing"。
+
 輸出結構（欄位固定，逐鏡對應輸入的 index）：
-{"shots": [{"index": 1, "shotSize": "近景", "angle": "過肩", "camera": "固定", "note": "細節備註"}]}
+{"shots": [{"index": 1, "shotSize": "近景", "angle": "過肩", "camera": "固定", "video_prompt": "the young woman pushes the cafe door open and steps inside, slow push in, single continuous shot, natural motion, no morphing", "note": "細節備註"}]}
 
 現在處理以下鏡頭清單：
 

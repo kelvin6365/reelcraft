@@ -57,6 +57,30 @@ describe("fal adapter — Queue submit→poll→completed", () => {
     });
   });
 
+  it("falVideo sends a motion negative prompt and cfg_scale for Kling", async () => {
+    const fetchMock = stubFalQueue({ result: { video: { url: "https://cdn.fal/v.mp4" } } });
+    await falVideo({
+      modelId: "fal-ai/kling-video/v3/standard/image-to-video",
+      prompt: "the woman pushes the door open, slow push in",
+      imageUrl: "https://cdn/x.png",
+      durationSec: 5,
+      aspectRatio: "9:16",
+      apiKey: "k",
+    });
+    const body = JSON.parse(fetchMock.mock.calls[0][1]?.body as string);
+    expect(body.negative_prompt).toContain("morph");
+    expect(body.cfg_scale).toBe(0.5);
+    expect(body.image_url).toBe("https://cdn/x.png");
+  });
+
+  it("falVideo omits cfg_scale for non-Kling models", async () => {
+    const fetchMock = stubFalQueue({ result: { video: { url: "https://cdn.fal/v.mp4" } } });
+    await falVideo({ modelId: "fal-ai/veo3.1/image-to-video", prompt: "x", imageUrl: "https://cdn/x.png", durationSec: 5, aspectRatio: "9:16", apiKey: "k" });
+    const body = JSON.parse(fetchMock.mock.calls[0][1]?.body as string);
+    expect(body.cfg_scale).toBeUndefined();
+    expect(body.negative_prompt).toBeDefined(); // negative prompt still applied
+  });
+
   it("falImage with references switches to the /edit endpoint and sends image_urls", async () => {
     const fetchMock = stubFalQueue({ result: { images: [{ url: "https://cdn.fal/ref-out.png" }] } });
     const refs = ["data:image/jpeg;base64,AAA", "data:image/jpeg;base64,BBB"];

@@ -178,7 +178,11 @@ export async function falVideo(args: FalVideoArgs): Promise<{ url: string; provi
     prompt: args.prompt,
     aspect_ratio: args.aspectRatio,
     duration: String(args.durationSec),
+    // Motion-realism guard (waoowaoo's lesson): a short negative prompt + lower
+    // guidance keeps i2v from morphing/distorting faces. Kling supports cfg_scale.
+    negative_prompt: "blur, distort, morph, deformed face, extra limbs, low quality, flickering",
   };
+  if (args.modelId.includes("kling")) input.cfg_scale = 0.5;
   if (args.imageUrl) input.image_url = args.imageUrl;
   const { url, requestId } = await runQueue(args.modelId, args.apiKey, input, ["video"]);
   return { url, providerRequestId: requestId };

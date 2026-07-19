@@ -158,15 +158,18 @@ export const videoShotHandler: TaskHandler = async ({ task, reportProgress }) =>
   const { episode, project } = await loadEpisodeWithProject({ ...task, episodeId: shot.episodeId });
   const models = getModelDefaults(project);
 
-  const plan = (shot.storyboardJson as { plan?: { subject?: string } }).plan;
+  const sb = shot.storyboardJson as { plan?: { subject?: string }; detail?: { video_prompt?: string } };
   const durationSec = Math.max(2, Math.round(shot.durationMs / 1000) || 3);
+  // Prefer the motion-ready video_prompt authored by the storyboard detail stage
+  // (time + action + camera), over a user override, over the still-image subject.
+  const videoPrompt = shot.videoPrompt || sb.detail?.video_prompt || sb.plan?.subject || shot.imagePrompt;
 
   reportProgress(20);
   const media = await generateVideo(
     { userId: task.userId, taskId: task.id, projectId: project.id, episodeId: episode.id },
     {
       modelKey: models.video,
-      prompt: shot.videoPrompt || plan?.subject || shot.imagePrompt,
+      prompt: videoPrompt,
       sourceImageMediaId: shot.imageMediaId,
       durationSec,
       aspectRatio: project.videoRatio,

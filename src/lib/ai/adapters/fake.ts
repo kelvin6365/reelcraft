@@ -65,9 +65,9 @@ const canned: Record<string, unknown> = {
   },
   storyboard_detail: {
     shots: [
-      { index: 1, shotSize: "全景", angle: "平視", camera: "固定", note: "" },
-      { index: 2, shotSize: "近景", angle: "微仰", camera: "緩推", note: "" },
-      { index: 3, shotSize: "中景", angle: "平視", camera: "固定", note: "" },
+      { index: 1, shotSize: "全景", angle: "平視", camera: "固定", video_prompt: "the young woman pushes the cafe door open and steps inside, static camera, single continuous shot, natural motion, no morphing", note: "" },
+      { index: 2, shotSize: "近景", angle: "微仰", camera: "緩推", video_prompt: "the man in his thirties raises his head and meets her eyes, slow push in, speaking, single continuous shot, natural motion, no morphing", note: "" },
+      { index: 3, shotSize: "中景", angle: "平視", camera: "固定", video_prompt: "the young woman sits down and speaks quietly, silent man across her, static camera, single continuous shot, natural motion, no morphing", note: "" },
     ],
   },
   voice_analyze: {

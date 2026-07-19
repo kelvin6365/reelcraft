@@ -69,12 +69,12 @@
     {
       "id": "storyboard_detail",
       "path": "pipeline/storyboard_detail.zh.txt",
-      "version": "1",
+      "version": "2",
       "variables": [
         "shot_list_json",
         "scene_type"
       ],
-      "description": "分鏡第④階段細節：按場景類型套景別/視角/運鏡鏡頭語言庫（JSON）。"
+      "description": "分鏡第④階段細節：景別/視角/運鏡 + 每鏡 motion-ready video_prompt（JSON）。"
     },
     {
       "id": "voice_analyze",
