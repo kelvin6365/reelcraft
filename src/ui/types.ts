@@ -75,9 +75,18 @@ export interface PlanRisk {
   ok: number;
 }
 
+// Per-project default model keys (provider::modelId). Prisma Json column.
+export interface ModelDefaults {
+  text?: string;
+  image?: string;
+  video?: string;
+  tts?: string;
+}
+
 // GET /api/projects/:id — extends ProjectSummary with the planning fields.
 export interface ProjectPlanView extends ProjectSummary {
   sourceText: string;
+  modelDefaults: ModelDefaults | null;
   planStatus: PlanStatus;
   planConfig: PlanConfigView | null;
   planResult: { episodes: PlannedEpisode[] } | null;

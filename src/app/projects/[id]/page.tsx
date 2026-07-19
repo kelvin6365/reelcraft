@@ -5,6 +5,7 @@ import { api, ApiClientError } from "@/ui/api";
 import { TopBar } from "@/ui/TopBar";
 import { PlanSetup } from "@/ui/planning/PlanSetup";
 import { PlanReview } from "@/ui/planning/PlanReview";
+import { ModelPicker } from "@/ui/planning/ModelPicker";
 import type { EpisodeListItem, ProjectPlanView } from "@/ui/types";
 
 const STATUS_LABEL: Record<string, string> = {
@@ -87,6 +88,8 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
               <span className="badge">{project.stylePackId}</span>
               <span className="badge">{project.videoRatio}</span>
             </div>
+
+            <ModelPicker id={id} modelDefaults={project.modelDefaults} refetch={reload} />
 
             {/* ---------- episode planning (novels only) ---------- */}
             {!isSrt && (
