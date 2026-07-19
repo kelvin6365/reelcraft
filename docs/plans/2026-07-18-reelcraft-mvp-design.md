@@ -2,7 +2,7 @@
 
 > 日期：2026-07-18｜作者：Kelvin + Claude
 > 前置研究：`~/Projects/ai-drama-platforms-report.html`（huobao-drama / Toonflow / waoowaoo 三專案深度對比）
-> 狀態：已確認設計，未開工
+> 狀態：✅ 已實裝（M0–M3 全部出貨；後續增量見同目錄其他設計文檔）
 
 ## 0. 決策記錄（Brainstorm 結論）
 

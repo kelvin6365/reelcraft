@@ -9,6 +9,10 @@ AI 短劇生產平台：真多租戶、任務佇列有 watchdog 兜底、每次 
 - **八站引導流程** — 進度總覽條 + 常駐「下一步」卡 + 失敗抽屜一鍵重試，永遠知道下一步
 - **兩個人手審核閘** — 資產鎖定（3 選 1）同分鏡確認（附下游成本預覽），下游重生成本最細
 - **雙輸入模式** — 小說原文（LLM 全流程）或 SRT 字幕（確定性 1 cue = 1 鏡）
+- **AI 劇集規劃** — 貼全本小說自動分集（錨定集長或集數），🔴🟡🟢 風險圖示 review-by-exception，唔使逐集深審
+- **角色一致性** — 多視角 turnaround 定妝 + img2img 參考圖鎖定身份（图片N 綁定），跨鏡頭同一張臉
+- **批量出片** — 一鍵全季自動生成：task 完成自動接下一站，分鏡可自動確認，跳視頻省錢模式，全季進度板逐集亮燈
+- **影像模型任揀** — nano-banana / nano-banana-pro / Seedream v4 逐專案切換，成本價目寫入能力目錄
 - **Provider 中立** — `provider::modelId` 嚴格契約；OpenRouter / fal / AtlasCloud 內建，或者用一份 JSON 宣告式模板接任意廠商
 - **審計一切** — `callModel()` 唯一入口自動記帳；`/usage` 儀表板睇成本、token、latency
 - **生產級任務系統** — BullMQ ×4 + 心跳 + watchdog 殭屍恢復（kill -9 worker 任務自動續跑）
@@ -32,8 +36,9 @@ npm run worker                # 另一個 terminal
 
 ```bash
 npm run check          # 10+ guards + typecheck
-npm test               # 93+ tests
+npm test               # 137+ tests
 npm run smoke:pipeline # 小說→mp4 離線 E2E
+npm run smoke:batch    # 兩集批量自動出片離線 E2E
 npm run smoke:task     # kill -9 worker 恢復測試
 ```
 

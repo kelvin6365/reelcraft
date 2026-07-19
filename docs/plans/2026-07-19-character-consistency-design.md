@@ -2,7 +2,7 @@
 
 > 日期：2026-07-19｜作者：Kelvin + Claude
 > 前置研究：三個參考 repo（huobao-drama / Toonflow / waoowaoo）嘅角色一致性機制深挖（三份 dossier）
-> 狀態：已確認設計
+> 狀態：✅ 已實裝（img2img 參考圖鎖定 + 多視角 turnaround sheet + 自參考重生，A/B 對比驗證）
 
 ## 0. 問題
 

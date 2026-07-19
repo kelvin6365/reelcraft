@@ -19,6 +19,7 @@
     "smoke:pipeline": "tsx --env-file=.env scripts/smoke-pipeline.ts",
     "smoke:plan": "tsx --env-file=.env scripts/smoke-plan.ts",
     "smoke:srt": "tsx --env-file=.env scripts/smoke-srt.ts",
+    "smoke:batch": "tsx --env-file=.env scripts/smoke-batch.ts",
     "test": "vitest run"
   },
   "dependencies": {

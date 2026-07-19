@@ -1,7 +1,7 @@
 # AI 劇集規劃（Episode Planning）設計
 
 > 日期：2026-07-19｜作者：Kelvin + Claude（brainstorming，product-designer lens）
-> 狀態：已確認設計，未開工
+> 狀態：✅ 已實裝（AI 分集規劃 + 風險圖示審核 + 純操作編輯，經瀏覽器 E2E 驗證）
 > 依賴：M0–M3 已出貨。半數基建已存在（見下）。
 
 ## 0. 問題與目標

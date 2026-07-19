@@ -2,7 +2,7 @@
 
 > 日期：2026-07-19｜作者：Kelvin + Claude
 > 前置研究：三個參考 repo（huobao / Toonflow / waoowaoo）嘅 i2v 視頻 prompt 機制深挖（三份 dossier）
-> 狀態：已確認設計
+> 狀態：M1 ✅ 已實裝（storyboard LLM 產 video_prompt + Kling negative_prompt/cfg，A/B 驗證）；M2（首尾幀、時間軸、對白驅動 speaking/silent）未開工
 
 ## 0. 問題
 

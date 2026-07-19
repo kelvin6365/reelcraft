@@ -1,6 +1,6 @@
 # 批量出片（Batch / Season Generation）設計
 
-> 日期：2026-07-19｜狀態：已確認
+> 日期：2026-07-19｜狀態：✅ 已實裝（advance 引擎 + lifecycle hook + API + UI；smoke-batch 兩集全自動出片通過）
 > 目標：規劃完 N 集後一鍵全季生成，唔使逐集手動行八站。短劇 60-100 集嘅量產核心。
 
 ## 核心設計：重用 Next Best Action 做批量引擎
