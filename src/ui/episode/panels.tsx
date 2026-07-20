@@ -409,6 +409,7 @@ export function ScriptPanel({ view, progress, refetch }: PanelProps) {
 export function StoryboardPanel({ view, progress, refetch }: PanelProps) {
   const { shots } = view;
   const confirm = useAction(refetch);
+  const regen = useAction(refetch);
   const epId = view.episode.id;
   return (
     <Station
@@ -416,13 +417,26 @@ export function StoryboardPanel({ view, progress, refetch }: PanelProps) {
       progress={progress}
       action={
         shots.length > 0 && (
-          <button
-            className="btn btn-primary btn-sm"
-            disabled={confirm.busy}
-            onClick={() => confirm.run(() => api.post(`/api/episodes/${epId}/storyboard/confirm`))}
-          >
-            {confirm.busy ? <span className="spinner" /> : "確認分鏡"}
-          </button>
+          <div className="row" style={{ gap: 8 }}>
+            <button
+              className="btn btn-sm"
+              disabled={regen.busy || confirm.busy}
+              title="重新規劃分鏡（會重簽空間契約）。已生成嘅鏡頭圖／視頻會被清走，要重新生成。"
+              onClick={() => {
+                if (!window.confirm("重新生成分鏡會清走所有現有鏡頭（包括已生成嘅圖同視頻），確定？")) return;
+                regen.run(() => api.post(`/api/episodes/${epId}/storyboard`));
+              }}
+            >
+              {regen.busy ? <span className="spinner" /> : "🔄 重新生成分鏡"}
+            </button>
+            <button
+              className="btn btn-primary btn-sm"
+              disabled={confirm.busy || regen.busy}
+              onClick={() => confirm.run(() => api.post(`/api/episodes/${epId}/storyboard/confirm`))}
+            >
+              {confirm.busy ? <span className="spinner" /> : "確認分鏡"}
+            </button>
+          </div>
         )
       }
     >
