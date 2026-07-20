@@ -7,8 +7,10 @@ import { useSession } from "@/ui/auth-client";
 import type { ProjectSummary } from "@/ui/types";
 
 const STYLE_PACKS = [
-  { id: "cinematic-01", label: "電影感 cinematic-01" },
-  { id: "anime-01", label: "動漫 anime-01" },
+  { id: "cinematic-01", label: "真人電影感 cinematic-01" },
+  { id: "kdrama-01", label: "真人韓劇 kdrama-01" },
+  { id: "anime-01", label: "2D 動漫 anime-01" },
+  { id: "3d-01", label: "3D 動畫 3d-01" },
 ];
 const RATIOS = ["9:16", "16:9"];
 const INPUT_TYPES = [

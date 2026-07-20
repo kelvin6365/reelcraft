@@ -1,7 +1,8 @@
 {
   "name": "韓劇寫實",
   "prefix": "korean drama cinematography, soft naturalistic lighting, muted pastel color grade, shallow depth of field, clean modern interiors, emotional close-up framing, photorealistic",
-  "negativePrompt": "cartoon, anime, illustration, oversaturated, harsh shadows, low quality, deformed hands",
+  "assetPrefix": "photorealistic, korean drama styling, natural true-to-life color, sharp focus throughout, refined skin and fabric detail",
+  "negativePrompt": "cartoon, anime, illustration, oversaturated, harsh shadows, low quality, deformed hands, text, watermark",
   "bannedWords": ["film grain", "noise", "vintage filter", "8mm"],
-  "notes": "情感特寫為主，光線柔和自然。禁用詞會令畫面變糊或過度做舊，用 soft cinematic texture 替代。"
+  "notes": "情感特寫為主，光線柔和自然。禁用詞會令畫面變糊或過度做舊，用 soft cinematic texture 替代。兩種用法：鏡頭圖 prefix 接尾；資產圖用 assetPrefix 行先——場景 look（粉彩色調/淺景深）唔准 bake 入參考圖。"
 }
