@@ -51,9 +51,15 @@ export const rewriteScriptHandler: TaskHandler = async ({ task, reportProgress }
   );
   if (!result.text.trim()) throw new TaskError("LLM_OUTPUT_INVALID", "empty script", true);
 
+  // Some models prepend a polite preamble（「好的，這是…」）despite the prompt's
+  // anti-lazy rules — strip anything before the first scene heading.
+  let script = result.text.trim();
+  const firstScene = script.indexOf("【第");
+  if (firstScene > 0) script = script.slice(firstScene);
+
   reportProgress(90);
   // fresh script → the previous 劇本體檢 no longer applies
-  await prisma.episode.update({ where: { id: episode.id }, data: { scriptText: result.text.trim(), scriptReview: {} } });
+  await prisma.episode.update({ where: { id: episode.id }, data: { scriptText: script, scriptReview: {} } });
   return { chars: result.text.length };
 };
 

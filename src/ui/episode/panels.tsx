@@ -1,5 +1,5 @@
 "use client";
-import { useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { api, ApiClientError } from "@/ui/api";
 import type { EpisodeView, LiveTaskMap, StageKey, ShotView, ScriptReviewView } from "@/ui/types";
 import { STATION_BY_KEY } from "./stations";
@@ -237,6 +237,11 @@ function ScriptReviewLights({ review }: { review: ScriptReviewView }) {
 export function ScriptPanel({ view, progress, refetch }: PanelProps) {
   const [text, setText] = useState(view.episode.scriptText);
   const [dirty, setDirty] = useState(false);
+  // REWRITE_SCRIPT finishing refetches the view — sync the textarea unless the
+  // user has local edits (found in browser QA: script stayed blank until reload).
+  useEffect(() => {
+    if (!dirty) setText(view.episode.scriptText);
+  }, [view.episode.scriptText, dirty]);
   const save = useAction(refetch);
   const regen = useAction(refetch);
   const checkup = useAction(refetch);
