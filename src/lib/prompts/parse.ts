@@ -24,9 +24,53 @@ export function safeParseJson(raw: string): unknown {
   const body = extractJsonBody(raw);
   try {
     return JSON.parse(body);
-  } catch (err) {
-    throw new JsonParseError(`output is not valid JSON: ${String(err)}`, raw);
+  } catch {
+    // Deterministic repair for the most common LLM breakage: raw control
+    // characters (newline/tab) inside string values — JSON.parse reports
+    // "Unterminated string". Escape them only INSIDE strings, then re-parse.
+    try {
+      return JSON.parse(escapeControlCharsInStrings(body));
+    } catch (err) {
+      throw new JsonParseError(`output is not valid JSON: ${String(err)}`, raw);
+    }
   }
+}
+
+// Walk the JSON text tracking string context; replace literal control chars
+// inside strings with their escaped forms so JSON.parse accepts them.
+function escapeControlCharsInStrings(s: string): string {
+  let out = "";
+  let inString = false;
+  let escaped = false;
+  for (const ch of s) {
+    if (inString) {
+      if (escaped) {
+        out += ch;
+        escaped = false;
+        continue;
+      }
+      if (ch === "\\") {
+        out += ch;
+        escaped = true;
+        continue;
+      }
+      if (ch === '"') {
+        inString = false;
+        out += ch;
+        continue;
+      }
+      const code = ch.charCodeAt(0);
+      if (code < 0x20) {
+        out += ch === "\n" ? "\\n" : ch === "\t" ? "\\t" : ch === "\r" ? "" : " ";
+        continue;
+      }
+      out += ch;
+    } else {
+      if (ch === '"') inString = true;
+      out += ch;
+    }
+  }
+  return out;
 }
 
 /** safeParseJson + zod validation in one step. */

@@ -96,6 +96,15 @@ describe("safeParseJson", () => {
   it("throws JsonParseError on invalid JSON", () => {
     expect(() => safeParseJson("not json at all")).toThrowError(JsonParseError);
   });
+
+  it("repairs raw newlines/tabs inside string values (Unterminated string class)", () => {
+    const broken = '{"blocking": {"cameraAxis": "鏡頭一律在窗一側，\n不越軸"}, "note": "a\tb"}';
+    const out = safeParseJson(broken) as { blocking: { cameraAxis: string }; note: string };
+    expect(out.blocking.cameraAxis).toBe("鏡頭一律在窗一側，\n不越軸");
+    expect(out.note).toBe("a\tb");
+    // control chars OUTSIDE strings (formatting whitespace) stay untouched
+    expect(safeParseJson('{\n  "a": 1\n}')).toEqual({ a: 1 });
+  });
 });
 
 describe("schema parsing", () => {
