@@ -39,19 +39,19 @@ function assetImageHandler(kind: "character" | "location"): TaskHandler {
     const style = await loadStyle(project.stylePackId);
 
     const basePrompt = "appearancePrompt" in row && row.appearancePrompt ? row.appearancePrompt : ((row as { prompt?: string }).prompt ?? "");
-    // Reference-optimized framing: a character asset is REUSED as an img2img
-    // reference across every shot, so a single front view isn't enough — the model
-    // would have to hallucinate side/back angles and drift. Generate a proper
-    // multi-view TURNAROUND sheet (front / 3-4 / side / back of the SAME identity)
-    // on a neutral background with flat even lighting, so every shot angle has a
-    // reference to lock to and no scene lighting is baked in.
+    // Reference-optimized framing (v3 標準, docs/plans/2026-07-20 + 教材三段式):
+    // a character asset is REUSED as an img2img reference across every shot, so a
+    // single front view isn't enough — multi-view TURNAROUND of the SAME identity,
+    // arranged as a 2×2 grid to fit the 9:16 portrait standard. Clean white
+    // background + flat lighting so no scene look is baked into the reference;
+    // hands fully visible (cropped/deformed hands would propagate to every shot).
     const refFraming =
       kind === "character"
-        ? "full character turnaround model sheet: the SAME single character shown in a row from multiple angles — front view, three-quarter view, side profile, and back view — identical face, hairstyle, outfit and body across all views, neutral standing pose, plain light-grey background, flat even studio lighting, no cast shadows, full body visible"
-        : "establishing reference view, even neutral lighting, clear wide framing";
-    // A turnaround needs a wide frame to fit the angles side by side; locations keep the video ratio.
-    const assetRatio = kind === "character" ? "16:9" : "9:16";
-    const fullPrompt = `${basePrompt}. ${refFraming}. ${style.prefix ?? ""}`.trim();
+        ? "character turnaround model sheet arranged as a 2x2 grid: the SAME single character from four angles — front view, three-quarter view, side profile, and back view — identical face, hairstyle, outfit and body across all views. Each view full body standing, both hands fully visible and relaxed naturally at the sides. Clean pure white background, flat even studio lighting, no cast shadows, clean composition, smooth line work, rich detail, high quality, 4K resolution"
+        : "establishing reference view, even neutral lighting, clear wide framing, clean composition, rich detail, high quality";
+    const assetRatio = "9:16"; // 人物比例默認 9:16（2×2 turnaround 格局）；場景同視頻比例一致
+    // 三段式次序：畫面風格 → 人物本體 → 畫面要求（風格行先錨定整體畫風）
+    const fullPrompt = [style.prefix ?? "", basePrompt, refFraming].filter(Boolean).join(". ").trim();
 
     // Self-referencing regeneration (M2a): if the asset already has a locked image
     // and the caller asks to keep identity, feed that image as a reference so the
