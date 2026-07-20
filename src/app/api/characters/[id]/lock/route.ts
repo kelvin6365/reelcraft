@@ -2,6 +2,8 @@
 import { prisma } from "@/lib/db";
 import { withAuth } from "@/lib/api/with-auth";
 import { ApiError, ok } from "@/lib/api/errors";
+import { submitTask } from "@/lib/task/submit";
+import { TASK_TYPE } from "@/lib/task/types";
 
 export const POST = withAuth(
   async ({ userId, params, req }) => {
@@ -16,7 +18,18 @@ export const POST = withAuth(
       throw new ApiError("BAD_REQUEST", 400, "mediaId must be one of the candidates");
     }
     await prisma.character.update({ where: { id: row.id }, data: { lockedImageMediaId: body.mediaId, locked: true } });
-    return ok({ locked: true });
+    // Auto-generate the 近臉特寫 from the freshly locked turnaround (idempotent:
+    // dedupeActive collapses repeat locks while one is still running).
+    const face = await submitTask({
+      userId,
+      type: TASK_TYPE.IMAGE_CHARACTER,
+      targetType: "character",
+      targetId: row.id,
+      projectId: row.projectId,
+      payload: { face: true },
+      dedupeActive: true,
+    });
+    return ok({ locked: true, faceTaskId: face.taskId });
   },
   { auditAction: "asset.lock" },
 );

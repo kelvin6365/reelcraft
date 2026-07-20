@@ -77,7 +77,7 @@ export async function buildEpisodeView(userId: string, episodeId: string) {
   }
 
   const [charactersWithUrls, locationsWithUrls, shotsWithUrls, voiceLinesWithUrls, episodeWithUrl] = await Promise.all([
-    attachMediaUrls(characters, ["lockedImageMediaId"]),
+    attachMediaUrls(characters, ["lockedImageMediaId", "faceImageMediaId"]),
     attachMediaUrls(locations, ["lockedImageMediaId"]),
     attachMediaUrls(shots, ["imageMediaId", "videoMediaId"]),
     attachMediaUrls(voiceLines, ["audioMediaId"]),

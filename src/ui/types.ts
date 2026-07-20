@@ -113,6 +113,7 @@ export interface CharacterView {
   candidates: string[]; // media ids
   lockedImageMediaId: string | null;
   lockedImageUrl: string | null;
+  faceImageUrl?: string | null; // 近臉特寫 — auto-generated after lock
   locked: boolean;
 }
 

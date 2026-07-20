@@ -43,6 +43,31 @@ function assetImageHandler(kind: "character" | "location"): TaskHandler {
     const style = await loadStyle(project.stylePackId);
 
     const basePrompt = "appearancePrompt" in row && row.appearancePrompt ? row.appearancePrompt : ((row as { prompt?: string }).prompt ?? "");
+
+    // Face close-up mode (payload.face): one 近臉特寫 derived from the locked
+    // turnaround via img2img — the strongest identity ref for shot/video gen.
+    // Every character ends up with ≥2 reference images: turnaround + face.
+    if (kind === "character" && (task.payload as { face?: boolean }).face === true) {
+      if (!row.lockedImageMediaId) throw new TaskError("NOT_LOCKED", "lock the turnaround before generating the face close-up", false);
+      const facePrompt = [
+        style.assetPrefix ?? style.prefix ?? "",
+        basePrompt,
+        "close-up head-and-shoulders portrait of the SAME character as the reference image — identical face, hairstyle and features. Front-facing, neutral calm expression, eyes looking at camera, clean pure white background, flat even studio lighting, sharp focus, no text, no labels, rich facial detail, high quality, 4K resolution",
+      ].filter(Boolean).join(". ").trim();
+      const media = await generateImage(
+        { userId: task.userId, taskId: task.id, projectId: project.id },
+        {
+          modelKey: models.image,
+          prompt: facePrompt,
+          negativePrompt: style.negativePrompt,
+          aspectRatio: "1:1", // square maximises face pixels in the reference
+          keyPrefix: `projects/${project.id}/characters/${row.id}`,
+          referenceMediaIds: [row.lockedImageMediaId],
+        },
+      );
+      await prisma.character.update({ where: { id: row.id }, data: { faceImageMediaId: media.id } });
+      return { face: media.id };
+    }
     // Reference-optimized framing (v3 標準, docs/plans/2026-07-20 + 教材三段式):
     // a character asset is REUSED as an img2img reference across every shot, so a
     // single front view isn't enough — multi-view TURNAROUND of the SAME identity,
@@ -116,8 +141,15 @@ export const imageShotHandler: TaskHandler = async ({ task, reportProgress }) =>
   // location: v1 uses the first locked location (per-scene binding is M2)
   const shotLocation = lockedLocations[0];
 
+  // Per character: turnaround + 近臉特寫 (when generated) — the face close-up is
+  // the strongest identity anchor for the shot image and downstream video.
   const refAssets = [
-    ...shotCharacters.filter((c) => c.lockedImageMediaId).map((c) => ({ mediaId: c.lockedImageMediaId!, label: `${c.name}（角色）`, prompt: c.appearancePrompt })),
+    ...shotCharacters
+      .filter((c) => c.lockedImageMediaId)
+      .flatMap((c) => [
+        { mediaId: c.lockedImageMediaId!, label: `${c.name}（角色全身多視角）`, prompt: c.appearancePrompt },
+        ...(c.faceImageMediaId ? [{ mediaId: c.faceImageMediaId, label: `${c.name}（面部特寫）`, prompt: "面部身份參照" }] : []),
+      ]),
     ...(shotLocation?.lockedImageMediaId ? [{ mediaId: shotLocation.lockedImageMediaId, label: `${shotLocation.name}（場景）`, prompt: shotLocation.prompt }] : []),
   ];
   const referenceMediaIds = refAssets.map((a) => a.mediaId);

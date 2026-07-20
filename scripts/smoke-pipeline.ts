@@ -75,6 +75,16 @@ async function main() {
     }
     console.log("  ✓ assets locked");
 
+    // face close-up branch: derived from the locked turnaround (S: ≥2 refs per character)
+    {
+      const first = await prisma.character.findFirstOrThrow({ where: { projectId: project.id } });
+      const { taskId } = await submitTask({ userId: user.id, type: TASK_TYPE.IMAGE_CHARACTER, targetType: "character", targetId: first.id, projectId: project.id, payload: { face: true } });
+      await waitTask(taskId, "IMAGE_CHARACTER(face)");
+      const fresh = await prisma.character.findUniqueOrThrow({ where: { id: first.id } });
+      if (!fresh.faceImageMediaId) throw new Error("faceImageMediaId not set after face task");
+      console.log("  ✓ face close-up generated");
+    }
+
     await run(user.id, project.id, episode.id, TASK_TYPE.BUILD_SCENES);
     await run(user.id, project.id, episode.id, TASK_TYPE.STORYBOARD_RUN);
 

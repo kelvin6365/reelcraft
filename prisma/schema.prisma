@@ -214,6 +214,10 @@ model Character {
   bio                Json    @default("{}")
   lockedImageMediaId String?
   lockedImageMedia   MediaObject? @relation("CharacterLockedImage", fields: [lockedImageMediaId], references: [id])
+  // 近臉特寫 — auto-generated from the locked turnaround on lock; strongest
+  // identity signal for shot-image (and thus video) generation
+  faceImageMediaId   String?
+  faceImageMedia     MediaObject? @relation("CharacterFaceImage", fields: [faceImageMediaId], references: [id])
   candidates         Json    @default("[]")
   voiceId            String?
   locked             Boolean @default(false)
@@ -287,6 +291,7 @@ model MediaObject {
   shotImages            Shot[]      @relation("ShotImage")
   shotVideos            Shot[]      @relation("ShotVideo")
   characterLockedImages Character[] @relation("CharacterLockedImage")
+  characterFaceImages   Character[] @relation("CharacterFaceImage")
   locationLockedImages  Location[]  @relation("LocationLockedImage")
   voiceLineAudios       VoiceLine[] @relation("VoiceLineAudio")
 

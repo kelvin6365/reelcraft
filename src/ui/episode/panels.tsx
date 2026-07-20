@@ -93,6 +93,8 @@ export function AssetsPanel({ view, progress, refetch }: PanelProps) {
               candidates={c.candidates}
               chosenId={c.lockedImageMediaId}
               lockedUrl={c.lockedImageUrl}
+              faceUrl={c.faceImageUrl ?? null}
+              showFaceHint
               locked={c.locked}
               lockPath="/api/characters"
               candidateUrlById={candidateUrlById}
@@ -129,6 +131,8 @@ function AssetCard(props: {
   candidates: string[];
   chosenId: string | null;
   lockedUrl: string | null;
+  faceUrl?: string | null;
+  showFaceHint?: boolean;
   locked: boolean;
   lockPath: string;
   candidateUrlById: Record<string, string>;
@@ -160,12 +164,27 @@ function AssetCard(props: {
       )}
 
       {props.locked && props.lockedUrl ? (
-        <img
-          className="thumb"
-          src={props.lockedUrl}
-          alt={props.name}
-          style={{ maxWidth: 200, aspectRatio: "3/4", objectFit: "cover", marginTop: 8 }}
-        />
+        <div className="row" style={{ gap: 10, alignItems: "flex-start", marginTop: 8 }}>
+          <img
+            className="thumb"
+            src={props.lockedUrl}
+            alt={props.name}
+            style={{ maxWidth: 200, aspectRatio: "3/4", objectFit: "cover" }}
+          />
+          {props.faceUrl ? (
+            <img
+              className="thumb"
+              src={props.faceUrl}
+              alt={`${props.name} 近臉特寫`}
+              title="近臉特寫 — 鏡頭圖同視頻嘅身份參照"
+              style={{ maxWidth: 96, aspectRatio: "1/1", objectFit: "cover" }}
+            />
+          ) : props.showFaceHint ? (
+            <span className="faint" style={{ fontSize: 12, marginTop: 4 }}>
+              近臉特寫生成中…
+            </span>
+          ) : null}
+        </div>
       ) : props.candidates.length === 0 ? (
         <p className="faint" style={{ fontSize: 13 }}>
           未有候選圖。用右下角「下一步」生成資產圖。
