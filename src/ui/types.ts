@@ -158,6 +158,17 @@ export interface ActiveTaskView {
   progress: number;
 }
 
+// 劇本體檢 (S3) — Episode.scriptReview JSON shape
+export interface ScriptRiskView {
+  level: "ok" | "review" | "problem";
+  flags: string[];
+  note: string;
+}
+export interface ScriptReviewView {
+  scenes: { index: number; label: string; risk: ScriptRiskView }[];
+  overall: ScriptRiskView;
+}
+
 export interface VoiceLineView {
   id: string;
   lineIndex: number;
@@ -180,6 +191,7 @@ export interface EpisodeView {
     status: string;
     rawText: string;
     scriptText: string;
+    scriptReview?: ScriptReviewView | Record<string, never>;
     exportUrl: string | null;
     project: { id: string; name: string; stylePackId: string; videoRatio: string };
   };

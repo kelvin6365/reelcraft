@@ -22,6 +22,15 @@
       "description": "從劇本抽角色與場景資產，含去重與外貌字數量化規則（JSON）。"
     },
     {
+      "id": "script_review",
+      "path": "pipeline/script_review.zh.txt",
+      "version": "1",
+      "variables": [
+        "script_text"
+      ],
+      "description": "劇本體檢：逐場檢查清單標 🔴🟡🟢 風險 + 總評，review-by-exception（JSON）。"
+    },
+    {
       "id": "rewrite_script",
       "path": "pipeline/rewrite_script.zh.txt",
       "version": "3",

@@ -1,0 +1,16 @@
+{
+  "promptId": "script_review",
+  "variables": {
+    "script_text": "【第1場】咖啡店・夜\n林知夏：你遲到了。\n陳沉：路上有事。"
+  },
+  "mustContain": [
+    "只輸出純 JSON",
+    "no_purpose",
+    "unnatural_dialogue",
+    "pacing_drag",
+    "weak_hook",
+    "telling_not_showing",
+    "不要改寫任何文字",
+    "overall"
+  ]
+}

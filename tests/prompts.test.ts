@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { buildPrompt, clearPromptCache, PromptError } from "@/lib/prompts/build-prompt";
 import { safeParseJson, parseWithSchema, JsonParseError, restoreCjkQuotes } from "@/lib/prompts/parse";
-import { VoiceAnalyzeOutput, ScenesOutput } from "@/lib/prompts/schemas";
+import { VoiceAnalyzeOutput, ScenesOutput, ScriptReviewOutput } from "@/lib/prompts/schemas";
 
 describe("buildPrompt", () => {
   beforeEach(() => clearPromptCache());
@@ -110,6 +110,21 @@ describe("schema parsing", () => {
     // missing lineType/cue default (backward-compatible with old outputs)
     expect(out.lines[0].lineType).toBe("dialogue");
     expect(out.lines[0].cue).toBe("");
+  });
+
+  it("parses a valid script_review output and rejects unknown flags", () => {
+    const good = JSON.stringify({
+      scenes: [{ index: 1, label: "第1場・咖啡店", risk: { level: "review", flags: ["weak_hook"], note: "結尾偏弱" } }],
+      overall: { level: "review", flags: [], note: "整體穩" },
+    });
+    const out = parseWithSchema(good, ScriptReviewOutput);
+    expect(out.scenes[0].risk.flags).toEqual(["weak_hook"]);
+    expect(out.overall.note).toBe("整體穩");
+    const badFlag = good.replace("weak_hook", "made_up_flag");
+    expect(() => parseWithSchema(badFlag, ScriptReviewOutput)).toThrow();
+    // overall note is mandatory (one-line verdict)
+    const noNote = JSON.stringify({ scenes: [], overall: { level: "ok", flags: [], note: "" } });
+    expect(() => parseWithSchema(noNote, ScriptReviewOutput)).toThrow();
   });
 
   it("parses vo/os lineType and rejects unknown ones", () => {

@@ -77,6 +77,13 @@ const canned: Record<string, unknown> = {
       { index: 3, text: "他遲到的理由，我其實早就知道了。", speaker: "林知夏", lineType: "vo", cue: "苦笑", emotion: "無奈", emotionStrength: 0.3, matchedShotIndex: 1 },
     ],
   },
+  script_review: {
+    scenes: [
+      { index: 1, label: "第1場・咖啡店", risk: { level: "ok", flags: [], note: "" } },
+      { index: 2, label: "第2場・咖啡店", risk: { level: "review", flags: ["weak_hook"], note: "結尾停在遞文件，建議補一句懸念" } },
+    ],
+    overall: { level: "review", flags: ["weak_hook"], note: "整體節奏穩，第2場結尾鉤子偏弱" },
+  },
   image_prompt_shot: {
     prompt: "a young woman pushing open the door of a dim cozy cafe at night, warm side lighting, cinematic still",
     negativePrompt: "",

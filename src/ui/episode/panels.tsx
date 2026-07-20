@@ -194,12 +194,55 @@ function AssetCard(props: {
 }
 
 // ---------- ③ 劇本站 ----------
+const SCRIPT_FLAG_LABEL: Record<string, string> = {
+  no_purpose: "冇戲劇目的",
+  unnatural_dialogue: "對白唔似人話",
+  pacing_drag: "節奏拖",
+  weak_hook: "鉤子弱",
+  telling_not_showing: "講而不演",
+};
+const LEVEL_EMOJI: Record<string, string> = { ok: "🟢", review: "🟡", problem: "🔴" };
+
+// 劇本體檢燈 — review-by-exception：只展開 🟡🔴 場，🟢 收埋一行。純資訊，唔閘流程。
+function ScriptReviewLights({ review }: { review: import("@/ui/types").ScriptReviewView }) {
+  const flagged = review.scenes.filter((s) => s.risk.level !== "ok");
+  const okCount = review.scenes.length - flagged.length;
+  return (
+    <div style={{ marginTop: 12 }}>
+      <div className="row" style={{ gap: 8, flexWrap: "wrap" }}>
+        <span className="badge">{LEVEL_EMOJI[review.overall.level]} 總評</span>
+        <span style={{ fontSize: 14 }}>{review.overall.note}</span>
+      </div>
+      {flagged.map((s) => (
+        <div key={s.index} className="row" style={{ gap: 8, marginTop: 8, flexWrap: "wrap", fontSize: 14 }}>
+          <span>{LEVEL_EMOJI[s.risk.level]}</span>
+          <span className="badge">{s.label || `第 ${s.index} 場`}</span>
+          {s.risk.flags.map((f) => (
+            <span key={f} className="badge" style={{ color: "#fbbf24" }}>
+              {SCRIPT_FLAG_LABEL[f] ?? f}
+            </span>
+          ))}
+          <span className="faint">{s.risk.note}</span>
+        </div>
+      ))}
+      {okCount > 0 && (
+        <p className="faint" style={{ fontSize: 12, marginTop: 8 }}>
+          其餘 {okCount} 場 🟢 穩妥，唔使深審。改完劇本可再撳「劇本體檢」重驗。
+        </p>
+      )}
+    </div>
+  );
+}
+
 export function ScriptPanel({ view, progress, refetch }: PanelProps) {
   const [text, setText] = useState(view.episode.scriptText);
   const [dirty, setDirty] = useState(false);
   const save = useAction(refetch);
   const regen = useAction(refetch);
+  const checkup = useAction(refetch);
   const epId = view.episode.id;
+  const review = view.episode.scriptReview;
+  const hasReview = !!review && Array.isArray((review as { scenes?: unknown[] }).scenes);
 
   return (
     <Station
@@ -226,6 +269,14 @@ export function ScriptPanel({ view, progress, refetch }: PanelProps) {
           >
             {regen.busy ? <span className="spinner" /> : "重新生成"}
           </button>
+          <button
+            className="btn btn-sm"
+            disabled={checkup.busy || view.episode.scriptText.length === 0}
+            title="按檢查清單逐場標風險燈：戲劇目的/對白/節奏/鉤子/展示不明說"
+            onClick={() => checkup.run(() => api.post(`/api/episodes/${epId}/script-review`))}
+          >
+            {checkup.busy ? <span className="spinner" /> : "🩺 劇本體檢"}
+          </button>
         </div>
       }
     >
@@ -242,7 +293,8 @@ export function ScriptPanel({ view, progress, refetch }: PanelProps) {
             rows={14}
           />
         )}
-        {(save.err || regen.err) && <p className="error-text">{save.err ?? regen.err}</p>}
+        {(save.err || regen.err || checkup.err) && <p className="error-text">{save.err ?? regen.err ?? checkup.err}</p>}
+        {hasReview && <ScriptReviewLights review={review as import("@/ui/types").ScriptReviewView} />}
       </div>
     </Station>
   );

@@ -106,6 +106,7 @@ export async function buildEpisodeView(userId: string, episodeId: string) {
       status: episode.status,
       rawText: episode.rawText,
       scriptText: episode.scriptText,
+      scriptReview: episode.scriptReview,
       exportUrl: (episodeWithUrl[0] as { exportUrl?: string | null }).exportUrl ?? null,
       project: {
         id: episode.project.id,

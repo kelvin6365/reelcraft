@@ -56,6 +56,13 @@ async function main() {
     console.log(`[pipeline] project ${project.id} episode ${episode.id}`);
 
     await run(user.id, project.id, episode.id, TASK_TYPE.REWRITE_SCRIPT);
+    await run(user.id, project.id, episode.id, TASK_TYPE.SCRIPT_REVIEW);
+    {
+      const ep = await prisma.episode.findUniqueOrThrow({ where: { id: episode.id }, select: { scriptReview: true } });
+      const review = ep.scriptReview as { scenes?: unknown[]; overall?: { note?: string } };
+      if (!review.scenes?.length || !review.overall?.note) throw new Error("scriptReview empty after SCRIPT_REVIEW");
+      console.log(`  ✓ scriptReview: ${review.scenes.length} scenes, overall=${(review.overall as { level?: string }).level}`);
+    }
     await run(user.id, project.id, episode.id, TASK_TYPE.EXTRACT_ASSETS);
 
     // lock assets (simulating the ✋ review step: pick first candidate)

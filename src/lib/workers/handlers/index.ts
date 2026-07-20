@@ -6,6 +6,7 @@ import {
   buildScenesHandler,
   extractAssetsHandler,
   rewriteScriptHandler,
+  scriptReviewHandler,
   srtBuildHandler,
   storyboardRunHandler,
   voiceAnalyzeHandler,
@@ -20,6 +21,7 @@ import {
 } from "@/lib/workers/handlers/media-handlers";
 
 registerHandler(TASK_TYPE.REWRITE_SCRIPT, rewriteScriptHandler);
+registerHandler(TASK_TYPE.SCRIPT_REVIEW, scriptReviewHandler);
 registerHandler(TASK_TYPE.EXTRACT_ASSETS, extractAssetsHandler);
 registerHandler(TASK_TYPE.BUILD_SCENES, buildScenesHandler);
 registerHandler(TASK_TYPE.STORYBOARD_RUN, storyboardRunHandler);

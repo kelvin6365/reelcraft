@@ -163,6 +163,35 @@ export const VoiceAnalyzeOutput = z.object({
 });
 export type VoiceAnalyzeOutput = z.infer<typeof VoiceAnalyzeOutput>;
 
+// script_review — 劇本體檢 (S3): per-scene checklist risk, same review-by-exception
+// shape as episode planning but with script-specific flags. Informational only.
+export const SCRIPT_RISK_FLAGS = [
+  "no_purpose", // 呢場戲冇明確戲劇目的
+  "unnatural_dialogue", // 對白唔似人話
+  "pacing_drag", // 節奏拖
+  "weak_hook", // 結尾鉤子唔夠
+  "telling_not_showing", // 講出嚟代替演出嚟
+] as const;
+
+export const ScriptRisk = z.object({
+  level: z.enum(["ok", "review", "problem"]).default("ok"),
+  flags: z.array(z.enum(SCRIPT_RISK_FLAGS)).default([]),
+  note: z.string().optional().default(""),
+});
+export type ScriptRisk = z.infer<typeof ScriptRisk>;
+
+export const ScriptReviewOutput = z.object({
+  scenes: z.array(
+    z.object({
+      index: z.number().int().positive(),
+      label: z.string().default(""), // e.g. 第1場・咖啡店
+      risk: ScriptRisk,
+    }),
+  ),
+  overall: ScriptRisk.extend({ note: z.string().min(1) }), // 總評必須有一句話
+});
+export type ScriptReviewOutput = z.infer<typeof ScriptReviewOutput>;
+
 // image_prompt_shot
 export const ImagePromptShotOutput = z.object({
   prompt: z.string().min(1),
@@ -181,6 +210,7 @@ export const outputSchemas = {
   storyboard_acting: ActingOutput,
   storyboard_detail: DetailOutput,
   voice_analyze: VoiceAnalyzeOutput,
+  script_review: ScriptReviewOutput,
   image_prompt_shot: ImagePromptShotOutput,
 } as const;
 

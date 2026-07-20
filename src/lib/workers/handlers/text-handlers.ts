@@ -56,6 +56,26 @@ export const rewriteScriptHandler: TaskHandler = async ({ task, reportProgress }
   return { chars: result.text.length };
 };
 
+// SCRIPT_REVIEW — 劇本體檢 (S3): checklist-based per-scene risk lights. Pure
+// information for review-by-exception; never gates the pipeline.
+export const scriptReviewHandler: TaskHandler = async ({ task, reportProgress }) => {
+  const { episode, project } = await loadEpisodeWithProject(task);
+  if (!episode.scriptText) throw new TaskError("NO_SOURCE", "episode has no scriptText", false);
+  const models = await resolveTaskModels(task, project);
+
+  reportProgress(10);
+  const out = await textCallJson(
+    { userId: task.userId, taskId: task.id, projectId: project.id, episodeId: episode.id },
+    models.text,
+    "script_review",
+    { script_text: episode.scriptText.slice(0, 30_000) },
+  );
+
+  reportProgress(90);
+  await prisma.episode.update({ where: { id: episode.id }, data: { scriptReview: out as object } });
+  return { scenes: out.scenes.length, overall: out.overall.level };
+};
+
 export const extractAssetsHandler: TaskHandler = async ({ task, reportProgress }) => {
   const { episode, project } = await loadEpisodeWithProject(task);
   const source = episode.scriptText || episode.rawText;
