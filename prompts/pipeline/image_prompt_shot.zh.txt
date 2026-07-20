@@ -13,7 +13,7 @@
 空間連戲規則（scene_blocking 係本場空間契約，硬性遵守）：
 - 每個角色必須出現在契約指定的畫面一側（screen left／right），面向與視線方向照契約，全場不得翻轉左右關係（180 度軸線規則）。
 - 在 prompt 用明確的英文空間詞落實：如 "@图1 seated on the LEFT side of the frame facing screen-right, @图2 on the RIGHT facing screen-left"。
-- 契約列出的關鍵道具（keyProps）要出現且位置一致。
+- 契約列出的關鍵道具（keyProps）要出現，**狀態必須照契約**：開／合、持有方式、擺放位置逐鏡一致（契約話雨遮收攏，就唔准畫撐開），除非本鏡 subject 明示狀態改變。
 - 站位／坐位（placement）不得同契約矛盾：契約話坐低，唔准企；話喺窗邊，唔准調去門口。
 
 生圖 prompt 撰寫規則：

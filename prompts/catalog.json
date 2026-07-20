@@ -54,7 +54,7 @@
     {
       "id": "storyboard_plan",
       "path": "pipeline/storyboard_plan.zh.txt",
-      "version": "2",
+      "version": "3",
       "variables": [
         "scene_text"
       ],
@@ -101,7 +101,7 @@
     {
       "id": "image_prompt_shot",
       "path": "pipeline/image_prompt_shot.zh.txt",
-      "version": "5",
+      "version": "6",
       "variables": [
         "shot_json",
         "scene_blocking",
