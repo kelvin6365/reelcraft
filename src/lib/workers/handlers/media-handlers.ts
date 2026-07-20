@@ -14,6 +14,10 @@ import { resolveTaskModels, loadEpisodeWithProject, textCallJson } from "@/lib/w
 
 interface StylePack {
   prefix?: string;
+  // Asset-reference style: identity-level look only (photoreal vs anime). Scene
+  // tokens (DOF, color grade, volumetric light) must NOT bake into references —
+  // they'd propagate to every shot via img2img. Falls back to prefix if absent.
+  assetPrefix?: string;
   negativePrompt?: string;
 }
 
@@ -47,11 +51,12 @@ function assetImageHandler(kind: "character" | "location"): TaskHandler {
     // hands fully visible (cropped/deformed hands would propagate to every shot).
     const refFraming =
       kind === "character"
-        ? "character turnaround model sheet arranged as a 2x2 grid: the SAME single character from four angles — front view, three-quarter view, side profile, and back view — identical face, hairstyle, outfit and body across all views. Each view full body standing, both hands fully visible and relaxed naturally at the sides. Clean pure white background, flat even studio lighting, no cast shadows, clean composition, smooth line work, rich detail, high quality, 4K resolution"
-        : "establishing reference view, even neutral lighting, clear wide framing, clean composition, rich detail, high quality";
+        ? "character turnaround model sheet arranged as a 2x2 grid: the SAME single character from four angles — front view, three-quarter view, side profile, and back view — identical face, hairstyle, outfit and body across all views. Each view full body standing, both hands fully visible and relaxed naturally at the sides. Clean pure white background, flat even studio lighting, sharp focus on every view, no cast shadows, no text, no labels, no captions anywhere, clean composition, smooth line work, rich detail, high quality, 4K resolution"
+        : "establishing reference view, even neutral lighting, clear wide framing, no text, no labels, clean composition, rich detail, high quality";
     const assetRatio = "9:16"; // 人物比例默認 9:16（2×2 turnaround 格局）；場景同視頻比例一致
-    // 三段式次序：畫面風格 → 人物本體 → 畫面要求（風格行先錨定整體畫風）
-    const fullPrompt = [style.prefix ?? "", basePrompt, refFraming].filter(Boolean).join(". ").trim();
+    // 三段式次序：畫面風格 → 人物本體 → 畫面要求（風格行先錨定整體畫風）。
+    // 資產用 assetPrefix（身份層風格）而非場景 prefix — 見 StylePack 註釋。
+    const fullPrompt = [style.assetPrefix ?? style.prefix ?? "", basePrompt, refFraming].filter(Boolean).join(". ").trim();
 
     // Self-referencing regeneration (M2a): if the asset already has a locked image
     // and the caller asks to keep identity, feed that image as a reference so the
@@ -66,7 +71,9 @@ function assetImageHandler(kind: "character" | "location"): TaskHandler {
         { userId: task.userId, taskId: task.id, projectId: project.id },
         {
           modelKey: models.image,
-          prompt: `${fullPrompt} (variant ${i + 1})`,
+          // no "(variant N)" suffix: text-happy models can render it onto the
+          // sheet and captions poison img2img refs; sampling already varies runs
+          prompt: fullPrompt,
           negativePrompt: style.negativePrompt,
           aspectRatio: assetRatio,
           keyPrefix: `projects/${project.id}/${kind}s/${row.id}`,
