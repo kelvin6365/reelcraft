@@ -52,7 +52,7 @@ async function main() {
 
     // No modelDefaults → every stage runs on fake:: providers (offline, free).
     const project = await prisma.project.create({
-      data: { id: newId(), userId: user.id, name: `batch-smoke-${Date.now()}`, stylePackId: "cinematic-01" },
+      data: { id: newId(), userId: user.id, name: `batch-smoke-${Date.now()}`, stylePackId: "cinematic-01", modelDefaults: { text: "fake::pipeline", image: "fake::image", video: "fake::video", tts: "fake::tts" } },
     });
     const episodes = await Promise.all(
       NOVELS.map((rawText, i) =>

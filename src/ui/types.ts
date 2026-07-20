@@ -115,6 +115,7 @@ export interface CharacterView {
   lockedImageUrl: string | null;
   faceImageUrl?: string | null; // 近臉特寫 — auto-generated after lock
   locked: boolean;
+  activeTask?: ActiveTaskView | null; // in-flight IMAGE_CHARACTER (reload survival)
 }
 
 export interface LocationView {
@@ -126,6 +127,7 @@ export interface LocationView {
   lockedImageMediaId: string | null;
   lockedImageUrl: string | null;
   locked: boolean;
+  activeTask?: ActiveTaskView | null; // in-flight IMAGE_LOCATION (reload survival)
 }
 
 export interface StoryboardJson {

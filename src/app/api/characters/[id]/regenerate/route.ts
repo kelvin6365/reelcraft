@@ -11,9 +11,9 @@ export const POST = withAuth(
   async ({ userId, params, req }) => {
     const character = await prisma.character.findFirst({ where: { id: params.id, userId } });
     if (!character) throw new ApiError("NOT_FOUND", 404);
-    const body = (await req.json().catch(() => ({}))) as { keepIdentity?: boolean };
-    if (body.keepIdentity && !character.lockedImageMediaId) {
-      throw new ApiError("NO_LOCKED_IMAGE", 400, "先鎖定一張圖先可以「保留身份重生」");
+    const body = (await req.json().catch(() => ({}))) as { keepIdentity?: boolean; face?: boolean };
+    if ((body.keepIdentity || body.face) && !character.lockedImageMediaId) {
+      throw new ApiError("NO_LOCKED_IMAGE", 400, body.face ? "先鎖定一張圖先可以生成近臉特寫" : "先鎖定一張圖先可以「保留身份重生」");
     }
     return ok(
       await submitTask({
@@ -22,7 +22,8 @@ export const POST = withAuth(
         targetType: "character",
         targetId: character.id,
         projectId: character.projectId,
-        payload: { at: Date.now(), keepIdentity: Boolean(body.keepIdentity) },
+        payload: body.face ? { face: true } : { at: Date.now(), keepIdentity: Boolean(body.keepIdentity) },
+        dedupeActive: true, // repeat clicks while one runs reuse the task
       }),
     );
   },

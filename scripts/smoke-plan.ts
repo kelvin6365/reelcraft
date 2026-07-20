@@ -42,7 +42,7 @@ async function main() {
     if (!user) user = await prisma.user.create({ data: { id: newId(), name: "smoke", email } });
 
     const project = await prisma.project.create({
-      data: { id: newId(), userId: user.id, name: `plan-smoke-${Date.now()}`, sourceText: NOVEL, planConfig: { anchor: "length", seconds: 60, hookStrength: "strong" } },
+      data: { id: newId(), userId: user.id, name: `plan-smoke-${Date.now()}`, sourceText: NOVEL, planConfig: { anchor: "length", seconds: 60, hookStrength: "strong" }, modelDefaults: { text: "fake::pipeline", image: "fake::image", video: "fake::video", tts: "fake::tts" } },
     });
     console.log(`[plan] project ${project.id}`);
 

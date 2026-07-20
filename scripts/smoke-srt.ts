@@ -58,7 +58,7 @@ async function main() {
     if (!user) user = await prisma.user.create({ data: { id: newId(), name: "smoke-srt", email } });
 
     const project = await prisma.project.create({
-      data: { id: newId(), userId: user.id, name: `srt-smoke-${Date.now()}`, stylePackId: "cinematic-01", inputType: "srt" },
+      data: { id: newId(), userId: user.id, name: `srt-smoke-${Date.now()}`, stylePackId: "cinematic-01", inputType: "srt", modelDefaults: { text: "fake::pipeline", image: "fake::image", video: "fake::video", tts: "fake::tts" } },
     });
     const episode = await prisma.episode.create({
       data: { id: newId(), userId: user.id, projectId: project.id, episodeNumber: 1, rawText: SRT },

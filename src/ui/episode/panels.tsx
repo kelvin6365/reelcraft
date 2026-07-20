@@ -74,7 +74,7 @@ export function InputPanel({ view }: PanelProps) {
 }
 
 // ---------- ② 資產站 ----------
-export function AssetsPanel({ view, progress, refetch }: PanelProps) {
+export function AssetsPanel({ view, progress, refetch, live }: PanelProps) {
   const { characters, locations, candidateUrlById } = view;
   const empty = characters.length === 0 && locations.length === 0;
   return (
@@ -89,14 +89,18 @@ export function AssetsPanel({ view, progress, refetch }: PanelProps) {
               id={c.id}
               kind="角色"
               name={c.name}
-              desc={c.profile || c.appearancePrompt}
+              desc={c.profile}
+              prompt={c.appearancePrompt}
+              promptField="appearancePrompt"
               candidates={c.candidates}
               chosenId={c.lockedImageMediaId}
               lockedUrl={c.lockedImageUrl}
               faceUrl={c.faceImageUrl ?? null}
               showFaceHint
+              isCharacter
               locked={c.locked}
               lockPath="/api/characters"
+              liveState={live?.[`IMAGE_CHARACTER:${c.id}`] ?? c.activeTask ?? null}
               candidateUrlById={candidateUrlById}
               refetch={refetch}
             />
@@ -107,12 +111,15 @@ export function AssetsPanel({ view, progress, refetch }: PanelProps) {
               id={l.id}
               kind="場景"
               name={l.name}
-              desc={l.summary || l.prompt}
+              desc={l.summary}
+              prompt={l.prompt}
+              promptField="prompt"
               candidates={l.candidates}
               chosenId={l.lockedImageMediaId}
               lockedUrl={l.lockedImageUrl}
               locked={l.locked}
               lockPath="/api/locations"
+              liveState={live?.[`IMAGE_LOCATION:${l.id}`] ?? l.activeTask ?? null}
               candidateUrlById={candidateUrlById}
               refetch={refetch}
             />
@@ -128,39 +135,113 @@ function AssetCard(props: {
   kind: string;
   name: string;
   desc: string;
+  prompt: string;
+  promptField: "appearancePrompt" | "prompt";
   candidates: string[];
   chosenId: string | null;
   lockedUrl: string | null;
   faceUrl?: string | null;
   showFaceHint?: boolean;
+  isCharacter?: boolean;
   locked: boolean;
   lockPath: string;
+  liveState: { progress?: number } | null;
   candidateUrlById: Record<string, string>;
   refetch: () => Promise<void>;
 }) {
   const { busy, err, run } = useAction(props.refetch);
+  const [editing, setEditing] = useState(false);
+  const [promptDraft, setPromptDraft] = useState(props.prompt);
+  useEffect(() => {
+    if (!editing) setPromptDraft(props.prompt);
+  }, [props.prompt, editing]);
+
+  const inFlight = props.liveState !== null;
+  const pct = props.liveState?.progress;
+  const disabled = busy || inFlight;
+
+  async function savePrompt() {
+    if (promptDraft === props.prompt) return;
+    await run(() => api.patch(`${props.lockPath}/${props.id}`, { [props.promptField]: promptDraft }));
+  }
+
   return (
     <div className={`asset-card${props.locked ? " locked" : ""}`}>
-      <div className="row" style={{ justifyContent: "space-between" }}>
+      <div className="row" style={{ justifyContent: "space-between", flexWrap: "wrap", gap: 6 }}>
         <div className="row" style={{ gap: 8 }}>
           <span className="badge">{props.kind}</span>
           <strong>{props.name}</strong>
           {props.locked && <span className="check">✓ 已鎖定</span>}
+          {inFlight && (
+            <span className="badge" style={{ color: "#60a5fa" }}>
+              生成中{typeof pct === "number" ? ` ${pct}%` : "…"}
+            </span>
+          )}
         </div>
-        {props.locked && (
+        <div className="row" style={{ gap: 6 }}>
           <button
             className="btn btn-ghost btn-sm"
-            disabled={busy}
-            onClick={() => run(() => api.post(`${props.lockPath}/${props.id}/lock`, { unlock: true }))}
+            disabled={disabled}
+            title="編輯生成提示詞，改完可重生"
+            onClick={() => setEditing((v) => !v)}
           >
-            重新揀圖
+            ✏️ 提示詞
           </button>
-        )}
+          <button
+            className="btn btn-ghost btn-sm"
+            disabled={disabled}
+            title={props.locked && props.isCharacter ? "保留身份重生候選圖" : "重新生成候選圖"}
+            onClick={() =>
+              run(() =>
+                api.post(
+                  `${props.lockPath}/${props.id}/regenerate`,
+                  props.locked && props.isCharacter ? { keepIdentity: true } : {},
+                ),
+              )
+            }
+          >
+            🔄 重生
+          </button>
+          {props.isCharacter && props.locked && (
+            <button
+              className="btn btn-ghost btn-sm"
+              disabled={disabled}
+              title="用鎖定圖重生近臉特寫"
+              onClick={() => run(() => api.post(`${props.lockPath}/${props.id}/regenerate`, { face: true }))}
+            >
+              🔄 近臉
+            </button>
+          )}
+          {props.locked && (
+            <button
+              className="btn btn-ghost btn-sm"
+              disabled={disabled}
+              onClick={() => run(() => api.post(`${props.lockPath}/${props.id}/lock`, { unlock: true }))}
+            >
+              重新揀圖
+            </button>
+          )}
+        </div>
       </div>
       {props.desc && (
         <p className="muted" style={{ fontSize: 13, marginBottom: 4 }}>
           {props.desc}
         </p>
+      )}
+      {editing && (
+        <div style={{ margin: "6px 0" }}>
+          <textarea
+            value={promptDraft}
+            onChange={(e) => setPromptDraft(e.target.value)}
+            onBlur={savePrompt}
+            rows={3}
+            placeholder="生成提示詞（外貌／環境描述）"
+            style={{ width: "100%", fontSize: 13 }}
+          />
+          <p className="faint" style={{ fontSize: 12, margin: "2px 0 0" }}>
+            離開輸入框自動儲存；儲存後撳「🔄 重生」先會用新提示詞出圖。
+          </p>
+        </div>
       )}
 
       {props.locked && props.lockedUrl ? (
@@ -394,17 +475,30 @@ export function StoryboardPanel({ view, progress, refetch }: PanelProps) {
 
 function ShotPromptCell({ shot, refetch }: { shot: ShotView; refetch: () => Promise<void> }) {
   const [val, setVal] = useState(shot.imagePrompt);
+  const [videoVal, setVideoVal] = useState(shot.videoPrompt);
   const { busy, run } = useAction(refetch);
   return (
-    <textarea
-      value={val}
-      disabled={busy}
-      onChange={(e) => setVal(e.target.value)}
-      onBlur={() => {
-        if (val !== shot.imagePrompt) run(() => api.patch(`/api/shots/${shot.id}`, { imagePrompt: val }), { refetch: false });
-      }}
-      placeholder="圖像 prompt…"
-    />
+    <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+      <textarea
+        value={val}
+        disabled={busy}
+        onChange={(e) => setVal(e.target.value)}
+        onBlur={() => {
+          if (val !== shot.imagePrompt) run(() => api.patch(`/api/shots/${shot.id}`, { imagePrompt: val }), { refetch: false });
+        }}
+        placeholder="圖像 prompt…"
+      />
+      <textarea
+        value={videoVal}
+        disabled={busy}
+        onChange={(e) => setVideoVal(e.target.value)}
+        onBlur={() => {
+          if (videoVal !== shot.videoPrompt) run(() => api.patch(`/api/shots/${shot.id}`, { videoPrompt: videoVal }), { refetch: false });
+        }}
+        placeholder="視頻 prompt（動作/運鏡；留空則用分鏡自動生成嗰版）…"
+        title="重生視頻前可以喺度改動作與運鏡描述"
+      />
+    </div>
   );
 }
 

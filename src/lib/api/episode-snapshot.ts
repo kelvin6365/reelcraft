@@ -115,8 +115,14 @@ export async function buildEpisodeView(userId: string, episodeId: string) {
         videoRatio: episode.project.videoRatio,
       },
     },
-    characters: charactersWithUrls,
-    locations: locationsWithUrls,
+    characters: charactersWithUrls.map((c) => ({
+      ...c,
+      activeTask: activeByKey.get(`IMAGE_CHARACTER:${(c as { id: string }).id}`) ?? null,
+    })),
+    locations: locationsWithUrls.map((l) => ({
+      ...l,
+      activeTask: activeByKey.get(`IMAGE_LOCATION:${(l as { id: string }).id}`) ?? null,
+    })),
     shots: shotsWithUrls.map((sh) => ({
       ...sh,
       activeImageTask: activeByKey.get(`IMAGE_SHOT:${(sh as { id: string }).id}`) ?? null,

@@ -1,6 +1,8 @@
 // Full-pipeline smoke (offline, fake providers): novel text → script → assets →
 // scenes → storyboard → shot images → shot videos → voice → TTS → composed mp4.
 // Proves M1-T4 end-to-end. Run: npx tsx --env-file=.env scripts/smoke-pipeline.ts
+// The project pins fake:: modelDefaults so even a user-run REAL-mode worker
+// picking up these jobs stays free (workers race on the shared queue).
 import { spawn } from "node:child_process";
 import { prisma } from "../src/lib/db";
 import { newId } from "../src/lib/ids";
@@ -48,7 +50,7 @@ async function main() {
     if (!user) user = await prisma.user.create({ data: { id: newId(), name: "smoke", email } });
 
     const project = await prisma.project.create({
-      data: { id: newId(), userId: user.id, name: `pipeline-smoke-${Date.now()}`, stylePackId: "cinematic-01" },
+      data: { id: newId(), userId: user.id, name: `pipeline-smoke-${Date.now()}`, stylePackId: "cinematic-01", modelDefaults: { text: "fake::pipeline", image: "fake::image", video: "fake::video", tts: "fake::tts" } },
     });
     const episode = await prisma.episode.create({
       data: { id: newId(), userId: user.id, projectId: project.id, episodeNumber: 1, rawText: NOVEL },
