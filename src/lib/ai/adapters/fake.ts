@@ -31,8 +31,8 @@ const canned: Record<string, unknown> = {
   },
   extract_assets: {
     characters: [
-      { name: "林知夏", aliases: [], level: "lead", appearance: "二十多歲女性，及肩黑髮，眼神倔強，白色襯衫", wardrobe: "白襯衫深色長褲", note: "" },
-      { name: "陳沉", aliases: [], level: "supporting", appearance: "三十歲男性，短髮，灰色大衣，神情疏離", wardrobe: "灰大衣", note: "" },
+      { name: "林知夏", aliases: [], level: "lead", appearance: "二十多歲女性，及肩黑髮，眼神倔強，白色襯衫", wardrobe: "白襯衫深色長褲", note: "", age: "26歲", occupation: "編輯", personality: "外冷內熱，嘴硬心軟", painPoint: "怕再一次被重要的人放棄", backstory: "三年前與陳沉不辭而別，此後獨自在城市打拼。" },
+      { name: "陳沉", aliases: [], level: "supporting", appearance: "三十歲男性，短髮，灰色大衣，神情疏離", wardrobe: "灰大衣", note: "", age: "30歲", occupation: "建築師", personality: "沉默寡言，習慣把虧欠藏在心裡", painPoint: "說不出口的愧疚", backstory: "當年為家事遠走，欠林知夏一個解釋。" },
     ],
     locations: [{ name: "咖啡店", timeOfDay: "夜", description: "昏黃燈光的小咖啡店，窗外有雨", note: "" }],
   },

@@ -41,6 +41,7 @@ export const PATCH = withAuth(
       modelDefaults: Record<string, string>;
       budgetUsd: number | null;
       sourceText: string;
+      theme: string;
     }>;
 
     let modelDefaults: object | undefined;
@@ -59,6 +60,7 @@ export const PATCH = withAuth(
         modelDefaults,
         budgetUsd: body.budgetUsd === undefined ? undefined : body.budgetUsd,
         sourceText: body.sourceText,
+        theme: body.theme,
       },
     });
     return ok(project);

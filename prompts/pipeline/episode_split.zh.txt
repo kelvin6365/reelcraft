@@ -7,6 +7,7 @@
 
 切集目標：{target_hint}
 鉤子強度：{hook_strength}（strong = 每集結尾都要留強烈懸念；normal = 自然斷句即可）
+中心思想：{theme}（有內容時，切集與各集 summary/hook 不得偏離此主題）
 
 切集原則：
 - 依目標估算每集容納的原文份量與集數。

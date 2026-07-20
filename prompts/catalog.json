@@ -3,18 +3,19 @@
     {
       "id": "episode_split",
       "path": "pipeline/episode_split.zh.txt",
-      "version": "2",
+      "version": "3",
       "variables": [
         "source_text",
         "target_hint",
-        "hook_strength"
+        "hook_strength",
+        "theme"
       ],
       "description": "長篇原文切分集邊界 + 每集自評風險，回傳起訖錨點（JSON）。"
     },
     {
       "id": "extract_assets",
       "path": "pipeline/extract_assets.zh.txt",
-      "version": "1",
+      "version": "2",
       "variables": [
         "script_text"
       ],
@@ -23,10 +24,12 @@
     {
       "id": "rewrite_script",
       "path": "pipeline/rewrite_script.zh.txt",
-      "version": "2",
+      "version": "3",
       "variables": [
         "novel_text",
-        "style_note"
+        "style_note",
+        "theme",
+        "character_bios"
       ],
       "description": "小說改寫成分場短劇劇本，30-60 秒/場，防偷懶（純文字）。"
     },

@@ -32,7 +32,7 @@ describe("buildPrompt", () => {
   });
 
   it("rewrite_script keeps the VO/OS parenthesis contract", () => {
-    const built = buildPrompt("rewrite_script", { novel_text: "N", style_note: "S" });
+    const built = buildPrompt("rewrite_script", { novel_text: "N", style_note: "S", theme: "T", character_bios: "B" });
     expect(built.text).toContain("角色（VO）：");
     expect(built.text).toContain("角色（OS）：");
     expect(built.text).toContain("VO、OS 是保留字");

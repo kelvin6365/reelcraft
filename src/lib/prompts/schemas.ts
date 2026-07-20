@@ -48,6 +48,12 @@ export const ExtractAssetsOutput = z.object({
       appearance: z.string(),
       wardrobe: z.string().optional().default(""),
       note: z.string().optional().default(""),
+      // 人物小傳 (S2) — 反哺 rewrite_script，令對白貼人設
+      age: z.string().optional().default(""),
+      occupation: z.string().optional().default(""),
+      personality: z.string().optional().default(""),
+      painPoint: z.string().optional().default(""), // 內心缺失
+      backstory: z.string().optional().default(""), // 前史 2-3 句
     }),
   ),
   locations: z.array(

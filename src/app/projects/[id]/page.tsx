@@ -105,6 +105,7 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
                   <PlanSetup
                     id={id}
                     initialSourceText={project.sourceText}
+                    initialTheme={(project as { theme?: string }).theme ?? ""}
                     initialConfig={project.planConfig}
                     planStatus={project.planStatus}
                     refetch={reload}

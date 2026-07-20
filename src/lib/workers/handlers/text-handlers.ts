@@ -9,6 +9,27 @@ import { TASK_TYPE, TaskError } from "@/lib/task/types";
 import { parseSrt } from "@/lib/srt";
 import type { TaskHandler } from "@/lib/workers/lifecycle";
 import { resolveTaskModels, loadEpisodeWithProject, sliceByAnchors, textCallJson } from "@/lib/workers/handlers/shared";
+import type { Character } from "@prisma/client";
+
+// 人物小傳 → prompt 注入文本（跳過空欄；全空角色不出行）。
+interface CharacterBioJson { age?: string; occupation?: string; personality?: string; painPoint?: string; backstory?: string }
+function formatCharacterBios(characters: Character[]): string {
+  return characters
+    .map((c) => {
+      const b = (c.bio ?? {}) as CharacterBioJson;
+      const parts = [
+        c.profile && `外貌：${c.profile}`,
+        b.age && `年齡：${b.age}`,
+        b.occupation && `職業：${b.occupation}`,
+        b.personality && `性格：${b.personality}`,
+        b.painPoint && `痛點：${b.painPoint}`,
+        b.backstory && `前史：${b.backstory}`,
+      ].filter(Boolean);
+      return parts.length ? `- ${c.name}：${parts.join("；")}` : "";
+    })
+    .filter(Boolean)
+    .join("\n");
+}
 
 export const rewriteScriptHandler: TaskHandler = async ({ task, reportProgress }) => {
   const { episode, project } = await loadEpisodeWithProject(task);
@@ -16,9 +37,13 @@ export const rewriteScriptHandler: TaskHandler = async ({ task, reportProgress }
   const models = await resolveTaskModels(task, project);
 
   reportProgress(10);
+  // 人物小傳反哺：第 2 集起已有已抽取角色 → 注入小傳令對白貼人設、防全季人設漂移。
+  const bios = formatCharacterBios(await prisma.character.findMany({ where: { projectId: project.id } }));
   const { text, version } = buildPrompt("rewrite_script", {
     novel_text: episode.rawText.slice(0, 30_000),
     style_note: project.stylePackId,
+    theme: project.theme.trim() || "（未設定，按原文精神改寫）",
+    character_bios: bios || "（暫無，首集由你根據原文塑造）",
   });
   const result = await callModel(
     { userId: task.userId, taskId: task.id, projectId: project.id, episodeId: episode.id, promptId: "rewrite_script", promptVersion: version },
@@ -48,11 +73,12 @@ export const extractAssetsHandler: TaskHandler = async ({ task, reportProgress }
   reportProgress(60);
   let created = 0;
   for (const c of out.characters) {
+    const bio = { age: c.age, occupation: c.occupation, personality: c.personality, painPoint: c.painPoint, backstory: c.backstory, note: c.note };
     const existing = await prisma.character.findFirst({ where: { projectId: project.id, name: c.name } });
     if (existing) {
       await prisma.character.update({
         where: { id: existing.id },
-        data: { profile: c.appearance, appearancePrompt: `${c.appearance} ${c.wardrobe}`.trim(), aliases: c.aliases },
+        data: { profile: c.appearance, appearancePrompt: `${c.appearance} ${c.wardrobe}`.trim(), aliases: c.aliases, bio },
       });
     } else {
       await prisma.character.create({
@@ -64,6 +90,7 @@ export const extractAssetsHandler: TaskHandler = async ({ task, reportProgress }
           aliases: c.aliases,
           profile: c.appearance,
           appearancePrompt: `${c.appearance} ${c.wardrobe}`.trim(),
+          bio,
         },
       });
       created++;

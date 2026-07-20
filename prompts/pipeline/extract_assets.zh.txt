@@ -14,8 +14,14 @@
 - supporting（配角）：30 至 50 字。
 - extra（龍套）：10 至 20 字，抓一個辨識特徵即可。
 
+人物小傳（lead 與 supporting 必填，extra 可全空字串）：
+- age（年齡段，如「28歲」「五十出頭」）、occupation（職業或身份）、personality（性格 10 至 30 字）。
+- painPoint：內心缺失或最深的痛點，一句話（驅動角色行為的核心）。
+- backstory：前史 2 至 3 句——這個角色在故事開始前經歷過什麼，令他成為現在的樣子。
+- 只能依據劇本內文推斷，禁止杜撰劇本完全無依據的設定；推斷不出就留空字串。
+
 輸出結構（欄位固定）：
-{"characters": [{"name": "主名", "aliases": ["別名"], "level": "lead", "appearance": "外貌描述", "wardrobe": "標誌服飾", "note": "性格或關係備註"}], "locations": [{"name": "場景名", "timeOfDay": "夜", "description": "環境與氛圍描述", "note": "備註"}]}
+{"characters": [{"name": "主名", "aliases": ["別名"], "level": "lead", "appearance": "外貌描述", "wardrobe": "標誌服飾", "note": "性格或關係備註", "age": "28歲", "occupation": "職業", "personality": "性格", "painPoint": "內心缺失", "backstory": "前史"}], "locations": [{"name": "場景名", "timeOfDay": "夜", "description": "環境與氛圍描述", "note": "備註"}]}
 
 level 只能是 lead／supporting／extra。timeOfDay 只能是 早／日／黃昏／夜。現在處理以下劇本：
 

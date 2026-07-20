@@ -28,6 +28,7 @@ export const episodeSplitHandler: TaskHandler = async ({ task, reportProgress })
       source_text: project.sourceText.slice(0, SOURCE_CAP),
       target_hint: targetHint(cfg),
       hook_strength: cfg.hookStrength,
+      theme: project.theme.trim() || "（未設定）",
     },
   );
 
