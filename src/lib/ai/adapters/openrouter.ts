@@ -4,6 +4,19 @@ import { parseModelKeyStrict } from "@/lib/ai/model-key";
 
 const BASE_URL = "https://openrouter.ai/api/v1";
 
+// Malformed usage values map to undefined — cost capture must never fail a
+// successful generation.
+function nonNegNumber(v: unknown): number | undefined {
+  return typeof v === "number" && Number.isFinite(v) && v >= 0 ? v : undefined;
+}
+
+function providerCost(usage?: { cost?: number; cost_details?: { upstream_inference_cost?: number | null } }): number | undefined {
+  const cost = nonNegNumber(usage?.cost);
+  const upstream = nonNegNumber(usage?.cost_details?.upstream_inference_cost);
+  if (cost === undefined && upstream === undefined) return undefined;
+  return (cost ?? 0) + (upstream ?? 0);
+}
+
 export const openrouterAdapter: TextAdapter = {
   provider: "openrouter",
 
@@ -22,6 +35,7 @@ export const openrouterAdapter: TextAdapter = {
         messages: req.messages,
         temperature: req.temperature,
         max_tokens: req.maxTokens,
+        usage: { include: true }, // ask for real billed cost + token detail
       }),
     });
 
@@ -34,7 +48,16 @@ export const openrouterAdapter: TextAdapter = {
     const json = (await res.json()) as {
       id?: string;
       choices?: { message?: { content?: string } }[];
-      usage?: { prompt_tokens?: number; completion_tokens?: number };
+      usage?: {
+        prompt_tokens?: number;
+        completion_tokens?: number;
+        cost?: number;
+        // BYOK requests: `cost` is only OpenRouter's fee, the real provider
+        // charge arrives here — the true bill is the sum of both.
+        cost_details?: { upstream_inference_cost?: number | null };
+        prompt_tokens_details?: { cached_tokens?: number };
+        completion_tokens_details?: { reasoning_tokens?: number };
+      };
     };
 
     const text = json.choices?.[0]?.message?.content;
@@ -47,6 +70,9 @@ export const openrouterAdapter: TextAdapter = {
       usage: {
         inputTokens: json.usage?.prompt_tokens ?? 0,
         outputTokens: json.usage?.completion_tokens ?? 0,
+        cachedInputTokens: nonNegNumber(json.usage?.prompt_tokens_details?.cached_tokens),
+        reasoningTokens: nonNegNumber(json.usage?.completion_tokens_details?.reasoning_tokens),
+        providerCostUsd: providerCost(json.usage),
       },
       providerRequestId: json.id,
     };

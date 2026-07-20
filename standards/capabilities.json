@@ -83,7 +83,7 @@
     "capabilities": {},
     "pricing": {
       "mode": "flat",
-      "perUnit": 5e-05,
+      "perUnit": 0.00005,
       "unit": "character",
       "currency": "USD"
     }
@@ -94,7 +94,7 @@
     "capabilities": {},
     "pricing": {
       "mode": "flat",
-      "perUnit": 5e-05,
+      "perUnit": 0.00005,
       "unit": "character",
       "currency": "USD"
     }
@@ -149,7 +149,9 @@
       "inputPerMTok": 0.1,
       "outputPerMTok": 0.4,
       "currency": "USD"
-    }
+    },
+    "priceSource": "openrouter-api",
+    "priceVerifiedAt": "2026-07-20"
   },
   {
     "modelKey": "openrouter::google/gemini-2.5-flash",
@@ -160,7 +162,9 @@
       "inputPerMTok": 0.3,
       "outputPerMTok": 2.5,
       "currency": "USD"
-    }
+    },
+    "priceSource": "openrouter-api",
+    "priceVerifiedAt": "2026-07-20"
   },
   {
     "modelKey": "openrouter::anthropic/claude-sonnet-4.5",
@@ -168,10 +172,12 @@
     "capabilities": {},
     "pricing": {
       "mode": "text",
-      "inputPerMTok": 3.0,
-      "outputPerMTok": 15.0,
+      "inputPerMTok": 3,
+      "outputPerMTok": 15,
       "currency": "USD"
-    }
+    },
+    "priceSource": "openrouter-api",
+    "priceVerifiedAt": "2026-07-20"
   },
   {
     "modelKey": "fake::image",

@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { falImage, falVideo, falTts } from "@/lib/ai/adapters/fal";
+import { openrouterAdapter } from "@/lib/ai/adapters/openrouter";
 import { priceMedia, priceText } from "@/lib/ai/capabilities";
 import { AiError } from "@/lib/ai/types";
 
@@ -189,6 +190,68 @@ describe("fal adapter — error classification", () => {
     const err = await falImage({ modelId: "m", prompt: "x", aspectRatio: "9:16", apiKey: "k" }).catch((e) => e);
     expect((err as AiError).code).toBe("FAL_FAILED");
     expect((err as AiError).retryable).toBe(false);
+  });
+});
+
+// --- openrouter usage/cost capture --------------------------------------
+const OR_REQ = { modelKey: "openrouter::google/gemini-2.5-flash" as const, messages: [{ role: "user" as const, content: "hi" }] };
+
+function orResponse(usage: unknown) {
+  return res(200, { id: "gen-1", choices: [{ message: { content: "ok" } }], usage });
+}
+
+describe("openrouter adapter — real cost + token detail", () => {
+  it("requests usage accounting and maps real cost + cached/reasoning tokens", async () => {
+    const fetchMock = vi.fn(async (_url: string | URL, _init?: RequestInit) =>
+      orResponse({
+        prompt_tokens: 100,
+        completion_tokens: 40,
+        cost: 0.00012,
+        prompt_tokens_details: { cached_tokens: 60 },
+        completion_tokens_details: { reasoning_tokens: 10 },
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const out = await openrouterAdapter.complete(OR_REQ, "k");
+    expect(out.usage).toEqual({
+      inputTokens: 100,
+      outputTokens: 40,
+      cachedInputTokens: 60,
+      reasoningTokens: 10,
+      providerCostUsd: 0.00012,
+    });
+    // request body must opt into usage accounting
+    const body = JSON.parse(fetchMock.mock.calls[0][1]?.body as string);
+    expect(body.usage).toEqual({ include: true });
+  });
+
+  it("sums BYOK upstream_inference_cost into providerCostUsd", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => orResponse({ prompt_tokens: 1, completion_tokens: 1, cost: 0.00001, cost_details: { upstream_inference_cost: 0.0002 } })));
+    const out = await openrouterAdapter.complete(OR_REQ, "k");
+    expect(out.usage.providerCostUsd).toBeCloseTo(0.00021, 10);
+  });
+
+  it("leaves providerCostUsd undefined when the provider reports no cost", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => orResponse({ prompt_tokens: 5, completion_tokens: 5 })));
+    const out = await openrouterAdapter.complete(OR_REQ, "k");
+    expect(out.usage.providerCostUsd).toBeUndefined();
+    expect(out.usage.cachedInputTokens).toBeUndefined();
+  });
+
+  it("treats cost 0 as a real value (free models)", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => orResponse({ prompt_tokens: 5, completion_tokens: 5, cost: 0 })));
+    const out = await openrouterAdapter.complete(OR_REQ, "k");
+    expect(out.usage.providerCostUsd).toBe(0);
+  });
+
+  it("maps malformed cost values to undefined instead of failing the call", async () => {
+    for (const bad of ["0.1", -1, NaN, null]) {
+      vi.stubGlobal("fetch", vi.fn(async () => orResponse({ prompt_tokens: 1, completion_tokens: 1, cost: bad })));
+      const out = await openrouterAdapter.complete(OR_REQ, "k");
+      expect(out.usage.providerCostUsd).toBeUndefined();
+      expect(out.text).toBe("ok"); // generation itself still succeeds
+    }
   });
 });
 

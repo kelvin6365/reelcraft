@@ -27,7 +27,7 @@ export function PromptTable({ rows }: { rows: UsageRowView[] }) {
               <td className="num">{tokens(r.inputTokens)}</td>
               <td className="num">{tokens(r.outputTokens)}</td>
               <td className="num">{tokens(r.inputTokens + r.outputTokens)}</td>
-              <td className="num">{usd(r.estCostUsd)}</td>
+              <td className="num">{usd(r.actualCostUsd)}</td>
             </tr>
           ))}
         </tbody>

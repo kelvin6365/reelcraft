@@ -21,7 +21,7 @@ export function EpisodeTable({ rows }: { rows: UsageRowView[] }) {
               <td>{r.label}</td>
               <td className="num">{int(r.calls)}</td>
               <td className="num">
-                {usd(r.estCostUsd)}
+                {usd(r.actualCostUsd)}
                 {r.uncostedCalls > 0 && <span className="faint">（{r.uncostedCalls} 未計價）</span>}
               </td>
             </tr>

@@ -53,6 +53,7 @@ beforeAll(async () => {
 
 afterAll(async () => {
   for (const userId of userIds) {
+    await prisma.aiCallLog.deleteMany({ where: { userId } });
     await prisma.balanceTransaction.deleteMany({ where: { userId } });
     await prisma.balanceFreeze.deleteMany({ where: { userId } });
     await prisma.userBalance.deleteMany({ where: { userId } });
@@ -173,6 +174,28 @@ describe("rollbackFreeze", () => {
     const b = await balance(u);
     expect(b.balance).toBeCloseTo(10, 6);
     expect(b.spent).toBeCloseTo(0, 6);
+  });
+});
+
+describe("sumActualCostUsd", () => {
+  it("prefers provider-billed cost per row, falls back to the estimate", async () => {
+    const { sumActualCostUsd } = await import("@/lib/billing/actual-cost");
+    const u = await makeUser();
+    const taskId = `task-${randomUUID()}`;
+    await prisma.aiCallLog.createMany({
+      data: [
+        // provider billed less than our estimate → real number wins
+        { userId: u, taskId, modelKey: "openrouter::m", apiType: "text", status: "ok", estCostUsd: 0.02, providerCostUsd: 0.015 },
+        // media row: never provider-costed → estimate
+        { userId: u, taskId, modelKey: "fal::m", apiType: "image", status: "ok", estCostUsd: 0.039, providerCostUsd: null },
+        // provider cost 0 (free model) is respected, not treated as missing
+        { userId: u, taskId, modelKey: "openrouter::free", apiType: "text", status: "ok", estCostUsd: 0.01, providerCostUsd: 0 },
+        // error rows excluded by the caller's where
+        { userId: u, taskId, modelKey: "openrouter::m", apiType: "text", status: "error", estCostUsd: 5, providerCostUsd: 5 },
+      ],
+    });
+    const sum = await sumActualCostUsd({ taskId, status: "ok" });
+    expect(Number(sum)).toBeCloseTo(0.015 + 0.039 + 0, 6);
   });
 });
 

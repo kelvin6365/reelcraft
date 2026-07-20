@@ -35,7 +35,6 @@ model User {
   tasks      Task[]
   auditLogs  AuditLog[]
   aiCallLogs AiCallLog[]
-  usageCosts UsageCost[]
   providerKeys UserProviderKey[]
   modelDefaults UserModelDefaults?
   balance      UserBalance?
@@ -382,6 +381,13 @@ model AiCallLog {
   quantity          Float?
   unit              String?
   unitPriceSnapshot Decimal? @db.Decimal(18, 8)
+  // text price snapshot at call time (per-MTok rates from capabilities.json)
+  inputPerMTokSnapshot  Decimal? @db.Decimal(18, 8)
+  outputPerMTokSnapshot Decimal? @db.Decimal(18, 8)
+  // provider-reported billed cost (e.g. OpenRouter usage.cost); null = not reported
+  providerCostUsd   Decimal? @db.Decimal(18, 8)
+  cachedInputTokens Int?
+  reasoningTokens   Int?
   estCostUsd        Decimal? @db.Decimal(18, 6)
   latencyMs         Int      @default(0)
   status            String   @default("ok") // 'ok'|'error'
@@ -470,21 +476,4 @@ model BalanceTransaction {
   @@unique([userId, type, idempotencyKey])
   @@index([userId, createdAt])
   @@map("balance_transactions")
-}
-
-model UsageCost {
-  id        BigInt   @id @default(autoincrement())
-  userId    String
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  projectId String?
-  apiType   String
-  model     String
-  action    String   @default("")
-  quantity  Float    @default(0)
-  unit      String   @default("")
-  cost      Decimal  @default(0) @db.Decimal(18, 6)
-  createdAt DateTime @default(now())
-
-  @@index([userId, createdAt])
-  @@map("usage_costs")
 }

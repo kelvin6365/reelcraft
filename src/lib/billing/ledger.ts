@@ -13,6 +13,7 @@ import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
 import { newId } from "@/lib/ids";
 import { env } from "@/lib/env";
+import { sumActualCostUsd } from "@/lib/billing/actual-cost";
 
 const ZERO = new Prisma.Decimal(0);
 
@@ -243,11 +244,8 @@ export async function settleTaskFreeze(taskId: string): Promise<void> {
   if (env.BILLING_MODE !== "ENFORCE") return;
   const freeze = await prisma.balanceFreeze.findFirst({ where: { taskId, status: "pending" } });
   if (!freeze) return;
-  const agg = await prisma.aiCallLog.aggregate({
-    where: { taskId, status: "ok" },
-    _sum: { estCostUsd: true },
-  });
-  const actual = agg._sum.estCostUsd ?? ZERO;
+  // Charge the provider-billed amount when reported, else the catalog estimate.
+  const actual = await sumActualCostUsd({ taskId, status: "ok" });
   await settleFreeze(freeze.id, actual);
 }
 

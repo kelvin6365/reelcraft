@@ -12,6 +12,7 @@ const FLAT_UNITS = new Set(["image", "second", "character"]);
 // provider::modelId — non-empty provider (no ':'), then '::', then non-empty id.
 const MODEL_KEY_RE = /^[^:]+::.+$/;
 const CAP_KEYS = new Set(["durationsSec", "resolutions", "aspectRatios", "modes"]);
+const PRICE_SOURCES = new Set(["openrouter-api", "manual"]);
 
 const hits = [];
 
@@ -51,6 +52,13 @@ if (!Array.isArray(catalog)) {
           if (!CAP_KEYS.has(k)) hits.push(`${at} (${e.modelKey}): unknown capabilities key '${k}'`);
         }
       }
+    }
+
+    if (e.priceSource !== undefined && !PRICE_SOURCES.has(e.priceSource)) {
+      hits.push(`${at} (${e.modelKey}): priceSource must be one of ${[...PRICE_SOURCES].join("/")}, got ${JSON.stringify(e.priceSource)}`);
+    }
+    if (e.priceVerifiedAt !== undefined && (typeof e.priceVerifiedAt !== "string" || Number.isNaN(Date.parse(e.priceVerifiedAt)))) {
+      hits.push(`${at} (${e.modelKey}): priceVerifiedAt must be a parseable date string`);
     }
 
     const p = e.pricing;

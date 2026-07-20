@@ -261,6 +261,10 @@ export interface UsageRowView {
   outputTokens: number;
   estCostUsd: number;
   uncostedCalls: number;
+  providerCostUsd: number;
+  providerCostedCalls: number;
+  estCostOnProviderCostedUsd: number;
+  actualCostUsd: number;
   errorCount: number;
   avgLatencyMs: number;
   quantityByUnit: Record<string, number>;
@@ -272,6 +276,10 @@ export interface UsageTotalsView {
   outputTokens: number;
   estCostUsd: number;
   uncostedCalls: number;
+  providerCostUsd: number;
+  providerCostedCalls: number;
+  estCostOnProviderCostedUsd: number;
+  actualCostUsd: number;
   errorCount: number;
   avgLatencyMs: number;
   errorRate: number;

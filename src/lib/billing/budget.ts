@@ -4,13 +4,10 @@ import { prisma } from "@/lib/db";
 import { AiError } from "@/lib/ai/types";
 import { getCapabilityEntry } from "@/lib/ai/capabilities";
 import { resolveModelDefaults } from "@/lib/model-defaults/resolve";
+import { sumActualCostUsd } from "@/lib/billing/actual-cost";
 
 export async function getProjectSpendUsd(projectId: string): Promise<number> {
-  const agg = await prisma.aiCallLog.aggregate({
-    where: { projectId, status: "ok" },
-    _sum: { estCostUsd: true },
-  });
-  return Number(agg._sum.estCostUsd ?? 0);
+  return Number(await sumActualCostUsd({ projectId, status: "ok" }));
 }
 
 // Throws BUDGET_EXCEEDED (terminal) when the project has a cap and spend reached it.

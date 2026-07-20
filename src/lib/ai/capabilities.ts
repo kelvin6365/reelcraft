@@ -40,6 +40,9 @@ const entrySchema = z
     apiType: z.enum(["text", "image", "video", "tts"]),
     capabilities: capabilitiesSchema.optional(),
     pricing: z.discriminatedUnion("mode", [flatPricingSchema, textPricingSchema]),
+    // Price provenance metadata, stamped by scripts/sync-prices.ts.
+    priceSource: z.enum(["openrouter-api", "manual"]).optional(),
+    priceVerifiedAt: z.string().optional(), // ISO date the price was last synced/verified
   })
   .strict();
 
@@ -93,16 +96,17 @@ export function priceMedia(modelKey: string, quantity: number): PriceSnapshot | 
 }
 
 // Per-token text pricing. There is no single unit price, so unitPriceSnapshot is
-// left null (the caller sets it); estCostUsd blends input+output rates.
+// left null (the caller sets it); estCostUsd blends input+output rates. The
+// per-MTok rates are returned so callers can snapshot them without a second lookup.
 export function priceText(
   modelKey: string,
   inputTokens: number,
   outputTokens: number,
-): { estCostUsd: number } | null {
+): { estCostUsd: number; inputPerMTok: number; outputPerMTok: number } | null {
   const pricing = catalog.get(modelKey)?.pricing;
   if (!pricing || pricing.mode !== "text") return null;
   const estCostUsd = (inputTokens / 1_000_000) * pricing.inputPerMTok + (outputTokens / 1_000_000) * pricing.outputPerMTok;
-  return { estCostUsd };
+  return { estCostUsd, inputPerMTok: pricing.inputPerMTok, outputPerMTok: pricing.outputPerMTok };
 }
 
 export type { ApiType };

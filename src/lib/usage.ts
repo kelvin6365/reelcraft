@@ -21,9 +21,11 @@ export interface UsageLogRow {
   episodeNumber?: number | null; // joined by the route for groupBy=episode
   inputTokens: number | null;
   outputTokens: number | null;
+  cachedInputTokens: number | null;
   quantity: number | null;
   unit: string | null;
   estCostUsd: number | null;
+  providerCostUsd: number | null; // provider-billed; null when not reported (all media rows)
   latencyMs: number;
   status: string;
   errorCode: string | null;
@@ -37,6 +39,10 @@ export interface UsageRow {
   outputTokens: number;
   estCostUsd: number; // sum of non-null costs only
   uncostedCalls: number; // calls whose estCostUsd was null (未計價)
+  providerCostUsd: number; // sum where the provider reported a real bill
+  providerCostedCalls: number; // rows with providerCostUsd != null
+  estCostOnProviderCostedUsd: number; // est sum over those same rows (apples-to-apples drift)
+  actualCostUsd: number; // per-row coalesce(providerCostUsd, estCostUsd)
   errorCount: number;
   avgLatencyMs: number;
   quantityByUnit: Record<string, number>;
@@ -48,6 +54,10 @@ export interface UsageTotals {
   outputTokens: number;
   estCostUsd: number;
   uncostedCalls: number;
+  providerCostUsd: number;
+  providerCostedCalls: number;
+  estCostOnProviderCostedUsd: number;
+  actualCostUsd: number;
   errorCount: number;
   avgLatencyMs: number;
   errorRate: number; // errorCount / calls, 0 when no calls
@@ -107,6 +117,10 @@ function emptyAccum(key: string, label: string): Accum {
     outputTokens: 0,
     estCostUsd: 0,
     uncostedCalls: 0,
+    providerCostUsd: 0,
+    providerCostedCalls: 0,
+    estCostOnProviderCostedUsd: 0,
+    actualCostUsd: 0,
     errorCount: 0,
     avgLatencyMs: 0,
     quantityByUnit: {},
@@ -120,6 +134,13 @@ function accumulate(acc: Accum, row: UsageLogRow): void {
   acc.outputTokens += row.outputTokens ?? 0;
   if (row.estCostUsd == null) acc.uncostedCalls += 1;
   else acc.estCostUsd += row.estCostUsd;
+  if (row.providerCostUsd != null) {
+    acc.providerCostUsd += row.providerCostUsd;
+    acc.providerCostedCalls += 1;
+    acc.estCostOnProviderCostedUsd += row.estCostUsd ?? 0;
+  }
+  // Real bill when reported, else our estimate; both null stays uncosted.
+  acc.actualCostUsd += row.providerCostUsd ?? row.estCostUsd ?? 0;
   if (row.status === "error") acc.errorCount += 1;
   acc._latencySum += row.latencyMs ?? 0;
   if (row.unit && row.quantity != null) {
@@ -131,7 +152,14 @@ function finalize(acc: Accum): UsageRow {
   const avgLatencyMs = acc.calls > 0 ? Math.round(acc._latencySum / acc.calls) : 0;
   const { _latencySum: _drop, ...row } = acc;
   void _drop;
-  return { ...row, avgLatencyMs, estCostUsd: round6(acc.estCostUsd) };
+  return {
+    ...row,
+    avgLatencyMs,
+    estCostUsd: round6(acc.estCostUsd),
+    providerCostUsd: round6(acc.providerCostUsd),
+    estCostOnProviderCostedUsd: round6(acc.estCostOnProviderCostedUsd),
+    actualCostUsd: round6(acc.actualCostUsd),
+  };
 }
 
 function round6(n: number): number {
@@ -163,8 +191,8 @@ export function aggregateUsage(rows: UsageLogRow[], groupBy: UsageGroupBy): Usag
   // everything else → cost desc then calls desc.
   if (groupBy === "day") out.sort((a, b) => a.key.localeCompare(b.key));
   else if (groupBy === "prompt")
-    out.sort((a, b) => b.inputTokens + b.outputTokens - (a.inputTokens + a.outputTokens) || b.estCostUsd - a.estCostUsd);
-  else out.sort((a, b) => b.estCostUsd - a.estCostUsd || b.calls - a.calls);
+    out.sort((a, b) => b.inputTokens + b.outputTokens - (a.inputTokens + a.outputTokens) || b.actualCostUsd - a.actualCostUsd);
+  else out.sort((a, b) => b.actualCostUsd - a.actualCostUsd || b.calls - a.calls);
 
   const errorTop = [...errors.entries()]
     .map(([errorCode, count]) => ({ errorCode, count }))
@@ -179,6 +207,10 @@ export function aggregateUsage(rows: UsageLogRow[], groupBy: UsageGroupBy): Usag
       outputTokens: t.outputTokens,
       estCostUsd: t.estCostUsd,
       uncostedCalls: t.uncostedCalls,
+      providerCostUsd: t.providerCostUsd,
+      providerCostedCalls: t.providerCostedCalls,
+      estCostOnProviderCostedUsd: t.estCostOnProviderCostedUsd,
+      actualCostUsd: t.actualCostUsd,
       errorCount: t.errorCount,
       avgLatencyMs: t.avgLatencyMs,
       errorRate: t.calls > 0 ? t.errorCount / t.calls : 0,

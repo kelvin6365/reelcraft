@@ -26,6 +26,11 @@ export interface TextRequest {
 export interface TextUsage {
   inputTokens: number;
   outputTokens: number;
+  cachedInputTokens?: number;
+  reasoningTokens?: number;
+  // Real USD billed by the provider; undefined when not reported. 0 is a valid
+  // value (free models) — callers must use ?? , never ||.
+  providerCostUsd?: number;
 }
 
 export interface TextResult {

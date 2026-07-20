@@ -117,7 +117,8 @@ export const fakeAdapter: TextAdapter = {
 
     return {
       text,
-      usage: { inputTokens: Math.ceil(echo.length / 4), outputTokens: Math.ceil(text.length / 4) },
+      // providerCostUsd: 0 exercises the real-cost recording path for free.
+      usage: { inputTokens: Math.ceil(echo.length / 4), outputTokens: Math.ceil(text.length / 4), cachedInputTokens: 0, providerCostUsd: 0 },
       providerRequestId: `fake-${Date.now()}`,
     };
   },

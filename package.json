@@ -9,6 +9,8 @@
     "typecheck": "tsc --noEmit",
     "check": "node scripts/check.mjs",
     "db:migrate": "prisma migrate dev",
+    "sync:prices": "tsx scripts/sync-prices.ts",
+    "sync:prices:check": "tsx scripts/sync-prices.ts --check",
     "db:deploy": "prisma migrate deploy",
     "db:generate": "prisma generate",
     "smoke:ai": "tsx --env-file=.env scripts/smoke-ai.ts",

@@ -40,7 +40,12 @@ export async function callModel(ctx: CallContext, req: TextRequest): Promise<Tex
       status: "ok",
       inputTokens: result.usage.inputTokens,
       outputTokens: result.usage.outputTokens,
+      cachedInputTokens: result.usage.cachedInputTokens ?? null,
+      reasoningTokens: result.usage.reasoningTokens ?? null,
       estCostUsd: price?.estCostUsd ?? null,
+      inputPerMTokSnapshot: price?.inputPerMTok ?? null,
+      outputPerMTokSnapshot: price?.outputPerMTok ?? null,
+      providerCostUsd: result.usage.providerCostUsd ?? null,
       providerRequestId: result.providerRequestId,
     });
     return result;
@@ -59,7 +64,12 @@ interface LogFields {
   status: "ok" | "error";
   inputTokens?: number;
   outputTokens?: number;
+  cachedInputTokens?: number | null;
+  reasoningTokens?: number | null;
   estCostUsd?: number | null;
+  inputPerMTokSnapshot?: number | null;
+  outputPerMTokSnapshot?: number | null;
+  providerCostUsd?: number | null;
   errorCode?: string;
   providerRequestId?: string;
 }
@@ -81,7 +91,12 @@ function logAiCall(ctx: CallContext, req: TextRequest, f: LogFields): Promise<vo
         episodeId: ctx.episodeId,
         inputTokens: f.inputTokens,
         outputTokens: f.outputTokens,
+        cachedInputTokens: f.cachedInputTokens,
+        reasoningTokens: f.reasoningTokens,
         estCostUsd: f.estCostUsd,
+        inputPerMTokSnapshot: f.inputPerMTokSnapshot,
+        outputPerMTokSnapshot: f.outputPerMTokSnapshot,
+        providerCostUsd: f.providerCostUsd,
         latencyMs: f.latencyMs,
         status: f.status,
         errorCode: f.errorCode,

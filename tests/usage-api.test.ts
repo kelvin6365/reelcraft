@@ -14,9 +14,11 @@ function row(over: Partial<UsageLogRow> = {}): UsageLogRow {
     episodeNumber: 1,
     inputTokens: 100,
     outputTokens: 50,
+    cachedInputTokens: null,
     quantity: null,
     unit: null,
     estCostUsd: 0.01,
+    providerCostUsd: null,
     latencyMs: 200,
     status: "ok",
     errorCode: null,
@@ -56,6 +58,39 @@ describe("aggregateUsage — totals", () => {
     expect(totals.errorRate).toBe(0);
     expect(totals.avgLatencyMs).toBe(0);
     expect(errorTop).toEqual([]);
+  });
+});
+
+describe("aggregateUsage — provider cost vs estimate", () => {
+  it("prefers the provider-billed cost per row for actualCostUsd", () => {
+    const rows = [
+      row({ estCostUsd: 0.01, providerCostUsd: 0.008 }), // real bill beats estimate
+      row({ estCostUsd: 0.02, providerCostUsd: null }), // no bill → estimate
+      row({ estCostUsd: null, providerCostUsd: null }), // fully uncosted
+    ];
+    const { totals } = aggregateUsage(rows, "day");
+    expect(totals.actualCostUsd).toBeCloseTo(0.028, 6);
+    expect(totals.estCostUsd).toBeCloseTo(0.03, 6);
+    expect(totals.providerCostUsd).toBeCloseTo(0.008, 6);
+    expect(totals.providerCostedCalls).toBe(1);
+    expect(totals.estCostOnProviderCostedUsd).toBeCloseTo(0.01, 6);
+    expect(totals.uncostedCalls).toBe(1); // semantics unchanged
+  });
+
+  it("respects a provider-billed cost of 0 (free model) instead of falling back", () => {
+    const rows = [row({ estCostUsd: 0.05, providerCostUsd: 0 })];
+    const { totals } = aggregateUsage(rows, "day");
+    expect(totals.actualCostUsd).toBe(0);
+    expect(totals.providerCostedCalls).toBe(1);
+  });
+
+  it("sorts model groups by actualCostUsd, not the raw estimate", () => {
+    const rows = [
+      row({ modelKey: "a::over-estimated", estCostUsd: 0.9, providerCostUsd: 0.01 }),
+      row({ modelKey: "b::real-spender", estCostUsd: 0.05, providerCostUsd: 0.5 }),
+    ];
+    const { rows: out } = aggregateUsage(rows, "model");
+    expect(out.map((r) => r.key)).toEqual(["b::real-spender", "a::over-estimated"]);
   });
 });
 
