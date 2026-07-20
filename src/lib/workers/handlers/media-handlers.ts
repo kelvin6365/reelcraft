@@ -117,9 +117,26 @@ function assetImageHandler(kind: "character" | "location"): TaskHandler {
 export const imageCharacterHandler = assetImageHandler("character");
 export const imageLocationHandler = assetImageHandler("location");
 
+// 場景空間契約 → prompt 注入文本（scene.blocking，storyboard_plan 一次過鎖定）。
+function formatBlocking(raw: unknown): string {
+  const b = (raw ?? {}) as {
+    cameraAxis?: string;
+    positions?: { name: string; screenSide?: string; facing?: string; placement?: string }[];
+    keyProps?: string[];
+  };
+  if (!b.cameraAxis && !b.positions?.length) return "（無空間契約——保持前後鏡頭的左右關係與視線方向一致，不越軸）";
+  const side = (s?: string) => (s === "left" ? "畫面左" : s === "right" ? "畫面右" : "畫面中");
+  const pos = (b.positions ?? [])
+    .map((p) => `${p.name}=${side(p.screenSide)}${p.facing ? `、${p.facing}` : ""}${p.placement ? `、${p.placement}` : ""}`)
+    .join("；");
+  const props = b.keyProps?.length ? `；道具：${b.keyProps.join("、")}` : "";
+  return `軸線：${b.cameraAxis || "不越軸"}；${pos}${props}`;
+}
+
 export const imageShotHandler: TaskHandler = async ({ task, reportProgress }) => {
   const shot = await prisma.shot.findFirst({ where: { id: task.targetId, userId: task.userId } });
   if (!shot) throw new TaskError("NOT_FOUND", `shot ${task.targetId} not found`, false);
+  const scene = await prisma.scene.findUnique({ where: { id: shot.sceneId }, select: { blocking: true } });
   const { episode, project } = await loadEpisodeWithProject({ ...task, episodeId: shot.episodeId });
   const models = await resolveTaskModels(task, project);
   const style = await loadStyle(project.stylePackId);
@@ -164,6 +181,7 @@ export const imageShotHandler: TaskHandler = async ({ task, reportProgress }) =>
     "image_prompt_shot",
     {
       shot_json: JSON.stringify(shot.storyboardJson),
+      scene_blocking: formatBlocking(scene?.blocking),
       locked_assets: lockedAssets,
       reference_legend: referenceLegend,
       style_suffix: style.prefix ?? "",

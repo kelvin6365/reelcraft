@@ -202,8 +202,9 @@ export const storyboardRunHandler: TaskHandler = async ({ task, reportProgress }
     const base = (s / scenes.length) * 100;
     const span = 100 / scenes.length;
 
-    // Phase 1: plan
+    // Phase 1: plan (includes the scene's spatial blocking contract)
     const plan = await textCallJson(ctx, models.text, "storyboard_plan", { scene_text: scene.content.slice(0, 12_000) });
+    await prisma.scene.update({ where: { id: scene.id }, data: { blocking: plan.blocking as object } });
     reportProgress(base + span * 0.4);
 
     const shotListJson = JSON.stringify(plan.shots);

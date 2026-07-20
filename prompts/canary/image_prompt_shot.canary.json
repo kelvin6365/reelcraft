@@ -2,6 +2,7 @@
   "promptId": "image_prompt_shot",
   "variables": {
     "shot_json": "{\"plan\":{\"subject\":\"林知夏推門入店\",\"characters\":[\"林知夏\"]},\"detail\":{\"shotSize\":\"全景\",\"camera\":\"固定\"}}",
+    "scene_blocking": "軸線：鏡頭一律在窗一側；林知夏=畫面左、面向畫面右、坐窗邊桌左側；道具：桌上有咖啡杯",
     "reference_legend": "图片1=林知夏（角色）；图片2=咖啡店·夜（場景）",
     "locked_assets": "图片1（林知夏（角色））: 二十多歲女性，及肩黑髮",
     "style_suffix": "cinematic still, warm lighting"
@@ -10,6 +11,9 @@
     "只輸出純 JSON",
     "@图N",
     "不要只用名字",
+    "180 度軸線",
+    "Never render any text",
+    "嚴禁",
     "Render as ONE single cinematic frame",
     "turnaround sheet"
   ]

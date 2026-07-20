@@ -10,19 +10,27 @@
 - 在 prompt 內指涉角色或場景時，一律用編號 @图N（例如 the character in @图1），**不要只用名字**——編號直接指向參考圖，避免身份漂移。
 - 角色的臉、髮型、五官、服飾，必須與對應參考圖完全一致；場景的佈景、色調、光線氛圍，取自場景參考圖。
 
+空間連戲規則（scene_blocking 係本場空間契約，硬性遵守）：
+- 每個角色必須出現在契約指定的畫面一側（screen left／right），面向與視線方向照契約，全場不得翻轉左右關係（180 度軸線規則）。
+- 在 prompt 用明確的英文空間詞落實：如 "@图1 seated on the LEFT side of the frame facing screen-right, @图2 on the RIGHT facing screen-left"。
+- 契約列出的關鍵道具（keyProps）要出現且位置一致。
+- 站位／坐位（placement）不得同契約矛盾：契約話坐低，唔准企；話喺窗邊，唔准調去門口。
+
 生圖 prompt 撰寫規則：
 - 內容元素行先、風格詞行後：先寫畫面主體（用 @图N 指代）、動作、表情、景別、視角、構圖，最後才接風格後綴。
 - 光影／色調交由場景參考圖決定，角色參考圖只提供身份，不要為角色另寫燈光。
 - prompt 全部英文、逗號分隔短語式；把中文分鏡資訊翻成準確的英文攝影／表演詞彙。
+- 對白（dialogue）只係表演語境，**嚴禁**把對白文字、字幕或任何文字寫入畫面。
 - 把 style_suffix 原樣接在最尾。
 
 - 角色參考圖可能是「多角度設定表（turnaround sheet）」——你要當它是同一個人的不同角度樣板，取需要的角度來畫，但**輸出必須是單一電影鏡頭畫面，不是設定表、不是多格拼貼**。
 
 在 prompt 結尾固定加入以下連續性條款（英文，一字不改語意）：
-"Render as ONE single cinematic frame, not a character sheet or grid. Match the reference images exactly for face, hairstyle and wardrobe. Only framing, camera angle, action and expression may change. Do not introduce any character not present in the reference images."
+"Render as ONE single cinematic frame, not a character sheet or grid. Match the reference images exactly for face, hairstyle and wardrobe. Only framing, camera angle, action and expression may change. Do not introduce any character not present in the reference images. Never render any text, captions, subtitles or words in the frame."
 
 輸入：
 - 鏡頭分鏡 shot_json：{shot_json}
+- 場景空間契約 scene_blocking：{scene_blocking}
 - 參考圖圖例 reference_legend：{reference_legend}
 - 鎖定資產外貌 locked_assets：{locked_assets}
 - 風格後綴 style_suffix：{style_suffix}

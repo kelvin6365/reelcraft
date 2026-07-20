@@ -54,7 +54,7 @@
     {
       "id": "storyboard_plan",
       "path": "pipeline/storyboard_plan.zh.txt",
-      "version": "1",
+      "version": "2",
       "variables": [
         "scene_text"
       ],
@@ -101,14 +101,15 @@
     {
       "id": "image_prompt_shot",
       "path": "pipeline/image_prompt_shot.zh.txt",
-      "version": "4",
+      "version": "5",
       "variables": [
         "shot_json",
+        "scene_blocking",
         "reference_legend",
         "locked_assets",
         "style_suffix"
       ],
-      "description": "鏡頭分鏡轉英文生圖 prompt，@图N 參考綁定 + 連續性條款（角色一致性）。"
+      "description": "鏡頭分鏡轉英文生圖 prompt，@图N 參考綁定 + 空間契約連戲 + 連續性條款。"
     }
   ]
 }

@@ -86,7 +86,25 @@ export const ScenesOutput = z.object({
 export type ScenesOutput = z.infer<typeof ScenesOutput>;
 
 // storyboard_plan
+// 場景空間契約 — 一場一份，鎖死角色左右位/面向/道具，全場鏡頭共守（180° 軸）。
+export const SceneBlocking = z.object({
+  cameraAxis: z.string().default(""), // 攝影機喺軸線邊一側，e.g. 「鏡頭一律喺窗一側」
+  positions: z
+    .array(
+      z.object({
+        name: z.string(),
+        screenSide: z.enum(["left", "right", "center"]).default("center"),
+        facing: z.string().default(""), // e.g. 面向畫面右
+        placement: z.string().default(""), // e.g. 坐窗邊桌左側
+      }),
+    )
+    .default([]),
+  keyProps: z.array(z.string()).default([]),
+});
+export type SceneBlocking = z.infer<typeof SceneBlocking>;
+
 export const StoryboardPlanOutput = z.object({
+  blocking: SceneBlocking.optional().default({ cameraAxis: "", positions: [], keyProps: [] }),
   shots: z
     .array(
       z.object({

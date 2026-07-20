@@ -43,6 +43,14 @@ const canned: Record<string, unknown> = {
     ],
   },
   storyboard_plan: {
+    blocking: {
+      cameraAxis: "鏡頭一律在窗一側，不越軸",
+      positions: [
+        { name: "林知夏", screenSide: "left", facing: "面向畫面右", placement: "坐窗邊桌左側" },
+        { name: "陳沉", screenSide: "right", facing: "面向畫面左", placement: "坐窗邊桌右側" },
+      ],
+      keyProps: ["桌上有咖啡杯", "桌中央有文件"],
+    },
     shots: [
       { index: 1, source_text: "她推門走進咖啡店", subject: "林知夏推門入店", beat: "開場", characters: ["林知夏"], dialogue: "" },
       { index: 2, source_text: "他抬起頭", subject: "陳沉抬頭對視", beat: "對視", characters: ["陳沉"], dialogue: "" },

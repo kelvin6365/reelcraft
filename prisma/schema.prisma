@@ -164,6 +164,9 @@ model Scene {
   content     String  @default("")
   anchorStart String  @default("")
   anchorEnd   String  @default("")
+  // 空間契約 (spatial blocking): 每角色畫面左右位/面向 + 180° 軸 + 關鍵道具，
+  // storyboard_plan 一次過鎖定，之後每鏡生圖必守 — 連戲唔靠彩數
+  blocking    Json    @default("{}")
 
   shots Shot[]
 
