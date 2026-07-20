@@ -1,7 +1,7 @@
 "use client";
 import { useState, type ReactNode } from "react";
 import { api, ApiClientError } from "@/ui/api";
-import type { EpisodeView, LiveTaskMap, StageKey, ShotView } from "@/ui/types";
+import type { EpisodeView, LiveTaskMap, StageKey, ShotView, ScriptReviewView } from "@/ui/types";
 import { STATION_BY_KEY } from "./stations";
 import { shortModelName, isFakeModel } from "@/ui/model-format";
 
@@ -204,7 +204,7 @@ const SCRIPT_FLAG_LABEL: Record<string, string> = {
 const LEVEL_EMOJI: Record<string, string> = { ok: "🟢", review: "🟡", problem: "🔴" };
 
 // 劇本體檢燈 — review-by-exception：只展開 🟡🔴 場，🟢 收埋一行。純資訊，唔閘流程。
-function ScriptReviewLights({ review }: { review: import("@/ui/types").ScriptReviewView }) {
+function ScriptReviewLights({ review }: { review: ScriptReviewView }) {
   const flagged = review.scenes.filter((s) => s.risk.level !== "ok");
   const okCount = review.scenes.length - flagged.length;
   return (
@@ -294,7 +294,7 @@ export function ScriptPanel({ view, progress, refetch }: PanelProps) {
           />
         )}
         {(save.err || regen.err || checkup.err) && <p className="error-text">{save.err ?? regen.err ?? checkup.err}</p>}
-        {hasReview && <ScriptReviewLights review={review as import("@/ui/types").ScriptReviewView} />}
+        {hasReview && <ScriptReviewLights review={review as ScriptReviewView} />}
       </div>
     </Station>
   );

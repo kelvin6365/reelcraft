@@ -52,7 +52,8 @@ export const rewriteScriptHandler: TaskHandler = async ({ task, reportProgress }
   if (!result.text.trim()) throw new TaskError("LLM_OUTPUT_INVALID", "empty script", true);
 
   reportProgress(90);
-  await prisma.episode.update({ where: { id: episode.id }, data: { scriptText: result.text.trim() } });
+  // fresh script → the previous 劇本體檢 no longer applies
+  await prisma.episode.update({ where: { id: episode.id }, data: { scriptText: result.text.trim(), scriptReview: {} } });
   return { chars: result.text.length };
 };
 

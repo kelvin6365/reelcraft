@@ -8,7 +8,8 @@ export const PATCH = withAuth(
     const episode = await getOwnedEpisode(userId, params.id);
     const body = (await req.json()) as { scriptText?: string };
     if (typeof body.scriptText !== "string") throw new ApiError("BAD_REQUEST", 400, "scriptText required");
-    await prisma.episode.update({ where: { id: episode.id }, data: { scriptText: body.scriptText } });
+    // manual edit invalidates the previous 劇本體檢 result — clear the stale lights
+    await prisma.episode.update({ where: { id: episode.id }, data: { scriptText: body.scriptText, scriptReview: {} } });
     return ok({ saved: true });
   },
   { auditAction: "script.edit" },

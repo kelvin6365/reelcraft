@@ -44,6 +44,13 @@ export const PATCH = withAuth(
       theme: string;
     }>;
 
+    // theme is replayed into every split/rewrite prompt — cap it so a huge or
+    // non-string value can't drive unbounded token spend.
+    if (body.theme !== undefined && typeof body.theme !== "string") {
+      return fail("BAD_REQUEST", 400, "theme must be a string");
+    }
+    const theme = body.theme === undefined ? undefined : body.theme.slice(0, 500);
+
     let modelDefaults: object | undefined;
     if (body.modelDefaults !== undefined) {
       const sanitized = sanitizeProjectModelDefaults(body.modelDefaults);
@@ -60,7 +67,7 @@ export const PATCH = withAuth(
         modelDefaults,
         budgetUsd: body.budgetUsd === undefined ? undefined : body.budgetUsd,
         sourceText: body.sourceText,
-        theme: body.theme,
+        theme,
       },
     });
     return ok(project);

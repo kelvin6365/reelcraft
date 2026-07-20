@@ -16,6 +16,7 @@ export async function submitEpisodeTask(
   episode: Episode,
   type: TaskType,
   payload: Record<string, unknown> = {},
+  opts: { dedupeActive?: boolean } = {},
 ): Promise<{ taskId: string; deduped: boolean }> {
   return submitTask({
     userId,
@@ -25,5 +26,6 @@ export async function submitEpisodeTask(
     projectId: episode.projectId,
     episodeId: episode.id,
     payload,
+    dedupeActive: opts.dedupeActive,
   });
 }
