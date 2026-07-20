@@ -193,6 +193,95 @@ describe("fal adapter — error classification", () => {
   });
 });
 
+// --- atlascloud: seedance schema + edit references ----------------------
+import { atlasImage, atlasVideo } from "@/lib/ai/adapters/atlascloud";
+import { effectiveImageModelKey } from "@/lib/ai/generate-media";
+
+function stubAtlas(outputUrl = "https://cdn.atlas/out") {
+  const fetchMock = vi.fn(async (url: string | URL, init?: RequestInit) => {
+    if (init?.method === "POST") return res(200, { data: { id: "pred-1" } });
+    return res(200, { data: { status: "completed", outputs: [outputUrl] } });
+  });
+  vi.stubGlobal("fetch", fetchMock);
+  return fetchMock;
+}
+
+describe("atlascloud adapter — seedance & edit mappings", () => {
+  it("sends the documented seedance i2v schema (image, adaptive ratio, 720p, no audio)", async () => {
+    const fetchMock = stubAtlas("https://cdn.atlas/v.mp4");
+    await atlasVideo({
+      modelId: "bytedance/seedance-2.0-mini/image-to-video",
+      prompt: "push in",
+      imageUrl: "data:image/png;base64,AAA",
+      durationSec: 5,
+      aspectRatio: "9:16",
+      apiKey: "k",
+    });
+    const body = JSON.parse(fetchMock.mock.calls[0][1]?.body as string);
+    expect(body).toMatchObject({
+      model: "bytedance/seedance-2.0-mini/image-to-video",
+      image: "data:image/png;base64,AAA",
+      duration: 5,
+      resolution: "720p",
+      ratio: "adaptive",
+      generate_audio: false,
+      watermark: false,
+    });
+    expect(body.aspect_ratio).toBeUndefined();
+    expect(body.image_url).toBeUndefined();
+  });
+
+  it("keeps the legacy shape for non-seedance models", async () => {
+    const fetchMock = stubAtlas("https://cdn.atlas/v.mp4");
+    await atlasVideo({ modelId: "kling-v2.0", prompt: "x", imageUrl: "https://cdn/f.png", durationSec: 5, aspectRatio: "9:16", apiKey: "k" });
+    const body = JSON.parse(fetchMock.mock.calls[0][1]?.body as string);
+    expect(body).toMatchObject({ aspect_ratio: "9:16", image_url: "https://cdn/f.png" });
+    expect(body.image).toBeUndefined();
+  });
+
+  it("passes reference images to edit models via `images` (URLs)", async () => {
+    const fetchMock = stubAtlas();
+    await atlasImage({
+      modelId: "google/nano-banana-2/edit",
+      prompt: "x",
+      aspectRatio: "9:16",
+      apiKey: "k",
+      referenceImages: ["https://signed/a.png", "https://signed/b.png"],
+    });
+    const body = JSON.parse(fetchMock.mock.calls[0][1]?.body as string);
+    expect(body.images).toEqual(["https://signed/a.png", "https://signed/b.png"]);
+  });
+
+  it("rejects data-URI references with a clear terminal error (atlas accepts URLs only)", async () => {
+    stubAtlas();
+    const err = await atlasImage({
+      modelId: "google/nano-banana-2/edit",
+      prompt: "x",
+      aspectRatio: "9:16",
+      apiKey: "k",
+      referenceImages: ["data:image/jpeg;base64,AAA"],
+    }).catch((e) => e);
+    expect(err).toBeInstanceOf(AiError);
+    expect((err as AiError).code).toBe("ATLAS_REF_URL_REQUIRED");
+  });
+});
+
+describe("effectiveImageModelKey — atlas t2i↔edit sibling swap", () => {
+  it("swaps atlas t2i to the edit sibling when refs are present (edit is billed, not t2i)", () => {
+    expect(effectiveImageModelKey("atlascloud::google/nano-banana-2/text-to-image", true)).toBe(
+      "atlascloud::google/nano-banana-2/edit",
+    );
+  });
+
+  it("keeps t2i without refs, keeps fal keys untouched, keeps keys without a catalog sibling", () => {
+    expect(effectiveImageModelKey("atlascloud::google/nano-banana-2/text-to-image", false)).toBe(
+      "atlascloud::google/nano-banana-2/text-to-image",
+    );
+    expect(effectiveImageModelKey("fal::fal-ai/nano-banana", true)).toBe("fal::fal-ai/nano-banana");
+    expect(effectiveImageModelKey("atlascloud::seedream-3.0", true)).toBe("atlascloud::seedream-3.0");
+  });
+});
+
 // --- openrouter usage/cost capture --------------------------------------
 const OR_REQ = { modelKey: "openrouter::google/gemini-2.5-flash" as const, messages: [{ role: "user" as const, content: "hi" }] };
 

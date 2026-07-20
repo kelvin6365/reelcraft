@@ -54,6 +54,9 @@ if (!Array.isArray(catalog)) {
       }
     }
 
+    if (e.recommend !== undefined && (!Number.isInteger(e.recommend) || e.recommend < 1 || e.recommend > 3)) {
+      hits.push(`${at} (${e.modelKey}): recommend must be an integer 1-3, got ${JSON.stringify(e.recommend)}`);
+    }
     if (e.priceSource !== undefined && !PRICE_SOURCES.has(e.priceSource)) {
       hits.push(`${at} (${e.modelKey}): priceSource must be one of ${[...PRICE_SOURCES].join("/")}, got ${JSON.stringify(e.priceSource)}`);
     }

@@ -14,7 +14,10 @@
       "perUnit": 0.039,
       "unit": "image",
       "currency": "USD"
-    }
+    },
+    "recommend": 2,
+    "priceSource": "manual",
+    "priceVerifiedAt": "2026-07-21"
   },
   {
     "modelKey": "fal::fal-ai/nano-banana-pro",
@@ -31,7 +34,8 @@
       "perUnit": 0.1,
       "unit": "image",
       "currency": "USD"
-    }
+    },
+    "recommend": 2
   },
   {
     "modelKey": "fal::fal-ai/bytedance/seedream/v4/text-to-image",
@@ -48,7 +52,68 @@
       "perUnit": 0.03,
       "unit": "image",
       "currency": "USD"
-    }
+    },
+    "recommend": 2
+  },
+  {
+    "modelKey": "atlascloud::google/nano-banana-2/text-to-image",
+    "apiType": "image",
+    "capabilities": {
+      "aspectRatios": [
+        "9:16",
+        "16:9",
+        "1:1"
+      ]
+    },
+    "pricing": {
+      "mode": "flat",
+      "perUnit": 0.013,
+      "unit": "image",
+      "currency": "USD"
+    },
+    "recommend": 3,
+    "priceSource": "manual",
+    "priceVerifiedAt": "2026-07-21"
+  },
+  {
+    "modelKey": "atlascloud::google/nano-banana-2/edit",
+    "apiType": "image",
+    "capabilities": {
+      "aspectRatios": [
+        "9:16",
+        "16:9",
+        "1:1"
+      ]
+    },
+    "pricing": {
+      "mode": "flat",
+      "perUnit": 0.08,
+      "unit": "image",
+      "currency": "USD"
+    },
+    "recommend": 3,
+    "priceSource": "manual",
+    "priceVerifiedAt": "2026-07-21"
+  },
+  {
+    "modelKey": "atlascloud::bytedance/seedream-v5.0-pro",
+    "apiType": "image",
+    "capabilities": {
+      "aspectRatios": [
+        "9:16",
+        "16:9",
+        "1:1"
+      ]
+    },
+    "pricing": {
+      "mode": "flat",
+      "perUnit": 0.045,
+      "unit": "image",
+      "currency": "USD"
+    },
+    "recommend": 3,
+    "priceSource": "manual",
+    "priceVerifiedAt": "2026-07-21"
   },
   {
     "modelKey": "fal::fal-ai/kling-video/v3/standard/image-to-video",
@@ -75,7 +140,128 @@
       "perUnit": 0.28,
       "unit": "second",
       "currency": "USD"
-    }
+    },
+    "recommend": 2
+  },
+  {
+    "modelKey": "atlascloud::bytedance/seedance-2.0-mini/image-to-video",
+    "apiType": "video",
+    "capabilities": {
+      "durationsSec": [
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15
+      ],
+      "resolutions": [
+        "480p",
+        "720p"
+      ],
+      "modes": [
+        "i2v"
+      ],
+      "aspectRatios": [
+        "9:16",
+        "16:9"
+      ]
+    },
+    "pricing": {
+      "mode": "flat",
+      "perUnit": 0.056,
+      "unit": "second",
+      "currency": "USD"
+    },
+    "recommend": 2,
+    "priceSource": "manual",
+    "priceVerifiedAt": "2026-07-21"
+  },
+  {
+    "modelKey": "atlascloud::bytedance/seedance-2.0-fast/image-to-video",
+    "apiType": "video",
+    "capabilities": {
+      "durationsSec": [
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15
+      ],
+      "resolutions": [
+        "480p",
+        "720p"
+      ],
+      "modes": [
+        "i2v"
+      ],
+      "aspectRatios": [
+        "9:16",
+        "16:9"
+      ]
+    },
+    "pricing": {
+      "mode": "flat",
+      "perUnit": 0.081,
+      "unit": "second",
+      "currency": "USD"
+    },
+    "recommend": 3,
+    "priceSource": "manual",
+    "priceVerifiedAt": "2026-07-21"
+  },
+  {
+    "modelKey": "atlascloud::bytedance/seedance-2.0/image-to-video",
+    "apiType": "video",
+    "capabilities": {
+      "durationsSec": [
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15
+      ],
+      "resolutions": [
+        "480p",
+        "720p"
+      ],
+      "modes": [
+        "i2v"
+      ],
+      "aspectRatios": [
+        "9:16",
+        "16:9"
+      ]
+    },
+    "pricing": {
+      "mode": "flat",
+      "perUnit": 0.1,
+      "unit": "second",
+      "currency": "USD"
+    },
+    "recommend": 3,
+    "priceSource": "manual",
+    "priceVerifiedAt": "2026-07-21"
   },
   {
     "modelKey": "fal::fal-ai/index-tts-2/text-to-speech",
@@ -86,7 +272,8 @@
       "perUnit": 0.00005,
       "unit": "character",
       "currency": "USD"
-    }
+    },
+    "recommend": 2
   },
   {
     "modelKey": "fal::fal-ai/minimax/speech-02-hd",
@@ -97,7 +284,8 @@
       "perUnit": 0.00005,
       "unit": "character",
       "currency": "USD"
-    }
+    },
+    "recommend": 3
   },
   {
     "modelKey": "atlascloud::seedream-3.0",
@@ -114,7 +302,8 @@
       "perUnit": 0.03,
       "unit": "image",
       "currency": "USD"
-    }
+    },
+    "recommend": 1
   },
   {
     "modelKey": "atlascloud::kling-v2.0",
@@ -138,7 +327,8 @@
       "perUnit": 0.26,
       "unit": "second",
       "currency": "USD"
-    }
+    },
+    "recommend": 1
   },
   {
     "modelKey": "openrouter::google/gemini-2.5-flash-lite",
@@ -150,6 +340,7 @@
       "outputPerMTok": 0.4,
       "currency": "USD"
     },
+    "recommend": 3,
     "priceSource": "openrouter-api",
     "priceVerifiedAt": "2026-07-20"
   },
@@ -163,6 +354,7 @@
       "outputPerMTok": 2.5,
       "currency": "USD"
     },
+    "recommend": 2,
     "priceSource": "openrouter-api",
     "priceVerifiedAt": "2026-07-20"
   },
@@ -176,6 +368,7 @@
       "outputPerMTok": 15,
       "currency": "USD"
     },
+    "recommend": 2,
     "priceSource": "openrouter-api",
     "priceVerifiedAt": "2026-07-20"
   },

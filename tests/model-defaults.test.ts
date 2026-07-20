@@ -29,8 +29,8 @@ const U = "user-1";
 
 const SYSTEM = {
   text: "openrouter::google/gemini-2.5-flash-lite",
-  image: "fal::fal-ai/nano-banana-pro",
-  video: "fal::fal-ai/kling-video/v3/standard/image-to-video",
+  image: "fal::fal-ai/nano-banana",
+  video: "atlascloud::bytedance/seedance-2.0-mini/image-to-video",
   tts: "fal::fal-ai/minimax/speech-02-hd",
 } as const;
 

@@ -11,6 +11,21 @@ function priceHint(m: ModelCatalogItem): string {
   return `$${p.inputPerMTok}/$${p.outputPerMTok} per Mtok`;
 }
 
+// Cheap/mid/pricey badge — absolute thresholds per unit so the tier is stable
+// regardless of what else is in the picker.
+function priceTier(m: ModelCatalogItem): string {
+  const p = m.unitPrice;
+  if (p.mode === "text") return p.inputPerMTok <= 0.5 ? "$" : p.inputPerMTok <= 3 ? "$$" : "$$$";
+  if (p.unit === "image") return p.perUnit <= 0.02 ? "$" : p.perUnit <= 0.05 ? "$$" : "$$$";
+  if (p.unit === "second") return p.perUnit <= 0.06 ? "$" : p.perUnit <= 0.15 ? "$$" : "$$$";
+  return "$"; // per-character TTS — all in the same cheap band today
+}
+
+// ★★★ top pick / ★★ solid / ★ legacy; unrated models show no stars.
+function stars(m: ModelCatalogItem): string {
+  return m.recommend ? "★".repeat(m.recommend) : "";
+}
+
 export function ModelSelect({
   apiType,
   value,
@@ -61,7 +76,7 @@ export function ModelSelect({
                   disabled={isDisabled}
                   title={reason ?? priceHint(m)}
                 >
-                  {modelId} · {priceHint(m)}
+                  {[modelId, stars(m), priceTier(m)].filter(Boolean).join(" ")} · {priceHint(m)}
                   {notConnected ? "（未連接）" : ""}
                   {extraReason ? `（${extraReason}）` : ""}
                 </option>

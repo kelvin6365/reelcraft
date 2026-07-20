@@ -40,6 +40,8 @@ const entrySchema = z
     apiType: z.enum(["text", "image", "video", "tts"]),
     capabilities: capabilitiesSchema.optional(),
     pricing: z.discriminatedUnion("mode", [flatPricingSchema, textPricingSchema]),
+    // Recommendation tier for the model picker: 3 = top pick, 2 = solid, 1 = legacy.
+    recommend: z.number().int().min(1).max(3).optional(),
     // Price provenance metadata, stamped by scripts/sync-prices.ts.
     priceSource: z.enum(["openrouter-api", "manual"]).optional(),
     priceVerifiedAt: z.string().optional(), // ISO date the price was last synced/verified

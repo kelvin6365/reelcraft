@@ -43,8 +43,12 @@ const API_TYPES: readonly ApiType[] = ["text", "image", "video", "tts"];
 // provider-registry-check guard.
 export const SYSTEM_MODEL_DEFAULTS: ModelDefaults = {
   text: "openrouter::google/gemini-2.5-flash-lite",
-  image: "fal::fal-ai/nano-banana-pro",
-  video: "fal::fal-ai/kling-video/v3/standard/image-to-video",
+  // Cheapest ref-proven image path: fal nano-banana is $0.039 flat INCLUDING the
+  // /edit (reference) calls the shot pipeline lives on. Atlas NB2 t2i is $0.013
+  // but its edit variant is $0.08 — pickable per-project, not the floor.
+  image: "fal::fal-ai/nano-banana",
+  // Cheapest Seedance (user decision 2026-07-21): Atlas Mini i2v $0.056/s.
+  video: "atlascloud::bytedance/seedance-2.0-mini/image-to-video",
   tts: "fal::fal-ai/minimax/speech-02-hd",
 };
 

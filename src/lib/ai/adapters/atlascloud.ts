@@ -74,6 +74,10 @@ export interface AtlasImageArgs {
   negativePrompt?: string;
   aspectRatio: string;
   apiKey: string;
+  // Edit-family models (…/edit) take input images via `images` (1-14 URLs).
+  // AtlasCloud documents URLs only — data URIs (local-dev storage) are rejected
+  // upstream, so we fail fast with a clear code instead of a cryptic 400.
+  referenceImages?: string[];
 }
 
 export async function atlasImage(args: AtlasImageArgs): Promise<{ url: string; providerRequestId: string }> {
@@ -83,6 +87,15 @@ export async function atlasImage(args: AtlasImageArgs): Promise<{ url: string; p
     aspect_ratio: args.aspectRatio,
   };
   if (args.negativePrompt) body.negative_prompt = args.negativePrompt;
+  if (args.referenceImages?.length) {
+    if (args.referenceImages.some((u) => u.startsWith("data:"))) {
+      throw new AiError(
+        "ATLAS_REF_URL_REQUIRED",
+        "atlascloud edit models accept reference images as public URLs only — local-dev storage produces data URIs; use a fal image model locally or public storage",
+      );
+    }
+    body.images = args.referenceImages;
+  }
   const id = await submit("generateImage", args.apiKey, body);
   const url = await pollForOutput(id, args.apiKey);
   return { url, providerRequestId: id };
@@ -98,13 +111,31 @@ export interface AtlasVideoArgs {
 }
 
 export async function atlasVideo(args: AtlasVideoArgs): Promise<{ url: string; providerRequestId: string }> {
-  const body: Record<string, unknown> = {
-    model: args.modelId,
-    prompt: args.prompt,
-    aspect_ratio: args.aspectRatio,
-    duration: args.durationSec,
-  };
-  if (args.imageUrl) body.image_url = args.imageUrl;
+  // Seedance 2.0 family has its own documented schema (verified 2026-07 at
+  // atlascloud.ai/models/bytedance/seedance-2.0/image-to-video): first frame in
+  // `image` (URL or data URI), `ratio: "adaptive"` follows the frame's aspect,
+  // resolution capped at 720p. Other models keep the legacy generic shape.
+  const isSeedance = args.modelId.includes("/seedance-");
+  const body: Record<string, unknown> = isSeedance
+    ? {
+        model: args.modelId,
+        prompt: args.prompt,
+        duration: Math.round(args.durationSec),
+        resolution: "720p",
+        ratio: "adaptive",
+        generate_audio: false,
+        watermark: false,
+      }
+    : {
+        model: args.modelId,
+        prompt: args.prompt,
+        aspect_ratio: args.aspectRatio,
+        duration: args.durationSec,
+      };
+  if (args.imageUrl) {
+    if (isSeedance) body.image = args.imageUrl;
+    else body.image_url = args.imageUrl;
+  }
   const id = await submit("generateVideo", args.apiKey, body);
   const url = await pollForOutput(id, args.apiKey);
   return { url, providerRequestId: id };

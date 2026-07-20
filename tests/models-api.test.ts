@@ -83,7 +83,7 @@ describe("buildModelsView — catalog mapping", () => {
   it("exposes ONLY the whitelisted model fields — no pricing.currency leak or key material", () => {
     const models = V.buildModelsView(C.listCapabilityEntries(), true);
     for (const m of models) {
-      expect(Object.keys(m).sort()).toEqual(["apiType", "capabilities", "modelKey", "provider", "unitPrice"]);
+      expect(Object.keys(m).sort()).toEqual(["apiType", "capabilities", "modelKey", "provider", "recommend", "unitPrice"]);
     }
     const json = JSON.stringify(models);
     for (const leak of ["encryptedKey", "apiKey", "last4", "OPENROUTER_API_KEY", "FAL_KEY"]) {

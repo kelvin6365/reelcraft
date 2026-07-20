@@ -26,6 +26,7 @@ export interface ModelView {
   provider: string;
   capabilities: CapabilityEntry["capabilities"];
   unitPrice: UnitPrice;
+  recommend?: number; // 3 = top pick, 2 = solid, 1 = legacy; absent = unrated
 }
 
 export interface ProvidersInput {
@@ -71,6 +72,7 @@ export function buildModelsView(entries: readonly CapabilityEntry[], includeDevO
       provider: parsed.provider,
       capabilities: e.capabilities,
       unitPrice: toUnitPrice(e.pricing),
+      recommend: e.recommend,
     });
   }
   return out;

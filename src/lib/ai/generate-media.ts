@@ -7,7 +7,7 @@ import { prisma } from "@/lib/db";
 import { env } from "@/lib/env";
 import { parseModelKeyStrict } from "@/lib/ai/model-key";
 import { getProviderKey } from "@/lib/ai/provider-key";
-import { getCapabilities, priceMedia } from "@/lib/ai/capabilities";
+import { getCapabilities, getCapabilityEntry, priceMedia } from "@/lib/ai/capabilities";
 import { AiError, type CallContext } from "@/lib/ai/types";
 import { fakeImage, fakeTts, fakeVideo } from "@/lib/ai/adapters/fake-media";
 import { falImage, falTts, falVideo } from "@/lib/ai/adapters/fal";
@@ -128,13 +128,25 @@ async function generate(
   }
 }
 
+// AtlasCloud splits text-to-image and edit into sibling models with DIFFERENT
+// prices (e.g. nano-banana-2 t2i $0.013 vs edit $0.08). When references are
+// present, swap to the /edit sibling so the right model is both called and
+// billed. fal needs no swap — its adapter derives the /edit endpoint at one
+// flat price. Only swaps when the sibling exists in the catalog.
+export function effectiveImageModelKey(modelKey: string, hasRefs: boolean): string {
+  if (!hasRefs || !modelKey.startsWith("atlascloud::") || !modelKey.endsWith("/text-to-image")) return modelKey;
+  const editKey = modelKey.replace(/\/text-to-image$/, "/edit");
+  return getCapabilityEntry(editKey) ? editKey : modelKey;
+}
+
 export async function generateImage(ctx: CallContext, req: ImageGenRequest): Promise<MediaObject> {
   // Resolve locked-asset reference images once (order preserved for the 图片N legend).
   const referenceImages = req.referenceMediaIds?.length
     ? await normalizeReferenceImages(req.referenceMediaIds)
     : undefined;
 
-  return generate(ctx, "image", req.modelKey, async ({ provider, modelId }) => {
+  const modelKey = effectiveImageModelKey(req.modelKey, !!referenceImages?.length);
+  return generate(ctx, "image", modelKey, async ({ provider, modelId }) => {
     if (provider === "fake") {
       const { buffer, mimeType } = await fakeImage(req.prompt, req.aspectRatio);
       const media = await createMediaFromBuffer({ userId: ctx.userId, buffer, mimeType, keyPrefix: req.keyPrefix });
@@ -160,6 +172,7 @@ export async function generateImage(ctx: CallContext, req: ImageGenRequest): Pro
         negativePrompt: req.negativePrompt,
         aspectRatio: req.aspectRatio,
         apiKey,
+        referenceImages,
       });
       const media = await createMediaFromUrl({ userId: ctx.userId, url, keyPrefix: req.keyPrefix });
       return { media, quantity: 1, unit: "image", providerRequestId };

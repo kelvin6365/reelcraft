@@ -344,6 +344,7 @@ export interface ModelCatalogItem {
     modes?: string[];
   };
   unitPrice: ModelUnitPrice;
+  recommend?: number; // 3 = top pick, 2 = solid, 1 = legacy
 }
 
 // GET /api/models — provider connection status + model catalog. generatedImageCount

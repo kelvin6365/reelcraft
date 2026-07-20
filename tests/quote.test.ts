@@ -58,18 +58,18 @@ afterAll(async () => {
 });
 
 describe("estimateTaskCost — empty project defaults now price from SYSTEM defaults", () => {
-  it("IMAGE_SHOT is priced at the system image model (nano-banana-pro, $0.10)", async () => {
+  it("IMAGE_SHOT is priced at the system image model (nano-banana, $0.039)", async () => {
     const u = await makeUser();
     const p = await makeProject(u, {});
     const cost = await quote.estimateTaskCost(TASK_TYPE.IMAGE_SHOT, u, {}, p);
-    expect(cost).toBeCloseTo(0.1, 6);
+    expect(cost).toBeCloseTo(0.039, 6);
   });
 
-  it("VIDEO_SHOT is priced at the system video model × its worst duration (kling-v3, $0.28 × 10s)", async () => {
+  it("VIDEO_SHOT is priced at the system video model × its worst duration (seedance mini, $0.056 × 15s)", async () => {
     const u = await makeUser();
     const p = await makeProject(u, {});
     const cost = await quote.estimateTaskCost(TASK_TYPE.VIDEO_SHOT, u, {}, p);
-    expect(cost).toBeCloseTo(2.8, 6);
+    expect(cost).toBeCloseTo(0.84, 6);
   });
 
   it("TTS_LINE is priced at the system tts model × char count (minimax, $5e-5/char)", async () => {
@@ -93,6 +93,6 @@ describe("estimateTaskCost — project override respected", () => {
     const u = await makeUser();
     const p = await makeProject(u, { image: "garbage::not-real" });
     const cost = await quote.estimateTaskCost(TASK_TYPE.IMAGE_SHOT, u, {}, p);
-    expect(cost).toBeCloseTo(0.1, 6); // system nano-banana-pro, NOT 0
+    expect(cost).toBeCloseTo(0.039, 6); // system nano-banana, NOT 0
   });
 });
