@@ -13,5 +13,5 @@ export default function Home() {
     router.replace(session ? "/projects" : "/signin");
   }, [isPending, session, router]);
 
-  return <div className="center-screen">載入中…</div>;
+  return <div className="flex min-h-svh items-center justify-center text-muted-foreground">載入中…</div>;
 }

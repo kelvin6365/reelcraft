@@ -5,11 +5,23 @@
 // and re-plan. Split/move need a boundary the client can't compute, so we ask
 // for a short anchor substring via prompt() (kept simple for v1).
 import { useState } from "react";
+import { Loader2 } from "lucide-react";
 import { api } from "@/ui/api";
+import { qk } from "@/ui/query-keys";
 import { useAction } from "./useAction";
 import type { PlanConfigView, PlannedEpisode, RiskFlag, RiskLevel } from "@/ui/types";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { cn } from "@/lib/utils";
 
-const LEVEL_EMOJI: Record<RiskLevel, string> = { ok: "🟢", review: "🟡", problem: "🔴" };
+const LEVEL_LABEL: Record<RiskLevel, string> = { ok: "自動通過", review: "建議覆核", problem: "需人工覆核" };
+const LEVEL_DOT: Record<RiskLevel, string> = {
+  ok: "bg-green-500",
+  review: "bg-yellow-400",
+  problem: "bg-destructive",
+};
 
 const FLAG_LABEL: Record<RiskFlag, string> = {
   weak_hook: "結尾鉤子弱",
@@ -41,16 +53,14 @@ export function EpisodeCard({
   ep,
   isFirst,
   planConfig,
-  refetch,
 }: {
   id: string;
   ep: PlannedEpisode;
   isFirst: boolean;
   planConfig: PlanConfigView | null;
-  refetch: () => Promise<void>;
 }) {
   const [title, setTitle] = useState(ep.title);
-  const { busy, err, run } = useAction(refetch);
+  const { busy, err, run } = useAction(qk.project(id));
 
   const level = ep.risk?.level ?? "ok";
   const flags = ep.risk?.flags ?? [];
@@ -108,61 +118,83 @@ export function EpisodeCard({
   );
 
   return (
-    <div className={`plan-ep-card lv-${level}`}>
-      <div className="plan-ep-head">
-        <span className="plan-ep-idx">第 {ep.index} 集</span>
-        <input
-          className="plan-ep-title"
-          value={title}
-          onChange={(e) => setTitle(e.target.value)}
-          onBlur={saveTitle}
-          disabled={busy}
-        />
-        <span className="plan-ep-badge" title={level}>{LEVEL_EMOJI[level]}</span>
-      </div>
-
-      {ep.summary && <p className="plan-ep-summary">{ep.summary}</p>}
-      {ep.hook && (
-        <p className="plan-ep-hook">
-          <span className="faint">鉤子</span> {ep.hook}
-        </p>
+    <Card
+      className={cn(
+        "gap-3 py-4",
+        level === "problem" && "border-destructive/40",
+        level === "review" && "border-yellow-500/40",
       )}
-      <p className="plan-ep-anchors">
-        <span className="faint">原文預覽</span> {ep.startAnchor} … {ep.endAnchor}
-      </p>
-
-      {level !== "ok" && (
-        <div className="plan-ep-risk">
-          {flags.length > 0 && (
-            <div className="plan-flags">
-              {flags.map((f) => (
-                <span key={f} className={`risk-chip lv-${level}`}>{FLAG_LABEL[f]}</span>
-              ))}
-            </div>
-          )}
-          {ep.risk?.note && <p className="plan-ep-note">{ep.risk.note}</p>}
+    >
+      <CardContent className="space-y-3">
+        <div className="flex items-center gap-3">
+          <Badge variant="secondary" className="font-mono">第 {ep.index} 集</Badge>
+          <Input
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+            onBlur={saveTitle}
+            disabled={busy}
+            className="h-8 flex-1 border-transparent bg-transparent px-2 font-medium shadow-none focus-visible:border-input"
+          />
+          <span className="flex shrink-0 items-center gap-1.5 text-xs text-muted-foreground">
+            <span className={cn("size-2 rounded-full", LEVEL_DOT[level])} />
+            {LEVEL_LABEL[level]}
+          </span>
         </div>
-      )}
 
-      <div className="plan-ep-actions">
-        {fixes.map((k) => (
-          <button key={k} className="btn btn-sm" onClick={() => doFix(k)} disabled={busy}>
-            {FIX_LABEL[k]}
-          </button>
-        ))}
-        <button className="btn btn-sm" onClick={replan} disabled={busy || !planConfig}>
-          重新規劃
-        </button>
-        <button
-          className="btn btn-sm btn-danger"
-          onClick={() => run(() => api.patch(`/api/projects/${id}/plan`, { op: "delete", index: ep.index }))}
-          disabled={busy}
-        >
-          刪除
-        </button>
-        {busy && <span className="spinner" />}
-      </div>
-      {err && <p className="error-text" style={{ marginTop: 8 }}>{err}</p>}
-    </div>
+        {ep.summary && <p className="text-sm text-muted-foreground">{ep.summary}</p>}
+        {ep.hook && (
+          <p className="text-sm">
+            <span className="text-muted-foreground">鉤子</span> {ep.hook}
+          </p>
+        )}
+        <p className="text-xs text-muted-foreground">
+          原文預覽 {ep.startAnchor} … {ep.endAnchor}
+        </p>
+
+        {level !== "ok" && (
+          <div className="space-y-1.5">
+            {flags.length > 0 && (
+              <div className="flex flex-wrap gap-1.5">
+                {flags.map((f) => (
+                  <Badge
+                    key={f}
+                    variant="outline"
+                    className={cn(
+                      level === "problem" && "border-destructive/40 text-destructive",
+                      level === "review" && "border-yellow-500/40 text-yellow-600 dark:text-yellow-400",
+                    )}
+                  >
+                    {FLAG_LABEL[f]}
+                  </Badge>
+                ))}
+              </div>
+            )}
+            {ep.risk?.note && <p className="text-xs text-muted-foreground">{ep.risk.note}</p>}
+          </div>
+        )}
+
+        <div className="flex flex-wrap items-center gap-2 pt-1">
+          {fixes.map((k) => (
+            <Button key={k} size="sm" variant="outline" onClick={() => doFix(k)} disabled={busy}>
+              {FIX_LABEL[k]}
+            </Button>
+          ))}
+          <Button size="sm" variant="outline" onClick={replan} disabled={busy || !planConfig}>
+            重新規劃
+          </Button>
+          <Button
+            size="sm"
+            variant="ghost"
+            className="text-destructive hover:text-destructive"
+            onClick={() => run(() => api.patch(`/api/projects/${id}/plan`, { op: "delete", index: ep.index }))}
+            disabled={busy}
+          >
+            刪除
+          </Button>
+          {busy && <Loader2 className="size-4 animate-spin text-muted-foreground" />}
+        </div>
+        {err && <p className="text-sm text-destructive">{err}</p>}
+      </CardContent>
+    </Card>
   );
 }

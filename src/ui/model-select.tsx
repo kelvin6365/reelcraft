@@ -56,7 +56,12 @@ export function ModelSelect({
   const providerOrder = providers.map((p) => p.id).filter((id) => forType.some((m) => m.provider === id));
 
   return (
-    <select value={value} onChange={(e) => onChange(e.target.value)} disabled={disabled}>
+    <select
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      disabled={disabled}
+      className="flex h-9 w-full items-center justify-between rounded-md border bg-transparent px-3 py-2 text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-input dark:bg-input/30"
+    >
       <option value="">{placeholderLabel}</option>
       {providerOrder.map((providerId) => {
         const groupModels = forType.filter((m) => m.provider === providerId);

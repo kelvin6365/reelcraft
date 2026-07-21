@@ -1,14 +1,29 @@
 "use client";
 import { useEffect, useState, type ReactNode } from "react";
-import { api, ApiClientError } from "@/ui/api";
+import { Loader2, Pencil, RefreshCw } from "lucide-react";
+import { api } from "@/ui/api";
+import { useAction } from "@/ui/planning/useAction";
+import { qk } from "@/ui/query-keys";
 import type { EpisodeView, LiveTaskMap, StageKey, ShotView, ScriptReviewView } from "@/ui/types";
 import { STATION_BY_KEY } from "./stations";
 import { shortModelName, isFakeModel } from "@/ui/model-format";
+import { cn } from "@/lib/utils";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Textarea } from "@/components/ui/textarea";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 
 interface PanelProps {
   view: EpisodeView;
   progress: Partial<Record<StageKey, number>>;
-  refetch: () => Promise<void>;
   live?: LiveTaskMap; // per-target SSE state — used by the media-grid stations
 }
 
@@ -27,62 +42,50 @@ function Station({
   const meta = STATION_BY_KEY[stage];
   const pct = progress?.[stage];
   return (
-    <section id={meta.dom} className="panel">
-      <div className="panel-head">
-        <h2>
+    <Card id={meta.dom} className="scroll-mt-20">
+      <CardHeader className="flex-row items-center gap-3 [&>div]:min-w-0">
+        <CardTitle className="text-base">
           第 {meta.index} 站 · {meta.name}
-        </h2>
-        {typeof pct === "number" && <span className="progress-inline">生成中 {pct}%</span>}
-        <div style={{ marginLeft: "auto" }}>{action}</div>
-      </div>
-      {children}
-    </section>
+        </CardTitle>
+        {typeof pct === "number" && (
+          <Badge variant="secondary" className="text-primary">
+            生成中 {pct}%
+          </Badge>
+        )}
+        <div className="ml-auto flex items-center gap-2">{action}</div>
+      </CardHeader>
+      <CardContent>{children}</CardContent>
+    </Card>
   );
 }
 
-// Small hook: run a POST/PATCH with local busy + error state, then refetch.
-function useAction(refetch: () => Promise<void>) {
-  const [busy, setBusy] = useState(false);
-  const [err, setErr] = useState<string | null>(null);
-  async function run(fn: () => Promise<unknown>, opts: { refetch?: boolean } = { refetch: true }) {
-    setBusy(true);
-    setErr(null);
-    try {
-      await fn();
-      if (opts.refetch !== false) await refetch();
-    } catch (e) {
-      setErr((e as ApiClientError).message);
-    } finally {
-      setBusy(false);
-    }
-  }
-  return { busy, err, run };
+function EmptyState({ children }: { children: ReactNode }) {
+  return <p className="rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground">{children}</p>;
 }
 
 // ---------- ① 原文 ----------
 export function InputPanel({ view }: PanelProps) {
   return (
     <Station stage="input">
-      <div className="card">
-        <textarea readOnly value={view.episode.rawText} rows={8} style={{ background: "var(--bg-elev-2)" }} />
-        <p className="faint" style={{ fontSize: 12, marginBottom: 0 }}>
-          原文唯讀。想改內容請喺專案頁重新建立一集。
-        </p>
+      <div className="space-y-2">
+        <Textarea readOnly value={view.episode.rawText} rows={8} className="bg-muted/40" />
+        <p className="text-xs text-muted-foreground">原文唯讀。想改內容請喺專案頁重新建立一集。</p>
       </div>
     </Station>
   );
 }
 
 // ---------- ② 資產站 ----------
-export function AssetsPanel({ view, progress, refetch, live }: PanelProps) {
+export function AssetsPanel({ view, progress, live }: PanelProps) {
   const { characters, locations, candidateUrlById } = view;
+  const episodeId = view.episode.id;
   const empty = characters.length === 0 && locations.length === 0;
   return (
     <Station stage="assets" progress={progress}>
       {empty ? (
-        <div className="empty">仲未抽到角色／場景。用右下角「下一步」抽取資產。</div>
+        <EmptyState>仲未抽到角色／場景。用右下角「下一步」抽取資產。</EmptyState>
       ) : (
-        <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+        <div className="flex flex-col gap-4">
           {characters.map((c) => (
             <AssetCard
               key={c.id}
@@ -102,7 +105,7 @@ export function AssetsPanel({ view, progress, refetch, live }: PanelProps) {
               lockPath="/api/characters"
               liveState={live?.[`IMAGE_CHARACTER:${c.id}`] ?? c.activeTask ?? null}
               candidateUrlById={candidateUrlById}
-              refetch={refetch}
+              episodeId={episodeId}
             />
           ))}
           {locations.map((l) => (
@@ -121,7 +124,7 @@ export function AssetsPanel({ view, progress, refetch, live }: PanelProps) {
               lockPath="/api/locations"
               liveState={live?.[`IMAGE_LOCATION:${l.id}`] ?? l.activeTask ?? null}
               candidateUrlById={candidateUrlById}
-              refetch={refetch}
+              episodeId={episodeId}
             />
           ))}
         </div>
@@ -147,9 +150,9 @@ function AssetCard(props: {
   lockPath: string;
   liveState: { progress?: number } | null;
   candidateUrlById: Record<string, string>;
-  refetch: () => Promise<void>;
+  episodeId: string;
 }) {
-  const { busy, err, run } = useAction(props.refetch);
+  const { busy, err, run } = useAction(qk.episode(props.episodeId));
   const [editing, setEditing] = useState(false);
   const [promptDraft, setPromptDraft] = useState(props.prompt);
   useEffect(() => {
@@ -166,29 +169,35 @@ function AssetCard(props: {
   }
 
   return (
-    <div className={`asset-card${props.locked ? " locked" : ""}`}>
-      <div className="row" style={{ justifyContent: "space-between", flexWrap: "wrap", gap: 6 }}>
-        <div className="row" style={{ gap: 8 }}>
-          <span className="badge">{props.kind}</span>
-          <strong>{props.name}</strong>
-          {props.locked && <span className="check">✓ 已鎖定</span>}
+    <div className={cn("space-y-3 rounded-lg border p-4", props.locked && "border-primary/40 bg-primary/5")}>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <Badge variant="outline">{props.kind}</Badge>
+          <strong className="text-sm">{props.name}</strong>
+          {props.locked && (
+            <Badge variant="secondary" className="text-primary">
+              ✓ 已鎖定
+            </Badge>
+          )}
           {inFlight && (
-            <span className="badge" style={{ color: "#60a5fa" }}>
+            <Badge variant="secondary" className="text-primary">
               生成中{typeof pct === "number" ? ` ${pct}%` : "…"}
-            </span>
+            </Badge>
           )}
         </div>
-        <div className="row" style={{ gap: 6 }}>
-          <button
-            className="btn btn-ghost btn-sm"
+        <div className="flex items-center gap-2">
+          <Button
+            variant="ghost"
+            size="sm"
             disabled={disabled}
             title="編輯生成提示詞，改完可重生"
             onClick={() => setEditing((v) => !v)}
           >
-            ✏️ 提示詞
-          </button>
-          <button
-            className="btn btn-ghost btn-sm"
+            <Pencil /> 提示詞
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
             disabled={disabled}
             title={props.locked && props.isCharacter ? "保留身份重生候選圖" : "重新生成候選圖"}
             onClick={() =>
@@ -200,95 +209,97 @@ function AssetCard(props: {
               )
             }
           >
-            🔄 重生
-          </button>
+            <RefreshCw /> 重生
+          </Button>
           {props.isCharacter && props.locked && (
-            <button
-              className="btn btn-ghost btn-sm"
+            <Button
+              variant="ghost"
+              size="sm"
               disabled={disabled}
               title="用鎖定圖重生近臉特寫"
               onClick={() => run(() => api.post(`${props.lockPath}/${props.id}/regenerate`, { face: true }))}
             >
-              🔄 近臉
-            </button>
+              <RefreshCw /> 近臉
+            </Button>
           )}
           {props.locked && (
-            <button
-              className="btn btn-ghost btn-sm"
+            <Button
+              variant="ghost"
+              size="sm"
               disabled={disabled}
               onClick={() => run(() => api.post(`${props.lockPath}/${props.id}/lock`, { unlock: true }))}
             >
               重新揀圖
-            </button>
+            </Button>
           )}
         </div>
       </div>
-      {props.desc && (
-        <p className="muted" style={{ fontSize: 13, marginBottom: 4 }}>
-          {props.desc}
-        </p>
-      )}
+      {props.desc && <p className="text-sm text-muted-foreground">{props.desc}</p>}
       {editing && (
-        <div style={{ margin: "6px 0" }}>
-          <textarea
+        <div className="space-y-1">
+          <Textarea
             value={promptDraft}
             onChange={(e) => setPromptDraft(e.target.value)}
             onBlur={savePrompt}
             rows={3}
             placeholder="生成提示詞（外貌／環境描述）"
-            style={{ width: "100%", fontSize: 13 }}
           />
-          <p className="faint" style={{ fontSize: 12, margin: "2px 0 0" }}>
-            離開輸入框自動儲存；儲存後撳「🔄 重生」先會用新提示詞出圖。
-          </p>
+          <p className="text-xs text-muted-foreground">離開輸入框自動儲存；儲存後撳「重生」先會用新提示詞出圖。</p>
         </div>
       )}
 
       {props.locked && props.lockedUrl ? (
-        <div className="row" style={{ gap: 10, alignItems: "flex-start", marginTop: 8 }}>
+        <div className="flex items-start gap-3">
           <img
-            className="thumb"
             src={props.lockedUrl}
             alt={props.name}
-            style={{ maxWidth: 200, aspectRatio: "3/4", objectFit: "cover" }}
+            className="max-w-[200px] rounded-md object-cover"
+            style={{ aspectRatio: "3/4" }}
           />
           {props.faceUrl ? (
             <img
-              className="thumb"
               src={props.faceUrl}
               alt={`${props.name} 近臉特寫`}
               title="近臉特寫 — 鏡頭圖同視頻嘅身份參照"
-              style={{ maxWidth: 96, aspectRatio: "1/1", objectFit: "cover" }}
+              className="max-w-24 rounded-md object-cover"
+              style={{ aspectRatio: "1/1" }}
             />
           ) : props.showFaceHint ? (
-            <span className="faint" style={{ fontSize: 12, marginTop: 4 }}>
-              近臉特寫生成中…
-            </span>
+            <span className="mt-1 text-xs text-muted-foreground">近臉特寫生成中…</span>
           ) : null}
         </div>
       ) : props.candidates.length === 0 ? (
-        <p className="faint" style={{ fontSize: 13 }}>
-          未有候選圖。用右下角「下一步」生成資產圖。
-        </p>
+        <p className="text-sm text-muted-foreground">未有候選圖。用右下角「下一步」生成資產圖。</p>
       ) : (
-        <div className="candidates">
+        <div className="grid grid-cols-3 gap-3 sm:grid-cols-4">
           {props.candidates.map((mediaId) => {
             const url = props.candidateUrlById[mediaId];
+            const chosen = props.chosenId === mediaId;
             return (
               <button
                 key={mediaId}
-                className={`candidate${props.chosenId === mediaId ? " chosen" : ""}`}
+                type="button"
                 disabled={busy}
                 onClick={() => run(() => api.post(`${props.lockPath}/${props.id}/lock`, { mediaId }))}
                 title="揀呢張鎖定"
+                className={cn(
+                  "aspect-[3/4] overflow-hidden rounded-md border-2 transition-colors",
+                  chosen ? "border-primary ring-2 ring-primary" : "border-transparent hover:border-border",
+                )}
               >
-                {url ? <img src={url} alt="候選" /> : <span className="faint">無圖</span>}
+                {url ? (
+                  <img src={url} alt="候選" className="size-full object-cover" />
+                ) : (
+                  <span className="flex size-full items-center justify-center text-xs text-muted-foreground">
+                    無圖
+                  </span>
+                )}
               </button>
             );
           })}
         </div>
       )}
-      {err && <p className="error-text">{err}</p>}
+      {err && <p className="text-sm text-destructive">{err}</p>}
     </div>
   );
 }
@@ -308,25 +319,27 @@ function ScriptReviewLights({ review }: { review: ScriptReviewView }) {
   const flagged = review.scenes.filter((s) => s.risk.level !== "ok");
   const okCount = review.scenes.length - flagged.length;
   return (
-    <div style={{ marginTop: 12 }}>
-      <div className="row" style={{ gap: 8, flexWrap: "wrap" }}>
-        <span className="badge">{LEVEL_EMOJI[review.overall.level]} 總評</span>
-        <span style={{ fontSize: 14 }}>{review.overall.note}</span>
+    <div className="mt-3 space-y-2">
+      <div className="flex flex-wrap items-center gap-2">
+        <Badge variant="outline">
+          {LEVEL_EMOJI[review.overall.level]} 總評
+        </Badge>
+        <span className="text-sm">{review.overall.note}</span>
       </div>
       {flagged.map((s) => (
-        <div key={s.index} className="row" style={{ gap: 8, marginTop: 8, flexWrap: "wrap", fontSize: 14 }}>
+        <div key={s.index} className="flex flex-wrap items-center gap-2 text-sm">
           <span>{LEVEL_EMOJI[s.risk.level]}</span>
-          <span className="badge">{s.label || `第 ${s.index} 場`}</span>
+          <Badge variant="outline">{s.label || `第 ${s.index} 場`}</Badge>
           {s.risk.flags.map((f) => (
-            <span key={f} className="badge" style={{ color: "#fbbf24" }}>
+            <Badge key={f} variant="secondary" className="text-amber-500">
               {SCRIPT_FLAG_LABEL[f] ?? f}
-            </span>
+            </Badge>
           ))}
-          <span className="faint">{s.risk.note}</span>
+          <span className="text-muted-foreground">{s.risk.note}</span>
         </div>
       ))}
       {okCount > 0 && (
-        <p className="faint" style={{ fontSize: 12, marginTop: 8 }}>
+        <p className="text-xs text-muted-foreground">
           其餘 {okCount} 場 🟢 穩妥，唔使深審。改完劇本可再撳「劇本體檢」重驗。
         </p>
       )}
@@ -334,18 +347,19 @@ function ScriptReviewLights({ review }: { review: ScriptReviewView }) {
   );
 }
 
-export function ScriptPanel({ view, progress, refetch }: PanelProps) {
+export function ScriptPanel({ view, progress }: PanelProps) {
   const [text, setText] = useState(view.episode.scriptText);
   const [dirty, setDirty] = useState(false);
-  // REWRITE_SCRIPT finishing refetches the view — sync the textarea unless the
-  // user has local edits (found in browser QA: script stayed blank until reload).
+  // REWRITE_SCRIPT finishing invalidates the episode query — sync the textarea
+  // unless the user has local edits (found in browser QA: script stayed blank
+  // until reload).
   useEffect(() => {
     if (!dirty) setText(view.episode.scriptText);
   }, [view.episode.scriptText, dirty]);
-  const save = useAction(refetch);
-  const regen = useAction(refetch);
-  const checkup = useAction(refetch);
   const epId = view.episode.id;
+  const save = useAction(qk.episode(epId));
+  const regen = useAction(qk.episode(epId));
+  const checkup = useAction(qk.episode(epId));
   const review = view.episode.scriptReview;
   const hasReview = !!review && Array.isArray((review as { scenes?: unknown[] }).scenes);
 
@@ -354,9 +368,9 @@ export function ScriptPanel({ view, progress, refetch }: PanelProps) {
       stage="script"
       progress={progress}
       action={
-        <div className="row" style={{ gap: 8 }}>
-          <button
-            className="btn btn-sm"
+        <>
+          <Button
+            size="sm"
             disabled={save.busy || !dirty}
             onClick={() =>
               save.run(async () => {
@@ -365,31 +379,33 @@ export function ScriptPanel({ view, progress, refetch }: PanelProps) {
               })
             }
           >
-            {save.busy ? <span className="spinner" /> : dirty ? "儲存" : "已儲存"}
-          </button>
-          <button
-            className="btn btn-sm"
+            {save.busy ? <Loader2 className="animate-spin" /> : dirty ? "儲存" : "已儲存"}
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
             disabled={regen.busy}
             onClick={() => regen.run(() => api.post(`/api/episodes/${epId}/rewrite-script`))}
           >
-            {regen.busy ? <span className="spinner" /> : "重新生成"}
-          </button>
-          <button
-            className="btn btn-sm"
+            {regen.busy ? <Loader2 className="animate-spin" /> : "重新生成"}
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
             disabled={checkup.busy || view.episode.scriptText.length === 0}
             title="按檢查清單逐場標風險燈：戲劇目的/對白/節奏/鉤子/展示不明說"
             onClick={() => checkup.run(() => api.post(`/api/episodes/${epId}/script-review`))}
           >
-            {checkup.busy ? <span className="spinner" /> : "🩺 劇本體檢"}
-          </button>
-        </div>
+            {checkup.busy ? <Loader2 className="animate-spin" /> : "🩺 劇本體檢"}
+          </Button>
+        </>
       }
     >
-      <div className="card">
+      <div className="space-y-2">
         {view.episode.scriptText.length === 0 && !dirty ? (
-          <div className="empty">仲未有劇本。用右下角「下一步」或上面「重新生成」生成劇本。</div>
+          <EmptyState>仲未有劇本。用右下角「下一步」或上面「重新生成」生成劇本。</EmptyState>
         ) : (
-          <textarea
+          <Textarea
             value={text}
             onChange={(e) => {
               setText(e.target.value);
@@ -398,7 +414,9 @@ export function ScriptPanel({ view, progress, refetch }: PanelProps) {
             rows={14}
           />
         )}
-        {(save.err || regen.err || checkup.err) && <p className="error-text">{save.err ?? regen.err ?? checkup.err}</p>}
+        {(save.err || regen.err || checkup.err) && (
+          <p className="text-sm text-destructive">{save.err ?? regen.err ?? checkup.err}</p>
+        )}
         {hasReview && <ScriptReviewLights review={review as ScriptReviewView} />}
       </div>
     </Station>
@@ -406,20 +424,21 @@ export function ScriptPanel({ view, progress, refetch }: PanelProps) {
 }
 
 // ---------- ④ 分鏡站 ----------
-export function StoryboardPanel({ view, progress, refetch }: PanelProps) {
+export function StoryboardPanel({ view, progress }: PanelProps) {
   const { shots } = view;
-  const confirm = useAction(refetch);
-  const regen = useAction(refetch);
   const epId = view.episode.id;
+  const confirm = useAction(qk.episode(epId));
+  const regen = useAction(qk.episode(epId));
   return (
     <Station
       stage="storyboard"
       progress={progress}
       action={
         shots.length > 0 && (
-          <div className="row" style={{ gap: 8 }}>
-            <button
-              className="btn btn-sm"
+          <>
+            <Button
+              size="sm"
+              variant="outline"
               disabled={regen.busy || confirm.busy}
               title="重新規劃分鏡（會重簽空間契約）。已生成嘅鏡頭圖／視頻會被清走，要重新生成。"
               onClick={() => {
@@ -427,26 +446,26 @@ export function StoryboardPanel({ view, progress, refetch }: PanelProps) {
                 regen.run(() => api.post(`/api/episodes/${epId}/storyboard`));
               }}
             >
-              {regen.busy ? <span className="spinner" /> : "🔄 重新生成分鏡"}
-            </button>
-            <button
-              className="btn btn-primary btn-sm"
+              {regen.busy ? <Loader2 className="animate-spin" /> : "🔄 重新生成分鏡"}
+            </Button>
+            <Button
+              size="sm"
               disabled={confirm.busy || regen.busy}
               onClick={() => confirm.run(() => api.post(`/api/episodes/${epId}/storyboard/confirm`))}
             >
-              {confirm.busy ? <span className="spinner" /> : "確認分鏡"}
-            </button>
-          </div>
+              {confirm.busy ? <Loader2 className="animate-spin" /> : "確認分鏡"}
+            </Button>
+          </>
         )
       }
     >
       {shots.length === 0 ? (
-        <div className="empty">仲未有分鏡。用右下角「下一步」生成分鏡。</div>
+        <EmptyState>仲未有分鏡。用右下角「下一步」生成分鏡。</EmptyState>
       ) : (
         <>
           {/* 成本預覽（M3 預算護欄）：確認前俾用戶睇清楚下游會使幾多錢 */}
           {view.cost?.downstream && view.cost.downstream.totalUsd > 0 && (
-            <div className="cost-preview">
+            <div className="mb-3 rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-sm">
               ⚠️ 確認後下游生成預估成本：<b>~US${view.cost.downstream.totalUsd.toFixed(2)}</b>
               {"　"}（{view.cost.downstream.pendingImages} 圖 ≈ ${view.cost.downstream.estImageUsd.toFixed(2)} ·{" "}
               {view.cost.downstream.pendingVideos} 視頻 ≈ ${view.cost.downstream.estVideoUsd.toFixed(2)}
@@ -454,46 +473,46 @@ export function StoryboardPanel({ view, progress, refetch }: PanelProps) {
               {"　"}本專案已使 ${view.cost.projectSpendUsd.toFixed(2)}
             </div>
           )}
-          <div className="tbl-wrap">
-          <table className="sb">
-            <thead>
-              <tr>
-                <th style={{ width: 44 }}>#</th>
-                <th style={{ width: 90 }}>景別</th>
-                <th style={{ width: 120 }}>運鏡</th>
-                <th style={{ minWidth: 200 }}>原文片段</th>
-                <th style={{ minWidth: 260 }}>圖像 Prompt</th>
-              </tr>
-            </thead>
-            <tbody>
-              {shots.map((sh) => (
-                <tr key={sh.id}>
-                  <td>{sh.shotIndex}</td>
-                  <td>{sh.storyboardJson.detail?.shotSize ?? "—"}</td>
-                  <td>{sh.storyboardJson.detail?.camera ?? "—"}</td>
-                  <td className="muted">{sh.storyboardJson.plan?.source_text ?? "—"}</td>
-                  <td>
-                    <ShotPromptCell shot={sh} refetch={refetch} />
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <div className="overflow-x-auto rounded-lg border">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="w-11">#</TableHead>
+                  <TableHead className="w-[90px]">景別</TableHead>
+                  <TableHead className="w-[120px]">運鏡</TableHead>
+                  <TableHead className="min-w-[200px]">原文片段</TableHead>
+                  <TableHead className="min-w-[260px]">圖像 Prompt</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {shots.map((sh) => (
+                  <TableRow key={sh.id}>
+                    <TableCell>{sh.shotIndex}</TableCell>
+                    <TableCell>{sh.storyboardJson.detail?.shotSize ?? "—"}</TableCell>
+                    <TableCell>{sh.storyboardJson.detail?.camera ?? "—"}</TableCell>
+                    <TableCell className="text-muted-foreground">{sh.storyboardJson.plan?.source_text ?? "—"}</TableCell>
+                    <TableCell>
+                      <ShotPromptCell shot={sh} episodeId={epId} />
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
           </div>
         </>
       )}
-      {confirm.err && <p className="error-text">{confirm.err}</p>}
+      {confirm.err && <p className="mt-2 text-sm text-destructive">{confirm.err}</p>}
     </Station>
   );
 }
 
-function ShotPromptCell({ shot, refetch }: { shot: ShotView; refetch: () => Promise<void> }) {
+function ShotPromptCell({ shot, episodeId }: { shot: ShotView; episodeId: string }) {
   const [val, setVal] = useState(shot.imagePrompt);
   const [videoVal, setVideoVal] = useState(shot.videoPrompt);
-  const { busy, run } = useAction(refetch);
+  const { busy, run } = useAction(qk.episode(episodeId));
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-      <textarea
+    <div className="flex flex-col gap-1">
+      <Textarea
         value={val}
         disabled={busy}
         onChange={(e) => setVal(e.target.value)}
@@ -501,8 +520,9 @@ function ShotPromptCell({ shot, refetch }: { shot: ShotView; refetch: () => Prom
           if (val !== shot.imagePrompt) run(() => api.patch(`/api/shots/${shot.id}`, { imagePrompt: val }), { refetch: false });
         }}
         placeholder="圖像 prompt…"
+        className="min-h-16"
       />
-      <textarea
+      <Textarea
         value={videoVal}
         disabled={busy}
         onChange={(e) => setVideoVal(e.target.value)}
@@ -511,6 +531,7 @@ function ShotPromptCell({ shot, refetch }: { shot: ShotView; refetch: () => Prom
         }}
         placeholder="視頻 prompt（動作/運鏡；留空則用分鏡自動生成嗰版）…"
         title="重生視頻前可以喺度改動作與運鏡描述"
+        className="min-h-16"
       />
     </div>
   );
@@ -520,18 +541,18 @@ function ShotPromptCell({ shot, refetch }: { shot: ShotView; refetch: () => Prom
 function ShotMediaGrid({
   shots,
   media,
-  refetch,
+  episodeId,
   live,
 }: {
   shots: ShotView[];
   media: "image" | "video";
-  refetch: () => Promise<void>;
+  episodeId: string;
   live?: LiveTaskMap;
 }) {
   return (
-    <div className="shot-grid">
+    <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
       {shots.map((sh) => (
-        <ShotMediaCell key={sh.id} shot={sh} media={media} refetch={refetch} live={live} />
+        <ShotMediaCell key={sh.id} shot={sh} media={media} episodeId={episodeId} live={live} />
       ))}
     </div>
   );
@@ -540,15 +561,15 @@ function ShotMediaGrid({
 function ShotMediaCell({
   shot,
   media,
-  refetch,
+  episodeId,
   live,
 }: {
   shot: ShotView;
   media: "image" | "video";
-  refetch: () => Promise<void>;
+  episodeId: string;
   live?: LiveTaskMap;
 }) {
-  const { busy, err, run } = useAction(refetch);
+  const { busy, err, run } = useAction(qk.episode(episodeId));
   const url = media === "image" ? shot.imageUrl : shot.videoUrl;
   const endpoint = media === "image" ? "generate-image" : "generate-video";
 
@@ -562,39 +583,48 @@ function ShotMediaCell({
   const pct = liveState?.progress ?? serverTask?.progress;
 
   return (
-    <div className="shot-cell">
-      {url ? (
-        media === "image" ? (
-          <img className="media" src={url} alt={`鏡 ${shot.shotIndex}`} />
+    <div className="overflow-hidden rounded-lg border">
+      <div className="relative aspect-video bg-muted">
+        {url ? (
+          media === "image" ? (
+            <img className="size-full object-cover" src={url} alt={`鏡 ${shot.shotIndex}`} />
+          ) : (
+            <video className="size-full object-cover" src={url} controls preload="metadata" />
+          )
         ) : (
-          <video className="media" src={url} controls preload="metadata" />
-        )
-      ) : (
-        <div className="media" style={{ display: "flex", alignItems: "center", justifyContent: "center" }}>
-          <span className="faint">{inFlight ? <><span className="spinner" /> 生成中{pct ? ` ${pct}%` : "…"}</> : "未生成"}</span>
-        </div>
-      )}
-      <div className="cell-body">
-        <span className="faint" style={{ fontSize: 12 }}>
-          鏡 {shot.shotIndex}
-        </span>
-        <button
-          className="btn btn-sm"
+          <div className="flex size-full items-center justify-center">
+            <span className="text-xs text-muted-foreground">
+              {inFlight ? (
+                <span className="inline-flex items-center gap-1">
+                  <Loader2 className="size-3 animate-spin" /> 生成中{pct ? ` ${pct}%` : "…"}
+                </span>
+              ) : (
+                "未生成"
+              )}
+            </span>
+          </div>
+        )}
+      </div>
+      <div className="flex items-center justify-between gap-2 p-2">
+        <span className="text-xs text-muted-foreground">鏡 {shot.shotIndex}</span>
+        <Button
+          size="sm"
+          variant="outline"
           disabled={busy || inFlight}
           onClick={() => run(() => api.post(`/api/shots/${shot.id}/${endpoint}`))}
         >
           {busy || inFlight ? (
             <>
-              <span className="spinner" /> {inFlight ? `生成中${pct ? ` ${pct}%` : ""}` : ""}
+              <Loader2 className="animate-spin" /> {inFlight ? `生成中${pct ? ` ${pct}%` : ""}` : ""}
             </>
           ) : url ? (
             "重生"
           ) : (
             "生成"
           )}
-        </button>
+        </Button>
       </div>
-      {err && <p className="error-text" style={{ padding: "0 10px 8px" }}>{err}</p>}
+      {err && <p className="px-2 pb-2 text-xs text-destructive">{err}</p>}
     </div>
   );
 }
@@ -615,14 +645,14 @@ function ModelChip({
   if (!model) return null;
   const fake = isFakeModel(model.modelKey);
   return (
-    <span className={`model-chip${fake ? " fake" : ""}`}>
+    <Badge variant={fake ? "destructive" : "outline"}>
       {icon} {shortModelName(model.modelKey)}
       {model.unitUsd !== null && ` · ~$${model.unitUsd.toFixed(2)}/${unit}`}
-    </span>
+    </Badge>
   );
 }
 
-export function ImagesPanel({ view, progress, refetch, live }: PanelProps) {
+export function ImagesPanel({ view, progress, live }: PanelProps) {
   return (
     <Station
       stage="images"
@@ -630,15 +660,15 @@ export function ImagesPanel({ view, progress, refetch, live }: PanelProps) {
       action={<ModelChip icon="🖼️" unit="張" model={view.cost?.activeModels?.image} />}
     >
       {view.shots.length === 0 ? (
-        <div className="empty">先完成分鏡站。</div>
+        <EmptyState>先完成分鏡站。</EmptyState>
       ) : (
-        <ShotMediaGrid shots={view.shots} media="image" refetch={refetch} live={live} />
+        <ShotMediaGrid shots={view.shots} media="image" episodeId={view.episode.id} live={live} />
       )}
     </Station>
   );
 }
 
-export function VideosPanel({ view, progress, refetch, live }: PanelProps) {
+export function VideosPanel({ view, progress, live }: PanelProps) {
   return (
     <Station
       stage="videos"
@@ -646,9 +676,9 @@ export function VideosPanel({ view, progress, refetch, live }: PanelProps) {
       action={<ModelChip icon="🎬" unit="鏡" model={view.cost?.activeModels?.video} />}
     >
       {view.shots.length === 0 ? (
-        <div className="empty">先完成分鏡站。</div>
+        <EmptyState>先完成分鏡站。</EmptyState>
       ) : (
-        <ShotMediaGrid shots={view.shots} media="video" refetch={refetch} live={live} />
+        <ShotMediaGrid shots={view.shots} media="video" episodeId={view.episode.id} live={live} />
       )}
     </Station>
   );
@@ -660,41 +690,39 @@ export function VoicePanel({ view, progress }: PanelProps) {
   return (
     <Station stage="voice" progress={progress}>
       {voiceLines.length === 0 ? (
-        <div className="empty">仲未有台詞。用右下角「下一步」分析台詞並配音。</div>
+        <EmptyState>仲未有台詞。用右下角「下一步」分析台詞並配音。</EmptyState>
       ) : (
-        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+        <div className="flex flex-col gap-3">
           {voiceLines.map((v) => (
-            <div key={v.id} className="voice-line">
-              <span className="badge" style={{ flexShrink: 0 }}>
+            <div key={v.id} className="flex items-start gap-3 rounded-lg border p-3">
+              <Badge variant="outline" className="shrink-0">
                 {v.speaker || "旁白"}
-              </span>
+              </Badge>
               {v.lineType === "vo" && (
-                <span className="badge" style={{ flexShrink: 0, color: "#c4b5fd" }} title="Voice Over：旁白/內心獨白，場內人聽不到">
+                <Badge variant="secondary" className="shrink-0 text-violet-400" title="Voice Over：旁白/內心獨白，場內人聽不到">
                   VO
-                </span>
+                </Badge>
               )}
               {v.lineType === "os" && (
-                <span className="badge" style={{ flexShrink: 0, color: "#93c5fd" }} title="Off-Screen：人在場景內但不在畫面">
+                <Badge variant="secondary" className="shrink-0 text-sky-400" title="Off-Screen：人在場景內但不在畫面">
                   OS
-                </span>
+                </Badge>
               )}
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div>
-                  {v.cue ? <span className="faint">（{v.cue}）</span> : null}
+              <div className="min-w-0 flex-1">
+                <div className="text-sm">
+                  {v.cue ? <span className="text-muted-foreground">（{v.cue}）</span> : null}
                   {v.content}
                 </div>
                 {v.emotion && (
-                  <div className="faint" style={{ fontSize: 12 }}>
+                  <div className="text-xs text-muted-foreground">
                     情緒：{v.emotion}（{v.emotionStrength.toFixed(2)}）
                   </div>
                 )}
               </div>
               {v.audioUrl ? (
-                <audio src={v.audioUrl} controls preload="none" />
+                <audio src={v.audioUrl} controls preload="none" className="h-8 shrink-0" />
               ) : (
-                <span className="faint" style={{ fontSize: 12, flexShrink: 0 }}>
-                  待配音
-                </span>
+                <span className="shrink-0 text-xs text-muted-foreground">待配音</span>
               )}
             </div>
           ))}
@@ -710,20 +738,16 @@ export function ExportPanel({ view, progress }: PanelProps) {
   return (
     <Station stage="export" progress={progress}>
       {url ? (
-        <div className="card" style={{ textAlign: "center" }}>
-          <video
-            src={url}
-            controls
-            style={{ maxWidth: 360, width: "100%", borderRadius: "var(--radius-sm)", background: "#000" }}
-          />
-          <div style={{ marginTop: 14 }}>
-            <a className="btn btn-primary" href={url} download>
+        <div className="space-y-4 text-center">
+          <video src={url} controls className="mx-auto w-full max-w-90 rounded-lg bg-black" />
+          <Button asChild>
+            <a href={url} download>
               下載成片 MP4
             </a>
-          </div>
+          </Button>
         </div>
       ) : (
-        <div className="empty">仲未合成。完成前面各站後，用右下角「下一步」合成整集並導出。</div>
+        <EmptyState>仲未合成。完成前面各站後，用右下角「下一步」合成整集並導出。</EmptyState>
       )}
     </Station>
   );

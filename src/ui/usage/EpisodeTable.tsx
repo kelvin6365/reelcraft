@@ -1,33 +1,35 @@
 "use client";
 import type { UsageRowView } from "@/ui/types";
 import { usd, int } from "./format";
+import { Card } from "@/components/ui/card";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 
 // ④ 按集成本表 — rows from GET /api/usage?groupBy=episode, cost desc.
 export function EpisodeTable({ rows }: { rows: UsageRowView[] }) {
-  if (rows.length === 0) return <p className="muted">未有分集用量。</p>;
+  if (rows.length === 0) return <p className="text-sm text-muted-foreground">未有分集用量。</p>;
   return (
-    <div className="tbl-wrap">
-      <table className="usage">
-        <thead>
-          <tr>
-            <th>集</th>
-            <th className="num">呼叫</th>
-            <th className="num">成本</th>
-          </tr>
-        </thead>
-        <tbody>
+    <Card className="py-0">
+      <Table>
+        <TableHeader>
+          <TableRow>
+            <TableHead>集</TableHead>
+            <TableHead className="text-right">呼叫</TableHead>
+            <TableHead className="text-right">成本</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
           {rows.map((r) => (
-            <tr key={r.key}>
-              <td>{r.label}</td>
-              <td className="num">{int(r.calls)}</td>
-              <td className="num">
+            <TableRow key={r.key}>
+              <TableCell className="font-medium">{r.label}</TableCell>
+              <TableCell className="text-right tabular-nums">{int(r.calls)}</TableCell>
+              <TableCell className="text-right tabular-nums">
                 {usd(r.actualCostUsd)}
-                {r.uncostedCalls > 0 && <span className="faint">（{r.uncostedCalls} 未計價）</span>}
-              </td>
-            </tr>
+                {r.uncostedCalls > 0 && <span className="text-muted-foreground">（{r.uncostedCalls} 未計價）</span>}
+              </TableCell>
+            </TableRow>
           ))}
-        </tbody>
-      </table>
-    </div>
+        </TableBody>
+      </Table>
+    </Card>
   );
 }

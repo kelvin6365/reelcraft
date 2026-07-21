@@ -1,12 +1,18 @@
 "use client";
-import { useCallback, useEffect, useState } from "react";
+import { useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { api, ApiClientError } from "@/ui/api";
-import { TopBar } from "@/ui/TopBar";
+import { useQuery } from "@tanstack/react-query";
+import { ShieldCheck } from "lucide-react";
+import { modelsQuery, providerKeysQuery } from "@/ui/query-keys";
+import { AppShell } from "@/components/app-shell";
 import { useSession } from "@/ui/auth-client";
-import type { ModelsResponse, ProviderKeysResponse, ProviderKeyView, ProviderView } from "@/ui/types";
+import type { ProviderView } from "@/ui/types";
 import { ProviderKeyRow } from "@/ui/settings/ProviderKeyRow";
 import { UserModelDefaults } from "@/ui/settings/UserModelDefaults";
+import { Badge } from "@/components/ui/badge";
+import { Card, CardContent, CardHeader } from "@/components/ui/card";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 // 設定：自備金鑰（BYO-Key）+ 預設模型。逐個 provider 一行，只顯示 ••••後四碼，
 // 明文只在瀏覽器輸入、送出後清空 —— API 從不回傳金鑰本身。供應商清單與連接狀態
@@ -20,32 +26,22 @@ const KEY_HINTS: Record<string, string> = {
 export default function SettingsPage() {
   const router = useRouter();
   const { data: session, isPending } = useSession();
-  const [keys, setKeys] = useState<ProviderKeyView[] | null>(null);
-  const [catalog, setCatalog] = useState<ModelsResponse | null>(null);
-  const [loadErr, setLoadErr] = useState<string | null>(null);
-
-  const load = useCallback(() => {
-    Promise.all([
-      api.get<ProviderKeysResponse>("/api/user/provider-keys"),
-      api.get<ModelsResponse>("/api/models"),
-    ])
-      .then(([k, c]) => {
-        setKeys(k.keys);
-        setCatalog(c);
-      })
-      .catch((e: ApiClientError) => setLoadErr(e.message));
-  }, []);
+  const enabled = !isPending && !!session;
+  const keysQuery = useQuery({ ...providerKeysQuery(), enabled });
+  const catalogQuery = useQuery({ ...modelsQuery(), enabled });
 
   useEffect(() => {
     if (isPending) return;
-    if (!session) {
-      router.replace("/signin");
-      return;
-    }
-    load();
-  }, [isPending, session, router, load]);
+    if (!session) router.replace("/signin");
+  }, [isPending, session, router]);
 
-  if (isPending || (!catalog && !loadErr)) return <div className="center-screen">載入中…</div>;
+  const keys = keysQuery.data?.keys ?? null;
+  const catalog = catalogQuery.data ?? null;
+  const loadErr = keysQuery.error?.message ?? catalogQuery.error?.message ?? null;
+
+  if (isPending || !session) {
+    return <div className="flex min-h-svh items-center justify-center text-muted-foreground">載入中…</div>;
+  }
 
   const byProvider = new Map((keys ?? []).map((k) => [k.provider, k]));
   // BYOK key rows: the /api/models providers we have set-up copy for (excludes the
@@ -53,35 +49,61 @@ export default function SettingsPage() {
   const keyProviders: ProviderView[] = (catalog?.providers ?? []).filter((p) => p.id in KEY_HINTS);
 
   return (
-    <>
-      <TopBar />
-      <main className="container page-pad">
-        <h1 style={{ fontSize: 24, marginBottom: 6 }}>設定</h1>
-        <p className="muted" style={{ marginTop: 0 }}>
-          自備 API 金鑰（BYO-Key）。金鑰以 AES-256-GCM 加密儲存，僅在呼叫供應商時解密，永不回傳。
-          未設定時使用平台共用金鑰。
-        </p>
-
-        {loadErr && <p className="error-text">{loadErr}</p>}
-
-        <div className="stack" style={{ gap: 12, maxWidth: 560 }}>
-          {keyProviders.map((p) => (
-            <ProviderKeyRow
-              key={p.id}
-              provider={p.id}
-              label={p.label}
-              hint={KEY_HINTS[p.id]}
-              stored={byProvider.get(p.id)}
-              connected={p.connected}
-              onChanged={load}
-            />
-          ))}
-
-          {catalog && (
-            <UserModelDefaults models={catalog.models} providers={catalog.providers} />
-          )}
+    <AppShell active="settings" title="設定 · 模型預設">
+      <div className="space-y-6 p-8">
+        <div>
+          <h1 className="text-2xl font-semibold tracking-tight">設定</h1>
+          <p className="mt-1 text-sm text-muted-foreground">
+            自備 API 金鑰（BYO-Key）。金鑰以 AES-256-GCM 加密儲存，僅在呼叫供應商時解密，永不回傳。未設定時使用平台共用金鑰。
+          </p>
         </div>
-      </main>
-    </>
+
+        {loadErr && <p className="text-sm text-destructive">{loadErr}</p>}
+
+        <Tabs defaultValue="defaults">
+          <TabsList>
+            <TabsTrigger value="defaults">模型預設</TabsTrigger>
+            <TabsTrigger value="keys">API 金鑰</TabsTrigger>
+          </TabsList>
+
+          <TabsContent value="defaults" className="space-y-4">
+            {catalog ? (
+              <UserModelDefaults models={catalog.models} providers={catalog.providers} />
+            ) : (
+              <Skeleton className="h-64 w-full" />
+            )}
+          </TabsContent>
+
+          <TabsContent value="keys" className="space-y-4">
+            <Card className="py-0">
+              <CardHeader className="flex-row items-center justify-between gap-4 py-6">
+                <div className="space-y-1">
+                  <h2 className="text-lg font-semibold">API 金鑰（BYO-Key）</h2>
+                  <p className="text-sm text-muted-foreground">
+                    金鑰以信封加密儲存，只喺呼叫供應商時解密 — 缺 Key 嘅 provider 下所有模型自動禁用。
+                  </p>
+                </div>
+                <Badge variant="secondary" className="shrink-0 gap-1">
+                  <ShieldCheck className="size-3.5" />
+                  信封加密 AES-256
+                </Badge>
+              </CardHeader>
+              <CardContent className="space-y-4 pb-6">
+                {keyProviders.map((p) => (
+                  <ProviderKeyRow
+                    key={p.id}
+                    provider={p.id}
+                    label={p.label}
+                    hint={KEY_HINTS[p.id]}
+                    stored={byProvider.get(p.id)}
+                    connected={p.connected}
+                  />
+                ))}
+              </CardContent>
+            </Card>
+          </TabsContent>
+        </Tabs>
+      </div>
+    </AppShell>
   );
 }

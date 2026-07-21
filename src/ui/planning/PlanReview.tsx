@@ -4,9 +4,22 @@
 // listed; 🟢 cards collapse into one row. Footer confirms → creates N episodes
 // (409 EPISODES_EXIST → confirm() dialog → retry force:true).
 import { useState } from "react";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { Loader2 } from "lucide-react";
 import { api, ApiClientError } from "@/ui/api";
+import { qk } from "@/ui/query-keys";
 import { EpisodeCard } from "./EpisodeCard";
 import type { PlanConfigView, PlanRisk, PlannedEpisode } from "@/ui/types";
+import { Button } from "@/components/ui/button";
+import {
+  Card,
+  CardContent,
+  CardFooter,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Label } from "@/components/ui/label";
 
 export function PlanReview({
   id,
@@ -14,69 +27,72 @@ export function PlanReview({
   risk,
   planConfig,
   hasEpisodes,
-  refetch,
 }: {
   id: string;
   episodes: PlannedEpisode[];
   risk: PlanRisk | null;
   planConfig: PlanConfigView | null;
   hasEpisodes: boolean;
-  refetch: () => Promise<void>;
 }) {
   const [onlyProblems, setOnlyProblems] = useState(true);
   const [greenOpen, setGreenOpen] = useState(false);
-  const [confirming, setConfirming] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const queryClient = useQueryClient();
+
+  const confirmMutation = useMutation({
+    mutationFn: (force: boolean) => api.post<{ created: number }>(`/api/projects/${id}/plan/confirm`, { force }),
+    onSuccess: async () => {
+      setErr(null);
+      await queryClient.invalidateQueries({ queryKey: qk.project(id) });
+    },
+  });
+  const confirming = confirmMutation.isPending;
 
   const problemEps = episodes.filter((e) => (e.risk?.level ?? "ok") !== "ok");
   const okEps = episodes.filter((e) => (e.risk?.level ?? "ok") === "ok");
   const tally = risk ?? { total: episodes.length, problem: 0, review: 0, ok: episodes.length };
-  const showGreen = !onlyProblems || greenOpen;
 
   async function confirm(force = false) {
-    setConfirming(true);
     setErr(null);
     try {
-      await api.post<{ created: number }>(`/api/projects/${id}/plan/confirm`, { force });
-      await refetch();
+      await confirmMutation.mutateAsync(force);
     } catch (e) {
       const ce = e as ApiClientError;
       if (ce.code === "EPISODES_EXIST" && !force) {
         if (window.confirm("呢個項目已經有劇集。重新確認會清走未開工嘅集並重建。繼續？")) {
-          setConfirming(false);
           await confirm(true);
           return;
         }
       } else {
         setErr(ce.message);
       }
-    } finally {
-      setConfirming(false);
     }
   }
 
   return (
-    <div className="card plan-panel">
-      <div className="plan-review-head">
-        <div className="plan-tally">
-          <strong>{tally.total} 集</strong>
-          <span className="tally-dot">🔴 {tally.problem}</span>
-          <span className="tally-dot">🟡 {tally.review}</span>
-          <span className="tally-dot">🟢 {tally.ok}</span>
+    <Card>
+      <CardHeader className="flex-row items-center justify-between gap-3 space-y-0">
+        <div className="flex flex-wrap items-center gap-3">
+          <CardTitle className="text-base">已規劃 {tally.total} 集</CardTitle>
+          <span className="text-sm text-muted-foreground">🔴 {tally.problem}</span>
+          <span className="text-sm text-muted-foreground">🟡 {tally.review}</span>
+          <span className="text-sm text-muted-foreground">🟢 {tally.ok}</span>
         </div>
-        <label className="plan-filter">
-          <input
-            type="checkbox"
+        <div className="flex items-center gap-2">
+          <Checkbox
+            id="only-problems"
             checked={onlyProblems}
-            onChange={(e) => setOnlyProblems(e.target.checked)}
+            onCheckedChange={(v) => setOnlyProblems(v === true)}
           />
-          只顯示要處理
-        </label>
-      </div>
+          <Label htmlFor="only-problems" className="text-sm font-normal">只顯示要處理</Label>
+        </div>
+      </CardHeader>
 
-      <div className="plan-ep-list">
+      <CardContent className="space-y-3">
         {onlyProblems && problemEps.length === 0 && (
-          <div className="plan-all-clear">全部集穩妥，冇需要處理嘅項目 ✓</div>
+          <div className="rounded-md border border-dashed p-6 text-center text-sm text-muted-foreground">
+            全部集穩妥，冇需要處理嘅項目 ✓
+          </div>
         )}
         {(onlyProblems ? problemEps : episodes).map((ep) => (
           <EpisodeCard
@@ -85,12 +101,11 @@ export function PlanReview({
             ep={ep}
             isFirst={ep.index === 1}
             planConfig={planConfig}
-            refetch={refetch}
           />
         ))}
 
         {onlyProblems && okEps.length > 0 && (
-          showGreen ? (
+          greenOpen ? (
             okEps.map((ep) => (
               <EpisodeCard
                 key={ep.index}
@@ -98,34 +113,34 @@ export function PlanReview({
                 ep={ep}
                 isFirst={ep.index === 1}
                 planConfig={planConfig}
-                refetch={refetch}
               />
             ))
           ) : (
-            <button className="plan-green-row" onClick={() => setGreenOpen(true)}>
+            <Button variant="ghost" className="w-full" onClick={() => setGreenOpen(true)}>
               {okEps.length} 集穩妥 ✓（點擊展開）
-            </button>
+            </Button>
           )
         )}
         {onlyProblems && greenOpen && okEps.length > 0 && (
-          <button className="plan-green-row" onClick={() => setGreenOpen(false)}>
+          <Button variant="ghost" className="w-full" onClick={() => setGreenOpen(false)}>
             收起穩妥嘅 {okEps.length} 集
-          </button>
+          </Button>
         )}
-      </div>
 
-      {err && <p className="error-text" style={{ marginTop: 10 }}>{err}</p>}
+        {err && <p className="text-sm text-destructive">{err}</p>}
+      </CardContent>
 
-      <div className="plan-confirm-bar">
-        <span className="muted" style={{ fontSize: 13 }}>
+      <CardFooter className="flex flex-wrap items-center justify-between gap-3 border-t">
+        <span className="text-sm text-muted-foreground">
           {hasEpisodes
             ? "已生成劇集。重新確認會依照上面嘅規劃重建未開工嘅集。"
             : `確認後會依錨點切分，建立 ${tally.total} 集草稿。`}
         </span>
-        <button className="btn btn-primary" onClick={() => confirm(false)} disabled={confirming}>
-          {confirming ? <><span className="spinner" /> 生成中…</> : `確認生成 ${tally.total} 集`}
-        </button>
-      </div>
-    </div>
+        <Button onClick={() => confirm(false)} disabled={confirming}>
+          {confirming && <Loader2 className="animate-spin" />}
+          {confirming ? "生成中…" : `確認生成 ${tally.total} 集`}
+        </Button>
+      </CardFooter>
+    </Card>
   );
 }

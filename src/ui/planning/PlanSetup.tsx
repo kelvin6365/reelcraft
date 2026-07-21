@@ -3,9 +3,25 @@
 // anchor (每集約 N 秒 / 總共 N 集) + hook strength, then trigger EPISODE_SPLIT.
 // While planStatus==='planning' the parent polls; we just show a spinner here.
 import { useState } from "react";
+import { Loader2 } from "lucide-react";
 import { api } from "@/ui/api";
+import { qk } from "@/ui/query-keys";
 import { useAction } from "./useAction";
 import type { PlanConfigView, PlanStatus } from "@/ui/types";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Button } from "@/components/ui/button";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardFooter,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+import { Textarea } from "@/components/ui/textarea";
 
 const LONG_NOVEL_CHARS = 30000;
 
@@ -15,14 +31,12 @@ export function PlanSetup({
   initialTheme = "",
   initialConfig,
   planStatus,
-  refetch,
 }: {
   id: string;
   initialSourceText: string;
   initialTheme?: string;
   initialConfig: PlanConfigView | null;
   planStatus: PlanStatus;
-  refetch: () => Promise<void>;
 }) {
   const [sourceText, setSourceText] = useState(initialSourceText);
   const [savedText, setSavedText] = useState(initialSourceText);
@@ -34,7 +48,7 @@ export function PlanSetup({
   const [hookStrength, setHookStrength] = useState<"normal" | "strong">(
     initialConfig?.hookStrength ?? "strong",
   );
-  const { busy, err, run } = useAction(refetch);
+  const { busy, err, run } = useAction(qk.project(id));
 
   const planning = planStatus === "planning";
   const isLong = sourceText.length > LONG_NOVEL_CHARS;
@@ -76,124 +90,114 @@ export function PlanSetup({
   }
 
   return (
-    <div className="card plan-panel">
-      <h2 style={{ fontSize: 18, marginBottom: 4 }}>劇集規劃</h2>
-      <p className="muted" style={{ marginTop: 0, fontSize: 14 }}>
-        貼上成本小說原文，設一個目標，AI 幫你切集並自評風險，你只需審核亮燈嗰幾集。
-      </p>
-
-      <textarea
-        value={sourceText}
-        onChange={(e) => setSourceText(e.target.value)}
-        onBlur={saveSourceOnBlur}
-        rows={10}
-        placeholder="喺呢度貼上成本小說原文…"
-        disabled={planning}
-      />
-      <div className="row" style={{ justifyContent: "space-between", marginTop: 6 }}>
-        <span className="faint" style={{ fontSize: 12 }}>{sourceText.length.toLocaleString()} 字</span>
-        {savedText && sourceText.trim() === savedText && (
-          <span className="faint" style={{ fontSize: 12 }}>已儲存 ✓</span>
-        )}
-      </div>
-      {isLong && (
-        <p className="plan-note">
-          原文較長（超過 {LONG_NOVEL_CHARS.toLocaleString()} 字）。v1 單次規劃上限約 25 集，長篇建議分批貼章節規劃。
-        </p>
-      )}
-
-      <input
-        type="text"
-        value={theme}
-        onChange={(e) => setTheme(e.target.value)}
-        onBlur={saveThemeOnBlur}
-        placeholder="中心思想一句話（可留空）— 例：愛要及時說出口。切集同劇本都會錨定唔偏題"
-        disabled={planning}
-        style={{ marginTop: 10, width: "100%" }}
-      />
-
-      <div className="plan-target">
-        <div className="plan-target-row">
-          <label className="plan-radio">
-            <input
-              type="radio"
-              name="anchor"
-              checked={anchor === "length"}
-              onChange={() => setAnchor("length")}
-              disabled={planning}
-            />
-            <span>每集約</span>
-            <input
-              type="number"
-              className="plan-num"
-              value={seconds}
-              min={15}
-              onChange={(e) => setSeconds(Math.max(1, Number(e.target.value) || 0))}
-              disabled={planning || anchor !== "length"}
-            />
-            <span>秒</span>
-          </label>
-        </div>
-        <div className="plan-target-row">
-          <label className="plan-radio">
-            <input
-              type="radio"
-              name="anchor"
-              checked={anchor === "count"}
-              onChange={() => setAnchor("count")}
-              disabled={planning}
-            />
-            <span>總共</span>
-            <input
-              type="number"
-              className="plan-num"
-              value={count}
-              min={1}
-              onChange={(e) => setCount(Math.max(1, Number(e.target.value) || 0))}
-              disabled={planning || anchor !== "count"}
-            />
-            <span>集</span>
-          </label>
-        </div>
-
-        <div className="plan-target-row" style={{ gap: 8 }}>
-          <span className="muted" style={{ fontSize: 13 }}>鉤子強度</span>
-          <button
-            type="button"
-            className={`chip-toggle ${hookStrength === "normal" ? "on" : ""}`}
-            onClick={() => setHookStrength("normal")}
+    <Card>
+      <CardHeader>
+        <CardTitle>劇集規劃</CardTitle>
+        <CardDescription>
+          貼上成本小說原文，設一個目標，AI 幫你切集並自評風險，你只需審核亮燈嗰幾集。
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div className="space-y-2">
+          <Textarea
+            value={sourceText}
+            onChange={(e) => setSourceText(e.target.value)}
+            onBlur={saveSourceOnBlur}
+            rows={10}
+            placeholder="喺呢度貼上成本小說原文…"
             disabled={planning}
-          >
-            一般
-          </button>
-          <button
-            type="button"
-            className={`chip-toggle ${hookStrength === "strong" ? "on" : ""}`}
-            onClick={() => setHookStrength("strong")}
-            disabled={planning}
-          >
-            強鉤子
-          </button>
-        </div>
-      </div>
-
-      {err && <p className="error-text" style={{ marginTop: 10 }}>{err}</p>}
-
-      <div className="row-end">
-        <button
-          className="btn btn-primary"
-          onClick={startPlan}
-          disabled={busy || planning || !sourceText.trim()}
-        >
-          {planning ? (
-            <><span className="spinner" /> 規劃中…</>
-          ) : busy ? (
-            <span className="spinner" />
-          ) : (
-            "AI 規劃分集"
+          />
+          <div className="flex items-center justify-between text-xs text-muted-foreground">
+            <span>{sourceText.length.toLocaleString()} 字</span>
+            {savedText && sourceText.trim() === savedText && <span>已儲存 ✓</span>}
+          </div>
+          {isLong && (
+            <Alert>
+              <AlertDescription>
+                原文較長（超過 {LONG_NOVEL_CHARS.toLocaleString()} 字）。v1
+                單次規劃上限約 25 集，長篇建議分批貼章節規劃。
+              </AlertDescription>
+            </Alert>
           )}
-        </button>
-      </div>
-    </div>
+        </div>
+
+        <div className="space-y-2">
+          <Label htmlFor="plan-theme">中心思想（可留空）</Label>
+          <Input
+            id="plan-theme"
+            value={theme}
+            onChange={(e) => setTheme(e.target.value)}
+            onBlur={saveThemeOnBlur}
+            placeholder="中心思想一句話 — 例：愛要及時說出口。切集同劇本都會錨定唔偏題"
+            disabled={planning}
+          />
+        </div>
+
+        <div className="space-y-4 rounded-lg border p-4">
+          <RadioGroup
+            value={anchor}
+            onValueChange={(v) => setAnchor(v as "length" | "count")}
+            disabled={planning}
+          >
+            <div className="flex items-center gap-3">
+              <RadioGroupItem value="length" id="anchor-length" />
+              <Label htmlFor="anchor-length" className="font-normal">每集約</Label>
+              <Input
+                type="number"
+                className="h-8 w-20"
+                value={seconds}
+                min={15}
+                onChange={(e) => setSeconds(Math.max(1, Number(e.target.value) || 0))}
+                disabled={planning || anchor !== "length"}
+              />
+              <span className="text-sm text-muted-foreground">秒</span>
+            </div>
+            <div className="flex items-center gap-3">
+              <RadioGroupItem value="count" id="anchor-count" />
+              <Label htmlFor="anchor-count" className="font-normal">總共</Label>
+              <Input
+                type="number"
+                className="h-8 w-20"
+                value={count}
+                min={1}
+                onChange={(e) => setCount(Math.max(1, Number(e.target.value) || 0))}
+                disabled={planning || anchor !== "count"}
+              />
+              <span className="text-sm text-muted-foreground">集</span>
+            </div>
+          </RadioGroup>
+
+          <div className="flex items-center gap-2">
+            <span className="text-sm text-muted-foreground">鉤子強度</span>
+            <Button
+              type="button"
+              size="sm"
+              variant={hookStrength === "normal" ? "default" : "outline"}
+              onClick={() => setHookStrength("normal")}
+              disabled={planning}
+            >
+              一般
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant={hookStrength === "strong" ? "default" : "outline"}
+              onClick={() => setHookStrength("strong")}
+              disabled={planning}
+            >
+              強鉤子
+            </Button>
+          </div>
+        </div>
+
+        {err && <p className="text-sm text-destructive">{err}</p>}
+      </CardContent>
+      <CardFooter className="justify-end border-t">
+        <Button onClick={startPlan} disabled={busy || planning || !sourceText.trim()}>
+          {(planning || busy) && <Loader2 className="animate-spin" />}
+          {planning ? "規劃中…" : "AI 規劃分集"}
+        </Button>
+      </CardFooter>
+    </Card>
   );
 }

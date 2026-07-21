@@ -2,7 +2,12 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import { Clapperboard } from "lucide-react";
 import { signIn } from "@/ui/auth-client";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 
 export default function SignInPage() {
   const router = useRouter();
@@ -25,40 +30,52 @@ export default function SignInPage() {
   }
 
   return (
-    <div className="auth-wrap">
-      <form className="card auth-card" onSubmit={onSubmit}>
-        <h1>
-          登入 <span style={{ color: "var(--accent)" }}>ReelCraft</span>
-        </h1>
-        <p className="muted" style={{ fontSize: 14, marginTop: 0 }}>
-          貼一段小說，出一集短劇。
-        </p>
-        <div className="field">
-          <label>電郵</label>
-          <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} required autoComplete="email" />
-        </div>
-        <div className="field">
-          <label>密碼</label>
-          <input
-            type="password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            required
-            autoComplete="current-password"
-          />
-        </div>
-        {err && (
-          <p className="error-text" style={{ marginTop: 12 }}>
-            {err}
-          </p>
-        )}
-        <button className="btn btn-primary" type="submit" disabled={busy} style={{ width: "100%", marginTop: 18 }}>
-          {busy ? <span className="spinner" /> : "登入"}
-        </button>
-        <p className="muted" style={{ fontSize: 14, marginTop: 16, textAlign: "center" }}>
-          未有帳戶？<Link href="/signup">建立帳戶</Link>
-        </p>
-      </form>
+    <div className="flex min-h-svh items-center justify-center p-6">
+      <Card className="w-full max-w-sm">
+        <CardHeader className="text-center">
+          <div className="mx-auto mb-2 flex size-10 items-center justify-center rounded-lg bg-primary text-primary-foreground">
+            <Clapperboard className="size-5" />
+          </div>
+          <CardTitle className="text-xl">登入 ReelCraft</CardTitle>
+          <CardDescription>貼一段小說，出一集短劇。</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <form onSubmit={onSubmit} className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="email">電郵</Label>
+              <Input
+                id="email"
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                required
+                autoComplete="email"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="password">密碼</Label>
+              <Input
+                id="password"
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                required
+                autoComplete="current-password"
+              />
+            </div>
+            {err && <p className="text-sm text-destructive">{err}</p>}
+            <Button type="submit" className="w-full" disabled={busy}>
+              {busy ? "登入中…" : "登入"}
+            </Button>
+            <p className="text-center text-sm text-muted-foreground">
+              未有帳戶？
+              <Link href="/signup" className="text-primary hover:underline">
+                建立帳戶
+              </Link>
+            </p>
+          </form>
+        </CardContent>
+      </Card>
     </div>
   );
 }

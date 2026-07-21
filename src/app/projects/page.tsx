@@ -1,10 +1,43 @@
 "use client";
-import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
+// 專案總覽 — rebuilt to the Pencil ref (frame nfIj9): metric cards, projects
+// table with status badges, sidebar shell. Data layer is TanStack Query.
+import { Suspense, useEffect, useMemo, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { useMutation, useQuery } from "@tanstack/react-query";
+import { Plus } from "lucide-react";
 import { api, ApiClientError } from "@/ui/api";
-import { TopBar } from "@/ui/TopBar";
 import { useSession } from "@/ui/auth-client";
+import { balanceQuery, projectsQuery, usageQuery } from "@/ui/query-keys";
 import type { ProjectSummary } from "@/ui/types";
+import { AppShell } from "@/components/app-shell";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Skeleton } from "@/components/ui/skeleton";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 
 const STYLE_PACKS = [
   { id: "cinematic-01", label: "真人電影感 cinematic-01" },
@@ -18,83 +51,175 @@ const INPUT_TYPES = [
   { id: "srt", label: "SRT 字幕" },
 ];
 
+function projectStatus(p: ProjectSummary): { label: string; variant: "default" | "secondary" | "destructive" | "outline" } {
+  if (p.episodes.length === 0) return { label: "草稿", variant: "outline" };
+  if (p.episodes.some((e) => e.status.includes("FAILED"))) return { label: "有失敗", variant: "destructive" };
+  if (p.episodes.every((e) => e.status === "COMPOSED")) return { label: "已完成", variant: "secondary" };
+  return { label: "進行中", variant: "default" };
+}
+
 export default function ProjectsPage() {
-  const router = useRouter();
-  const { data: session, isPending } = useSession();
-  const [projects, setProjects] = useState<ProjectSummary[] | null>(null);
-  const [showModal, setShowModal] = useState(false);
-  const [loadErr, setLoadErr] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (isPending) return;
-    if (!session) {
-      router.replace("/signin");
-      return;
-    }
-    api
-      .get<ProjectSummary[]>("/api/projects")
-      .then(setProjects)
-      .catch((e: ApiClientError) => setLoadErr(e.message));
-  }, [isPending, session, router]);
-
-  if (isPending || (!projects && !loadErr)) return <div className="center-screen">載入中…</div>;
-
+  // useSearchParams (in the inner component) requires a Suspense boundary at build time
   return (
-    <>
-      <TopBar />
-      <main className="container page-pad">
-        <div className="row" style={{ justifyContent: "space-between", marginBottom: 20 }}>
-          <h1 style={{ fontSize: 24 }}>我的專案</h1>
-          <button className="btn btn-primary" onClick={() => setShowModal(true)}>
-            + 新專案
-          </button>
-        </div>
-
-        {loadErr && <p className="error-text">{loadErr}</p>}
-
-        {projects && projects.length === 0 && (
-          <div className="empty">
-            <p style={{ fontSize: 16, marginTop: 0 }}>仲未有專案。</p>
-            <p>建立第一個專案，貼一段小說，行八站流程出一集短劇。</p>
-            <button className="btn btn-primary" onClick={() => setShowModal(true)} style={{ marginTop: 8 }}>
-              + 建立專案
-            </button>
-          </div>
-        )}
-
-        {projects && projects.length > 0 && (
-          <div className="grid">
-            {projects.map((p) => (
-              <div key={p.id} className="card project-card" onClick={() => router.push(`/projects/${p.id}`)}>
-                <h3 style={{ fontSize: 17 }}>{p.name}</h3>
-                <div className="row" style={{ gap: 8, marginTop: 12, flexWrap: "wrap" }}>
-                  <span className="badge">{p.stylePackId}</span>
-                  <span className="badge">{p.videoRatio}</span>
-                  <span className="badge">{p.episodes.length} 集</span>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-      </main>
-
-      {showModal && (
-        <CreateProjectModal
-          onClose={() => setShowModal(false)}
-          onCreated={(p) => {
-            setShowModal(false);
-            router.push(`/projects/${p.id}`);
-          }}
-        />
-      )}
-    </>
+    <Suspense fallback={<div className="flex min-h-svh items-center justify-center text-muted-foreground">載入中…</div>}>
+      <ProjectsPageInner />
+    </Suspense>
   );
 }
 
-function CreateProjectModal({
+function ProjectsPageInner() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const { data: session, isPending } = useSession();
+  const [showModal, setShowModal] = useState(false);
+
+  useEffect(() => {
+    if (isPending) return;
+    if (!session) router.replace("/signin");
+  }, [isPending, session, router]);
+
+  // sidebar「新專案」links here with ?new=1
+  useEffect(() => {
+    if (searchParams.get("new") === "1") setShowModal(true);
+  }, [searchParams]);
+
+  const enabled = !isPending && !!session;
+  const { data: projects, error, isLoading } = useQuery({ ...projectsQuery(), enabled });
+  const { data: usageDay } = useQuery({ ...usageQuery("day"), enabled });
+  const { data: balance } = useQuery({ ...balanceQuery(), enabled });
+  const loadErr = error ? (error as ApiClientError).message : null;
+
+  const metrics = useMemo(() => {
+    const totalEpisodes = projects?.reduce((n, p) => n + p.episodes.length, 0) ?? 0;
+    const composed =
+      projects?.reduce((n, p) => n + p.episodes.filter((e) => e.status === "COMPOSED").length, 0) ?? 0;
+    return [
+      { label: "專案", value: projects ? String(projects.length) : null, hint: "全部專案" },
+      { label: "劇集", value: projects ? `${totalEpisodes} 集` : null, hint: `已出片 ${composed} 集` },
+      {
+        label: "AI 成本（30 日）",
+        value: usageDay ? `$${usageDay.totals.actualCostUsd.toFixed(2)}` : null,
+        hint: usageDay ? `${usageDay.totals.calls} 次呼叫` : "",
+      },
+      {
+        label: "餘額",
+        value: balance && balance.mode !== "OFF" ? `$${balance.balanceUsd.toFixed(2)}` : "—",
+        hint: balance && balance.frozenUsd > 0 ? `凍結 $${balance.frozenUsd.toFixed(2)}` : "",
+      },
+    ];
+  }, [projects, usageDay, balance]);
+
+  if (isPending || !session) {
+    return <div className="flex min-h-svh items-center justify-center text-muted-foreground">載入中…</div>;
+  }
+
+  return (
+    <AppShell
+      active="projects"
+      title="專案總覽"
+      actions={
+        <Button size="sm" onClick={() => setShowModal(true)}>
+          <Plus /> 新專案
+        </Button>
+      }
+    >
+      <div className="space-y-6 p-8">
+        <div>
+          <h1 className="text-2xl font-semibold tracking-tight">專案總覽</h1>
+          <p className="mt-1 text-sm text-muted-foreground">貼一段小說，行八站流程出一集短劇。</p>
+        </div>
+
+        <div className="grid grid-cols-2 gap-4 xl:grid-cols-4">
+          {metrics.map((m) => (
+            <Card key={m.label}>
+              <CardContent className="space-y-1 p-6">
+                <p className="text-sm text-muted-foreground">{m.label}</p>
+                {m.value === null ? (
+                  <Skeleton className="h-8 w-20" />
+                ) : (
+                  <p className="text-2xl font-semibold tabular-nums">{m.value}</p>
+                )}
+                {m.hint ? <p className="text-xs text-muted-foreground">{m.hint}</p> : null}
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+
+        {loadErr && <p className="text-sm text-destructive">{loadErr}</p>}
+
+        <div className="space-y-4">
+          <div className="flex items-center justify-between">
+            <h2 className="text-lg font-medium">我的專案</h2>
+          </div>
+
+          {isLoading ? (
+            <Skeleton className="h-48 w-full" />
+          ) : projects && projects.length === 0 ? (
+            <Card>
+              <CardContent className="flex flex-col items-center gap-3 py-14 text-center">
+                <p className="text-base">仲未有專案。</p>
+                <p className="text-sm text-muted-foreground">建立第一個專案，貼一段小說，行八站流程出一集短劇。</p>
+                <Button onClick={() => setShowModal(true)}>
+                  <Plus /> 建立專案
+                </Button>
+              </CardContent>
+            </Card>
+          ) : projects ? (
+            <Card className="py-0">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className="w-[280px]">專案名稱</TableHead>
+                    <TableHead>畫風包</TableHead>
+                    <TableHead className="w-[90px]">比例</TableHead>
+                    <TableHead className="w-[90px]">集數</TableHead>
+                    <TableHead className="w-[110px]">狀態</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {projects.map((p) => {
+                    const st = projectStatus(p);
+                    return (
+                      <TableRow
+                        key={p.id}
+                        className="cursor-pointer"
+                        onClick={() => router.push(`/projects/${p.id}`)}
+                      >
+                        <TableCell className="font-medium">{p.name}</TableCell>
+                        <TableCell className="text-muted-foreground">{p.stylePackId}</TableCell>
+                        <TableCell className="text-muted-foreground">{p.videoRatio}</TableCell>
+                        <TableCell>{p.episodes.length} 集</TableCell>
+                        <TableCell>
+                          <Badge variant={st.variant}>{st.label}</Badge>
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
+                </TableBody>
+              </Table>
+            </Card>
+          ) : null}
+        </div>
+      </div>
+
+      <CreateProjectDialog
+        open={showModal}
+        onClose={() => setShowModal(false)}
+        onCreated={(p) => {
+          setShowModal(false);
+          router.push(`/projects/${p.id}`);
+        }}
+      />
+    </AppShell>
+  );
+}
+
+function CreateProjectDialog({
+  open,
   onClose,
   onCreated,
 }: {
+  open: boolean;
   onClose: () => void;
   onCreated: (p: ProjectSummary) => void;
 }) {
@@ -102,77 +227,99 @@ function CreateProjectModal({
   const [stylePackId, setStylePackId] = useState(STYLE_PACKS[0].id);
   const [videoRatio, setVideoRatio] = useState(RATIOS[0]);
   const [inputType, setInputType] = useState(INPUT_TYPES[0].id);
-  const [busy, setBusy] = useState(false);
-  const [err, setErr] = useState<string | null>(null);
+  const [validationErr, setValidationErr] = useState<string | null>(null);
 
-  async function create() {
+  const mutation = useMutation({
+    mutationFn: () =>
+      api.post<ProjectSummary>("/api/projects", { name: name.trim(), stylePackId, videoRatio, inputType }),
+    onSuccess: (p) => onCreated({ ...p, episodes: p.episodes ?? [] }),
+  });
+
+  const busy = mutation.isPending;
+  const err = validationErr ?? (mutation.error ? (mutation.error as ApiClientError).message : null);
+
+  function create() {
     if (!name.trim()) {
-      setErr("請輸入專案名稱。");
+      setValidationErr("請輸入專案名稱。");
       return;
     }
-    setBusy(true);
-    setErr(null);
-    try {
-      const p = await api.post<ProjectSummary>("/api/projects", { name: name.trim(), stylePackId, videoRatio, inputType });
-      onCreated({ ...p, episodes: p.episodes ?? [] });
-    } catch (e) {
-      setErr((e as ApiClientError).message);
-      setBusy(false);
-    }
+    setValidationErr(null);
+    mutation.mutate();
   }
 
   return (
-    <div className="modal-backdrop" onClick={onClose}>
-      <div className="card modal" onClick={(e) => e.stopPropagation()}>
-        <h2>新專案</h2>
-        <div className="field">
-          <label>專案名稱</label>
-          <input value={name} onChange={(e) => setName(e.target.value)} autoFocus placeholder="例：宮鬥短劇 第一部" />
+    <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>新專案</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-4">
+          <div className="space-y-2">
+            <Label htmlFor="project-name">專案名稱</Label>
+            <Input
+              id="project-name"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              autoFocus
+              placeholder="例：宮鬥短劇 第一部"
+            />
+          </div>
+          <div className="space-y-2">
+            <Label>輸入類型</Label>
+            <Select value={inputType} onValueChange={setInputType}>
+              <SelectTrigger className="w-full">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {INPUT_TYPES.map((t) => (
+                  <SelectItem key={t.id} value={t.id}>
+                    {t.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-2">
+            <Label>畫風包</Label>
+            <Select value={stylePackId} onValueChange={setStylePackId}>
+              <SelectTrigger className="w-full">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {STYLE_PACKS.map((s) => (
+                  <SelectItem key={s.id} value={s.id}>
+                    {s.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-2">
+            <Label>比例</Label>
+            <Select value={videoRatio} onValueChange={setVideoRatio}>
+              <SelectTrigger className="w-full">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {RATIOS.map((r) => (
+                  <SelectItem key={r} value={r}>
+                    {r}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          {err && <p className="text-sm text-destructive">{err}</p>}
         </div>
-        <div className="field">
-          <label>輸入類型</label>
-          <select value={inputType} onChange={(e) => setInputType(e.target.value)}>
-            {INPUT_TYPES.map((t) => (
-              <option key={t.id} value={t.id}>
-                {t.label}
-              </option>
-            ))}
-          </select>
-        </div>
-        <div className="field">
-          <label>畫風包</label>
-          <select value={stylePackId} onChange={(e) => setStylePackId(e.target.value)}>
-            {STYLE_PACKS.map((s) => (
-              <option key={s.id} value={s.id}>
-                {s.label}
-              </option>
-            ))}
-          </select>
-        </div>
-        <div className="field">
-          <label>比例</label>
-          <select value={videoRatio} onChange={(e) => setVideoRatio(e.target.value)}>
-            {RATIOS.map((r) => (
-              <option key={r} value={r}>
-                {r}
-              </option>
-            ))}
-          </select>
-        </div>
-        {err && (
-          <p className="error-text" style={{ marginTop: 12 }}>
-            {err}
-          </p>
-        )}
-        <div className="row-end">
-          <button className="btn btn-ghost" onClick={onClose} disabled={busy}>
+        <DialogFooter>
+          <Button variant="ghost" onClick={onClose} disabled={busy}>
             取消
-          </button>
-          <button className="btn btn-primary" onClick={create} disabled={busy}>
-            {busy ? <span className="spinner" /> : "建立"}
-          </button>
-        </div>
-      </div>
-    </div>
+          </Button>
+          <Button onClick={create} disabled={busy}>
+            {busy ? "建立中…" : "建立"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }

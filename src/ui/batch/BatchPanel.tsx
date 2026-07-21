@@ -3,9 +3,31 @@
 // 後端見 POST/DELETE /api/projects/:id/batch（docs/plans/2026-07-19-batch-generation-design.md）。
 // 進度板純由 episode.status + failedTasks 推導（輕量，跟住 project GET 輪詢刷新）。
 import { useEffect, useState } from "react";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { Loader2, Pause, Sparkles, TriangleAlert } from "lucide-react";
 import { api, ApiClientError } from "@/ui/api";
-import { STATIONS } from "@/ui/episode/stations";
+import { qk } from "@/ui/query-keys";
 import type { EpisodeListItem } from "@/ui/types";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Button } from "@/components/ui/button";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { Checkbox } from "@/components/ui/checkbox";
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Label } from "@/components/ui/label";
+import { Progress } from "@/components/ui/progress";
+import { cn } from "@/lib/utils";
 
 const STATUS_LABEL: Record<string, string> = {
   draft: "草稿",
@@ -16,19 +38,6 @@ const STATUS_LABEL: Record<string, string> = {
   videos: "視頻",
   export: "成片",
   done: "已完成",
-};
-
-// Map an episode's coarse status to the "current" station index (1..8). Status
-// has no distinct 配音(7) stage, so it jumps 視頻(6)→成片(8); 99 = fully done.
-const STATUS_STATION: Record<string, number> = {
-  draft: 1,
-  assets: 2,
-  script: 3,
-  storyboard: 4,
-  images: 5,
-  videos: 6,
-  export: 8,
-  done: 99,
 };
 
 interface BatchOptions {
@@ -43,167 +52,208 @@ interface StartResult {
   kicked: Record<string, string>;
 }
 
-function StationStrip({ status, failed }: { status: string; failed: boolean }) {
-  const cur = STATUS_STATION[status] ?? 1;
-  return (
-    <div className="batch-strip">
-      {STATIONS.map((st) => {
-        const state = st.index < cur ? "done" : st.index === cur ? "current" : "pending";
-        const cls = state === "current" && failed ? "failed" : state;
-        return <span key={st.key} className={`strip-seg ${cls}`} title={st.name} />;
-      })}
-    </div>
-  );
+// Chip state per episode, derived from the same status/autorun/failedTasks
+// fields the old station-strip board used — presentation only, no new data.
+type ChipState = "done" | "active" | "failed" | "pending";
+
+function chipState(ep: EpisodeListItem): ChipState {
+  if ((ep.failedTasks ?? 0) > 0) return "failed";
+  if (ep.status === "done") return "done";
+  if (ep.autorun) return "active";
+  return "pending";
+}
+
+const CHIP_STYLE: Record<ChipState, string> = {
+  done: "border-green-500/30 bg-green-500/10 text-green-600 dark:text-green-400",
+  active: "border-primary/40 bg-primary/10 text-primary",
+  failed: "border-destructive/30 bg-destructive/10 text-destructive",
+  pending: "border-border bg-secondary text-secondary-foreground",
+};
+
+function chipLabel(ep: EpisodeListItem, state: ChipState): string {
+  if (state === "done") return "已完成";
+  if (state === "failed") return `失敗 · ${ep.failedTasks}`;
+  if (state === "active") return STATUS_LABEL[ep.status] ?? "生成中";
+  return "排隊中";
 }
 
 export function BatchPanel({
   id,
   episodes,
-  refetch,
 }: {
   id: string;
   episodes: EpisodeListItem[];
-  refetch: () => Promise<void>;
 }) {
   const [modalOpen, setModalOpen] = useState(false);
   const [opts, setOpts] = useState<BatchOptions>({ autoConfirmStoryboard: true, skipVideo: false });
-  const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
+  const queryClient = useQueryClient();
 
   const running = episodes.some((e) => e.autorun);
 
   // While a batch is running, keep the board fresh by re-polling the project.
   useEffect(() => {
     if (!running) return;
-    const t = setInterval(() => void refetch(), 5000);
+    const t = setInterval(() => void queryClient.invalidateQueries({ queryKey: qk.project(id) }), 5000);
     return () => clearInterval(t);
-  }, [running, refetch]);
+  }, [running, queryClient, id]);
 
-  async function start() {
-    setBusy(true);
-    setErr(null);
-    setMsg(null);
-    try {
-      const res = await api.post<StartResult>(`/api/projects/${id}/batch`, opts);
+  const startMutation = useMutation({
+    mutationFn: () => api.post<StartResult>(`/api/projects/${id}/batch`, opts),
+    onSuccess: async (res) => {
       setModalOpen(false);
       const skipped = res.skippedDone > 0 ? `（跳過 ${res.skippedDone} 集已完成）` : "";
       setMsg(`已開始批量生成 ${res.started} 集${skipped}`);
-      await refetch();
-    } catch (e) {
-      setErr((e as ApiClientError).message);
-    } finally {
-      setBusy(false);
-    }
-  }
+      await queryClient.invalidateQueries({ queryKey: qk.project(id) });
+    },
+  });
 
-  async function stop() {
-    setBusy(true);
+  const stopMutation = useMutation({
+    mutationFn: () => api.del<{ stopped: number }>(`/api/projects/${id}/batch`),
+    onSuccess: async (res) => {
+      setMsg(`已停止 ${res.stopped} 集的批量生成（進行中的任務會自然完成）`);
+      await queryClient.invalidateQueries({ queryKey: qk.project(id) });
+    },
+  });
+
+  const busy = startMutation.isPending || stopMutation.isPending;
+
+  function start() {
     setErr(null);
     setMsg(null);
-    try {
-      const res = await api.del<{ stopped: number }>(`/api/projects/${id}/batch`);
-      setMsg(`已停止 ${res.stopped} 集的批量生成（進行中的任務會自然完成）`);
-      await refetch();
-    } catch (e) {
-      setErr((e as ApiClientError).message);
-    } finally {
-      setBusy(false);
-    }
+    startMutation.mutate(undefined, {
+      onError: (e) => setErr((e as ApiClientError).message),
+    });
   }
 
+  function stop() {
+    setErr(null);
+    setMsg(null);
+    stopMutation.mutate(undefined, {
+      onError: (e) => setErr((e as ApiClientError).message),
+    });
+  }
+
+  const total = episodes.length;
+  const done = episodes.filter((e) => e.status === "done").length;
+  const pct = total > 0 ? Math.round((done / total) * 100) : 0;
+
   return (
-    <div className="card section-gap">
-      <div className="batch-head">
+    <Card className="gap-0 py-0">
+      <CardHeader className="flex-row items-center justify-between gap-3 border-b py-5">
         <div>
-          <h2 style={{ fontSize: 18 }}>批量生成全季</h2>
-          <p className="muted" style={{ margin: "4px 0 0", fontSize: 14 }}>
+          <CardTitle>批量生成全季</CardTitle>
+          <CardDescription className="mt-1">
             規劃好各集後一鍵全季自動出片，唔使逐集手動行八站。
-          </p>
+          </CardDescription>
         </div>
-        <div className="batch-actions">
+        <div className="flex items-center gap-2">
           {running && (
-            <button className="btn btn-danger" onClick={stop} disabled={busy}>
-              {busy ? <span className="spinner" /> : "⏹ 停止批量"}
-            </button>
+            <Button variant="destructive" size="sm" onClick={stop} disabled={busy}>
+              {busy ? <Loader2 className="animate-spin" /> : <Pause />}
+              停止批量
+            </Button>
           )}
-          <button className="btn btn-primary" onClick={() => setModalOpen(true)} disabled={busy}>
-            🚀 批量生成
-          </button>
+          <Button size="sm" onClick={() => setModalOpen(true)} disabled={busy}>
+            <Sparkles /> 批量生成
+          </Button>
         </div>
-      </div>
+      </CardHeader>
 
-      {msg && <p className="batch-msg ok">{msg}</p>}
-      {err && <p className="error-text" style={{ marginTop: 12 }}>{err}</p>}
+      <CardContent className="space-y-4 py-5">
+        {msg && (
+          <Alert>
+            <AlertDescription>{msg}</AlertDescription>
+          </Alert>
+        )}
+        {err && <p className="text-sm text-destructive">{err}</p>}
 
-      {episodes.length > 0 && (
-        <div className="batch-board">
-          {episodes.map((ep) => {
-            const failed = (ep.failedTasks ?? 0) > 0;
-            return (
-              <div key={ep.id} className={`batch-row${failed ? " failed" : ""}`}>
-                <span className="batch-ep-no">第 {ep.episodeNumber} 集</span>
-                <span className="badge">{STATUS_LABEL[ep.status] ?? ep.status}</span>
-                <StationStrip status={ep.status} failed={failed} />
-                {ep.autorun && <span className="badge" title="批量生成中">自動</span>}
-                {failed && (
-                  <span className="fail-badge" title={`${ep.failedTasks} 個失敗任務`}>
-                    {ep.failedTasks}
-                  </span>
-                )}
+        {episodes.length > 0 && (
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <div className="flex items-center justify-between text-sm">
+                <span>整體進度</span>
+                <span className="text-muted-foreground">{done} / {total} 集 · {pct}%</span>
               </div>
-            );
-          })}
-        </div>
-      )}
+              <Progress value={pct} />
+            </div>
 
-      {modalOpen && (
-        <div className="modal-backdrop" onClick={() => !busy && setModalOpen(false)}>
-          <div className="modal card" onClick={(e) => e.stopPropagation()}>
-            <h2>批量生成選項</h2>
-            <p className="muted" style={{ marginTop: 0, fontSize: 14 }}>
-              資產（角色／場景）必須先鎖定先可以開始批量。未鎖會提示你返去揀圖。
-            </p>
-
-            <label className="batch-opt">
-              <input
-                type="checkbox"
-                checked={opts.autoConfirmStoryboard}
-                onChange={(e) => setOpts((o) => ({ ...o, autoConfirmStoryboard: e.target.checked }))}
-              />
-              <span>
-                <strong>自動確認分鏡</strong>
-                <span className="muted"> — 唔逐集停低等人手確認；關咗則每集停喺分鏡站亮燈等你。</span>
-              </span>
-            </label>
-
-            <label className="batch-opt">
-              <input
-                type="checkbox"
-                checked={opts.skipVideo}
-                onChange={(e) => setOpts((o) => ({ ...o, skipVideo: e.target.checked }))}
-              />
-              <span>
-                <strong>跳過視頻（省錢模式）</strong>
-                <span className="muted"> — 圖像完成後直接配音→合成，用靜態圖出片，慳返視頻生成費。</span>
-              </span>
-            </label>
-
-            <p className="plan-note">實際成本視乎你揀嘅模型而定；project 預算上限照樣把關。</p>
-
-            {err && <p className="error-text" style={{ marginTop: 12 }}>{err}</p>}
-
-            <div className="row-end">
-              <button className="btn" onClick={() => setModalOpen(false)} disabled={busy}>
-                取消
-              </button>
-              <button className="btn btn-primary" onClick={start} disabled={busy}>
-                {busy ? <span className="spinner" /> : "開始批量"}
-              </button>
+            <div className="grid grid-cols-4 gap-2 sm:grid-cols-6 lg:grid-cols-8">
+              {episodes.map((ep) => {
+                const state = chipState(ep);
+                return (
+                  <div
+                    key={ep.id}
+                    className={cn(
+                      "flex flex-col items-center gap-1 rounded-md border px-2 py-2.5",
+                      CHIP_STYLE[state],
+                    )}
+                    title={`第 ${ep.episodeNumber} 集 · ${chipLabel(ep, state)}`}
+                  >
+                    <span className="text-sm font-semibold">EP{String(ep.episodeNumber).padStart(2, "0")}</span>
+                    <span className="text-[11px]">{chipLabel(ep, state)}</span>
+                  </div>
+                );
+              })}
             </div>
           </div>
-        </div>
-      )}
-    </div>
+        )}
+      </CardContent>
+
+      <Dialog open={modalOpen} onOpenChange={(o) => !busy && setModalOpen(o)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>批量生成選項</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground">
+            資產（角色／場景）必須先鎖定先可以開始批量。未鎖會提示你返去揀圖。
+          </p>
+
+          <div className="space-y-4">
+            <label className="flex items-start gap-3" htmlFor="batch-auto-storyboard">
+              <Checkbox
+                id="batch-auto-storyboard"
+                checked={opts.autoConfirmStoryboard}
+                onCheckedChange={(v) => setOpts((o) => ({ ...o, autoConfirmStoryboard: v === true }))}
+              />
+              <span className="text-sm">
+                <span className="font-medium">自動確認分鏡</span>
+                <span className="text-muted-foreground"> — 唔逐集停低等人手確認；關咗則每集停喺分鏡站亮燈等你。</span>
+              </span>
+            </label>
+
+            <label className="flex items-start gap-3" htmlFor="batch-skip-video">
+              <Checkbox
+                id="batch-skip-video"
+                checked={opts.skipVideo}
+                onCheckedChange={(v) => setOpts((o) => ({ ...o, skipVideo: v === true }))}
+              />
+              <span className="text-sm">
+                <span className="font-medium">跳過視頻（省錢模式）</span>
+                <span className="text-muted-foreground"> — 圖像完成後直接配音→合成，用靜態圖出片，慳返視頻生成費。</span>
+              </span>
+            </label>
+          </div>
+
+          <Alert>
+            <TriangleAlert />
+            <AlertDescription>實際成本視乎你揀嘅模型而定；project 預算上限照樣把關。</AlertDescription>
+          </Alert>
+
+          {err && <p className="text-sm text-destructive">{err}</p>}
+
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setModalOpen(false)} disabled={busy}>
+              取消
+            </Button>
+            <Button onClick={start} disabled={busy}>
+              {busy && <Loader2 className="animate-spin" />}
+              開始批量
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </Card>
   );
 }
