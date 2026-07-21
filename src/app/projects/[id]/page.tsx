@@ -1,5 +1,6 @@
 "use client";
 import { use, useEffect, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Loader2 } from "lucide-react";
@@ -8,8 +9,12 @@ import { PlanSetup } from "@/ui/planning/PlanSetup";
 import { PlanReview } from "@/ui/planning/PlanReview";
 import { ModelPicker } from "@/ui/planning/ModelPicker";
 import { BatchPanel } from "@/ui/batch/BatchPanel";
+import { ProjectFailurePanel } from "@/ui/episode/ProjectFailurePanel";
 import { projectQuery } from "@/ui/query-keys";
 import type { EpisodeListItem } from "@/ui/types";
+import { ProviderReadinessBanner } from "@/ui/ProviderReadinessBanner";
+import { ProjectPromptCard } from "@/ui/prompts/ProjectPromptCard";
+import { useAdvancedMode } from "@/ui/prompts/useAdvancedMode";
 import { AppShell } from "@/components/app-shell";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -40,6 +45,7 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
   const [rawText, setRawText] = useState("");
   const [validationErr, setValidationErr] = useState<string | null>(null);
   const [reviewOpen, setReviewOpen] = useState(false);
+  const { advancedMode } = useAdvancedMode();
 
   const {
     data: project,
@@ -72,7 +78,6 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
   const mutationErrMsg = createEpisodeMutation.error
     ? (createEpisodeMutation.error as ApiClientError).message
     : null;
-  const err = loadErrMsg ?? validationErr ?? mutationErrMsg;
 
   function createEpisode() {
     if (!rawText.trim()) {
@@ -83,14 +88,16 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
     createEpisodeMutation.mutate(rawText.trim());
   }
 
-  if (!project && !err) {
+  if (!project && !loadErrMsg) {
     return <div className="flex min-h-svh items-center justify-center text-muted-foreground">載入中…</div>;
   }
 
   return (
     <AppShell active="projects" title={project?.name ?? "專案"}>
       <div className="space-y-6 p-8">
-        {err && <p className="text-sm text-destructive">{err}</p>}
+        <ProviderReadinessBanner projectId={id} />
+
+        {loadErrMsg && <p className="text-sm text-destructive">{loadErrMsg}</p>}
         {project && (
           <>
             <div className="flex flex-wrap items-center gap-3">
@@ -99,7 +106,9 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
               <Badge variant="secondary">{project.videoRatio}</Badge>
             </div>
 
-            <div className="grid grid-cols-1 gap-6 xl:grid-cols-[1fr_340px]">
+            <ProjectFailurePanel projectId={id} />
+
+            <div className="grid grid-cols-1 gap-6 lg:grid-cols-[1fr_340px]">
               <div className="space-y-6">
                 {/* ---------- episode planning (novels only) ---------- */}
                 {!isSrt && (
@@ -154,15 +163,20 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
                         : "唔想規劃整部小說？貼上單集原文，系統會直接建立一集帶你行八站流程。"}
                     </CardDescription>
                   </CardHeader>
-                  <CardContent>
+                  <CardContent className="space-y-2">
                     <Textarea
                       value={rawText}
                       onChange={(e) => setRawText(e.target.value)}
                       rows={8}
                       placeholder={isSrt ? "喺呢度貼上 SRT 字幕內容…" : "喺呢度貼上小說章節原文…"}
+                      aria-invalid={validationErr ? true : undefined}
                     />
+                    {validationErr && <p className="text-sm text-destructive">{validationErr}</p>}
                   </CardContent>
-                  <CardFooter className="justify-end border-t">
+                  <CardFooter className="flex-col items-end gap-2 border-t">
+                    {mutationErrMsg && (
+                      <p className="text-sm text-destructive">建立呢一集失敗：{mutationErrMsg}</p>
+                    )}
                     <Button onClick={createEpisode} disabled={busy}>
                       {busy && <Loader2 className="animate-spin" />}
                       建立這一集
@@ -183,15 +197,14 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
                   ) : (
                     <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
                       {episodes.map((ep: EpisodeListItem) => (
-                        <Card
-                          key={ep.id}
-                          className="cursor-pointer transition-colors hover:border-primary/40"
-                          onClick={() => router.push(`/projects/${id}/episodes/${ep.id}`)}
-                        >
-                          <CardContent className="flex items-center justify-between">
+                        <Card key={ep.id} className="p-0 transition-colors hover:border-primary/40">
+                          <Link
+                            href={`/projects/${id}/episodes/${ep.id}`}
+                            className="flex items-center justify-between gap-3 rounded-xl p-6 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                          >
                             <span className="font-medium">第 {ep.episodeNumber} 集</span>
                             <Badge variant="secondary">{STATUS_LABEL[ep.status] ?? ep.status}</Badge>
-                          </CardContent>
+                          </Link>
                         </Card>
                       ))}
                     </div>
@@ -206,6 +219,7 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
                   videoRatio={project.videoRatio}
                   videoResolution={project.videoResolution ?? "720p"}
                 />
+                {advancedMode && <ProjectPromptCard projectId={id} />}
               </div>
             </div>
           </>

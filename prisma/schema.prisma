@@ -40,6 +40,8 @@ model User {
   balance      UserBalance?
   freezes      BalanceFreeze[]
   transactions BalanceTransaction[]
+  promptOverrides PromptOverride[]
+  preferences  UserPreferences?
 
   @@map("users")
 }
@@ -393,10 +395,16 @@ model AiCallLog {
   status            String   @default("ok") // 'ok'|'error'
   errorCode         String?
   providerRequestId String?
+  // 進階模式 (advanced prompt mode): the exact rendered prompt text handed to
+  // callModel(), plus which layer resolved it — captured unconditionally so
+  // "上次送出" review works even before a user ever opens the advanced UI.
+  renderedPrompt    String?  @db.Text
+  promptSource      String?  // 'system'|'user'|'project'|'oneoff'
 
   @@index([userId, at])
   @@index([taskId])
   @@index([modelKey, at])
+  @@index([episodeId, promptId, at])
   @@map("ai_call_logs")
 }
 
@@ -476,4 +484,38 @@ model BalanceTransaction {
   @@unique([userId, type, idempotencyKey])
   @@index([userId, createdAt])
   @@map("balance_transactions")
+}
+
+// ========== 進階模式：Prompt 覆寫 (docs/plans/2026-07-21-advanced-prompt-mode-design.md) ==========
+
+model PromptOverride {
+  id          String   @id
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  // "" = user 層；有值 = project 層。Postgres unique 索引視 NULL 為互不相等，
+  // 用 NULL 做 sentinel 會令 upsert 冧檔（同一 user 可插入無限個重複 user-層
+  // override）——所以一律用 "" 空字串。
+  projectId   String   @default("")
+  promptId    String
+  content     String   @db.Text
+  baseVersion String
+  // 儲存當刻嘅 system 全文快照 — system 檔案升版後舊文字冧咗，三欄 diff 要靠呢欄拎返
+  // 「你改嗰陣嘅官方版」。
+  baseContent String   @db.Text
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([userId, projectId, promptId])
+  @@index([userId, promptId])
+  @@map("prompt_overrides")
+}
+
+model UserPreferences {
+  userId       String   @id
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  advancedMode Boolean  @default(false)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@map("user_preferences")
 }

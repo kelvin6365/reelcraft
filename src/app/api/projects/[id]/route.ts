@@ -78,6 +78,9 @@ export const PATCH = withAuth(
 export const DELETE = withAuth(
   async ({ userId, params }) => {
     await getOwned(userId, params.id);
+    // PromptOverride.projectId has no FK (mirrors Task.projectId by design),
+    // so project-layer overrides would otherwise be orphaned forever.
+    await prisma.promptOverride.deleteMany({ where: { userId, projectId: params.id } });
     await prisma.project.delete({ where: { id: params.id } });
     return ok({ deleted: true });
   },

@@ -1,17 +1,21 @@
 "use client";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import { ShieldCheck } from "lucide-react";
 import { modelsQuery, providerKeysQuery } from "@/ui/query-keys";
 import { AppShell } from "@/components/app-shell";
 import { useSession } from "@/ui/auth-client";
+import { PromptTemplatesTab } from "@/ui/prompts/PromptTemplatesTab";
+import { useAdvancedMode } from "@/ui/prompts/useAdvancedMode";
 import type { ProviderView } from "@/ui/types";
 import { ProviderKeyRow } from "@/ui/settings/ProviderKeyRow";
 import { UserModelDefaults } from "@/ui/settings/UserModelDefaults";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
+import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 // 設定：自備金鑰（BYO-Key）+ 預設模型。逐個 provider 一行，只顯示 ••••後四碼，
@@ -29,18 +33,37 @@ export default function SettingsPage() {
   const enabled = !isPending && !!session;
   const keysQuery = useQuery({ ...providerKeysQuery(), enabled });
   const catalogQuery = useQuery({ ...modelsQuery(), enabled });
+  const [tab, setTab] = useState("defaults");
+  const { advancedMode, setAdvancedMode, pending: advancedPending } = useAdvancedMode({ enabled });
 
   useEffect(() => {
     if (isPending) return;
     if (!session) router.replace("/signin");
   }, [isPending, session, router]);
 
+  // Stranded-tab guard: if advanced mode gets switched off while viewing the
+  // prompts tab (only rendered when advancedMode is true), bounce back.
+  useEffect(() => {
+    if (!advancedMode && tab === "prompts") setTab("defaults");
+  }, [advancedMode, tab]);
+
   const keys = keysQuery.data?.keys ?? null;
   const catalog = catalogQuery.data ?? null;
   const loadErr = keysQuery.error?.message ?? catalogQuery.error?.message ?? null;
 
   if (isPending || !session) {
-    return <div className="flex min-h-svh items-center justify-center text-muted-foreground">載入中…</div>;
+    return (
+      <AppShell active="settings" title="設定 · 模型預設">
+        <div className="space-y-6 p-8">
+          <div className="space-y-2">
+            <Skeleton className="h-8 w-32" />
+            <Skeleton className="h-4 w-full max-w-xl" />
+          </div>
+          <Skeleton className="h-10 w-64" />
+          <Skeleton className="h-64 w-full" />
+        </div>
+      </AppShell>
+    );
   }
 
   const byProvider = new Map((keys ?? []).map((k) => [k.provider, k]));
@@ -60,15 +83,37 @@ export default function SettingsPage() {
 
         {loadErr && <p className="text-sm text-destructive">{loadErr}</p>}
 
-        <Tabs defaultValue="defaults">
+        <Card className="py-0">
+          <CardContent className="flex items-center justify-between gap-4 py-4">
+            <div className="space-y-0.5">
+              <Label htmlFor="advanced-mode-switch">進階模式 · 檢視同編輯 AI Prompt</Label>
+              <p className="text-sm text-muted-foreground">
+                開咗之後，每個生產站會出現 &lt;&gt; 掣，睇到實際送出嘅完整 prompt。
+              </p>
+            </div>
+            <Switch
+              id="advanced-mode-switch"
+              checked={advancedMode}
+              disabled={advancedPending}
+              onCheckedChange={setAdvancedMode}
+            />
+          </CardContent>
+        </Card>
+
+        <Tabs value={tab} onValueChange={setTab}>
           <TabsList>
             <TabsTrigger value="defaults">模型預設</TabsTrigger>
             <TabsTrigger value="keys">API 金鑰</TabsTrigger>
+            {advancedMode && <TabsTrigger value="prompts">Prompt 模板</TabsTrigger>}
           </TabsList>
 
           <TabsContent value="defaults" className="space-y-4">
             {catalog ? (
-              <UserModelDefaults models={catalog.models} providers={catalog.providers} />
+              <UserModelDefaults
+                models={catalog.models}
+                providers={catalog.providers}
+                onNavigateToKeys={() => setTab("keys")}
+              />
             ) : (
               <Skeleton className="h-64 w-full" />
             )}
@@ -102,6 +147,12 @@ export default function SettingsPage() {
               </CardContent>
             </Card>
           </TabsContent>
+
+          {advancedMode && (
+            <TabsContent value="prompts" className="space-y-4">
+              <PromptTemplatesTab />
+            </TabsContent>
+          )}
         </Tabs>
       </div>
     </AppShell>

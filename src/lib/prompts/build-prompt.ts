@@ -3,21 +3,24 @@
 // way to turn a catalog entry into rendered text handed to callModel().
 import { readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
-
-// Placeholder syntax: {name}, name starts with a letter/underscore. Kept in
-// lock-step with scripts/guards/prompt-catalog-sync.mjs — same regex, same rule.
-const PLACEHOLDER_RE = /\{([a-zA-Z_][a-zA-Z0-9_]*)\}/g;
+import { extractPlaceholders, PLACEHOLDER_RE, sortedDiff } from "@/lib/prompts/placeholders";
 
 const PROMPTS_ROOT = join(process.cwd(), "prompts");
 const CATALOG_PATH = join(PROMPTS_ROOT, "catalog.json");
 
 export class PromptError extends Error {
+  // Class field (not a constructor param) so `"retryable" in err` is true even
+  // before the constructor body runs — classifyError (src/lib/task/types.ts)
+  // relies on this to route PromptError to its own code, not UNKNOWN.
+  readonly retryable = false;
+
   constructor(
     public code:
       | "PROMPT_NOT_FOUND"
       | "CATALOG_INVALID"
       | "VARIABLE_MISMATCH"
-      | "TEMPLATE_MISMATCH",
+      | "TEMPLATE_MISMATCH"
+      | "PROMPT_OVERRIDE_INVALID",
     message: string,
   ) {
     super(message);
@@ -84,36 +87,40 @@ function loadTemplate(entryPath: string): string {
   return value;
 }
 
-function extractPlaceholders(template: string): Set<string> {
-  const found = new Set<string>();
-  for (const m of template.matchAll(PLACEHOLDER_RE)) found.add(m[1]);
-  return found;
+// Sync lookups so callers (e.g. resolve-prompt.ts) can inspect the catalog
+// without paying for a render.
+export function getCatalogEntry(promptId: string): CatalogEntry | null {
+  return loadCatalog().get(promptId) ?? null;
 }
 
-function sortedDiff(a: Set<string>, b: Set<string>): { missing: string[]; extra: string[] } {
-  const missing = [...a].filter((k) => !b.has(k)).sort();
-  const extra = [...b].filter((k) => !a.has(k)).sort();
-  return { missing, extra };
+export function listCatalog(): CatalogEntry[] {
+  return [...loadCatalog().values()];
+}
+
+export function readSystemTemplate(promptId: string): { entry: CatalogEntry; template: string } {
+  const entry = loadCatalog().get(promptId);
+  if (!entry) throw new PromptError("PROMPT_NOT_FOUND", `no catalog entry for promptId: ${promptId}`);
+  return { entry, template: loadTemplate(entry.path) };
 }
 
 /**
- * Render a catalog prompt with the given variables.
+ * Strict render + validate core, shared by buildPrompt (system-only) and
+ * resolvePrompt (system/user/project/oneoff).
  *
  * Strict contract (throws PromptError on any breach):
- *   template placeholders === catalog.variables === provided keys.
- * The rendered text plus version is what the caller hands to callModel(),
- * which records promptId + promptVersion into AiCallLog.
+ *   template placeholders === declaredVars === provided keys.
  */
-export function buildPrompt(promptId: string, variables: Record<string, string>): BuiltPrompt {
-  const entry = loadCatalog().get(promptId);
-  if (!entry) throw new PromptError("PROMPT_NOT_FOUND", `no catalog entry for promptId: ${promptId}`);
-
-  const template = loadTemplate(entry.path);
+export function renderTemplate(
+  promptId: string,
+  template: string,
+  declaredVars: string[],
+  variables: Record<string, string>,
+): string {
   const templateVars = extractPlaceholders(template);
-  const catalogVars = new Set(entry.variables);
+  const catalogVars = new Set(declaredVars);
   const providedVars = new Set(Object.keys(variables));
 
-  // 1. template placeholders must match the catalog declaration.
+  // 1. template placeholders must match the declared variable list.
   {
     const { missing, extra } = sortedDiff(catalogVars, templateVars);
     if (missing.length || extra.length) {
@@ -126,7 +133,7 @@ export function buildPrompt(promptId: string, variables: Record<string, string>)
     }
   }
 
-  // 2. provided keys must match the catalog declaration exactly.
+  // 2. provided keys must match the declared variable list exactly.
   {
     const { missing, extra } = sortedDiff(catalogVars, providedVars);
     if (missing.length || extra.length) {
@@ -139,7 +146,17 @@ export function buildPrompt(promptId: string, variables: Record<string, string>)
     }
   }
 
-  const text = template.replace(PLACEHOLDER_RE, (_full, name: string) => variables[name]);
+  return template.replace(PLACEHOLDER_RE, (_full, name: string) => variables[name]);
+}
+
+/**
+ * Render a catalog prompt (system layer only) with the given variables.
+ * The rendered text plus version is what the caller hands to callModel(),
+ * which records promptId + promptVersion into AiCallLog.
+ */
+export function buildPrompt(promptId: string, variables: Record<string, string>): BuiltPrompt {
+  const { entry, template } = readSystemTemplate(promptId);
+  const text = renderTemplate(promptId, template, entry.variables, variables);
   return { text, promptId: entry.id, version: entry.version };
 }
 

@@ -1,13 +1,16 @@
 "use client";
 import { useEffect, useState, type ReactNode } from "react";
-import { Loader2, Pencil, RefreshCw } from "lucide-react";
+import { Code2, Loader2, Pencil, RefreshCw } from "lucide-react";
 import { api } from "@/ui/api";
 import { useAction } from "@/ui/planning/useAction";
 import { qk } from "@/ui/query-keys";
+import { useAdvancedMode } from "@/ui/prompts/useAdvancedMode";
+import { StationPromptSheet } from "@/ui/prompts/StationPromptSheet";
 import type { EpisodeView, LiveTaskMap, StageKey, ShotView, ScriptReviewView } from "@/ui/types";
 import { STATION_BY_KEY } from "./stations";
 import { shortModelName, isFakeModel } from "@/ui/model-format";
 import { cn } from "@/lib/utils";
+import { ConfirmDialog } from "@/components/confirm-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -33,14 +36,23 @@ function Station({
   progress,
   action,
   children,
+  episodeId,
+  promptIds,
 }: {
   stage: StageKey;
   progress?: Partial<Record<StageKey, number>>;
   action?: ReactNode;
   children: ReactNode;
+  // When set AND 進階模式 is on, a ghost <> button appears to open the
+  // "實際送出" prompt sheet for this station (docs/plans/2026-07-21-advanced-prompt-mode-design.md).
+  episodeId?: string;
+  promptIds?: string[];
 }) {
   const meta = STATION_BY_KEY[stage];
   const pct = progress?.[stage];
+  const { advancedMode } = useAdvancedMode();
+  const [sheetOpen, setSheetOpen] = useState(false);
+  const showPromptButton = advancedMode && !!episodeId && !!promptIds && promptIds.length > 0;
   return (
     <Card id={meta.dom} className="scroll-mt-20">
       <CardHeader className="flex-row items-center gap-3 [&>div]:min-w-0">
@@ -52,9 +64,29 @@ function Station({
             生成中 {pct}%
           </Badge>
         )}
-        <div className="ml-auto flex items-center gap-2">{action}</div>
+        <div className="ml-auto flex items-center gap-2">
+          {showPromptButton && (
+            <Button
+              variant="ghost"
+              size="icon"
+              title="睇呢站實際送出嘅 Prompt"
+              onClick={() => setSheetOpen(true)}
+            >
+              <Code2 />
+            </Button>
+          )}
+          {action}
+        </div>
       </CardHeader>
       <CardContent>{children}</CardContent>
+      {showPromptButton && episodeId && promptIds && (
+        <StationPromptSheet
+          episodeId={episodeId}
+          promptIds={promptIds}
+          open={sheetOpen}
+          onOpenChange={setSheetOpen}
+        />
+      )}
     </Card>
   );
 }
@@ -81,7 +113,7 @@ export function AssetsPanel({ view, progress, live }: PanelProps) {
   const episodeId = view.episode.id;
   const empty = characters.length === 0 && locations.length === 0;
   return (
-    <Station stage="assets" progress={progress}>
+    <Station stage="assets" progress={progress} episodeId={episodeId} promptIds={["extract_assets"]}>
       {empty ? (
         <EmptyState>仲未抽到角色／場景。用右下角「下一步」抽取資產。</EmptyState>
       ) : (
@@ -362,16 +394,22 @@ export function ScriptPanel({ view, progress }: PanelProps) {
   const checkup = useAction(qk.episode(epId));
   const review = view.episode.scriptReview;
   const hasReview = !!review && Array.isArray((review as { scenes?: unknown[] }).scenes);
+  // Any one of the three actions overwrites `scriptText` server-side — gate all
+  // three while any is pending so a concurrent click can't race an overwrite.
+  const anyBusy = save.busy || regen.busy || checkup.busy;
 
   return (
     <Station
       stage="script"
       progress={progress}
+      episodeId={epId}
+      promptIds={["rewrite_script", "script_review"]}
       action={
         <>
           <Button
             size="sm"
-            disabled={save.busy || !dirty}
+            disabled={anyBusy || !dirty}
+            aria-busy={save.busy}
             onClick={() =>
               save.run(async () => {
                 await api.patch(`/api/episodes/${epId}/script`, { scriptText: text });
@@ -384,7 +422,8 @@ export function ScriptPanel({ view, progress }: PanelProps) {
           <Button
             size="sm"
             variant="outline"
-            disabled={regen.busy}
+            disabled={anyBusy}
+            aria-busy={regen.busy}
             onClick={() => regen.run(() => api.post(`/api/episodes/${epId}/rewrite-script`))}
           >
             {regen.busy ? <Loader2 className="animate-spin" /> : "重新生成"}
@@ -392,7 +431,8 @@ export function ScriptPanel({ view, progress }: PanelProps) {
           <Button
             size="sm"
             variant="outline"
-            disabled={checkup.busy || view.episode.scriptText.length === 0}
+            disabled={anyBusy || view.episode.scriptText.length === 0}
+            aria-busy={checkup.busy}
             title="按檢查清單逐場標風險燈：戲劇目的/對白/節奏/鉤子/展示不明說"
             onClick={() => checkup.run(() => api.post(`/api/episodes/${epId}/script-review`))}
           >
@@ -429,10 +469,14 @@ export function StoryboardPanel({ view, progress }: PanelProps) {
   const epId = view.episode.id;
   const confirm = useAction(qk.episode(epId));
   const regen = useAction(qk.episode(epId));
+  const [regenConfirmOpen, setRegenConfirmOpen] = useState(false);
+  const spentSoFar = view.cost?.projectSpendUsd;
   return (
     <Station
       stage="storyboard"
       progress={progress}
+      episodeId={epId}
+      promptIds={["build_scenes", "storyboard_plan", "storyboard_photography", "storyboard_acting", "storyboard_detail"]}
       action={
         shots.length > 0 && (
           <>
@@ -440,17 +484,35 @@ export function StoryboardPanel({ view, progress }: PanelProps) {
               size="sm"
               variant="outline"
               disabled={regen.busy || confirm.busy}
+              aria-busy={regen.busy}
               title="重新規劃分鏡（會重簽空間契約）。已生成嘅鏡頭圖／視頻會被清走，要重新生成。"
-              onClick={() => {
-                if (!window.confirm("重新生成分鏡會清走所有現有鏡頭（包括已生成嘅圖同視頻），確定？")) return;
-                regen.run(() => api.post(`/api/episodes/${epId}/storyboard`));
-              }}
+              onClick={() => setRegenConfirmOpen(true)}
             >
               {regen.busy ? <Loader2 className="animate-spin" /> : "🔄 重新生成分鏡"}
             </Button>
+            <ConfirmDialog
+              open={regenConfirmOpen}
+              onOpenChange={setRegenConfirmOpen}
+              title="重新生成分鏡？"
+              description={
+                <>
+                  重新規劃分鏡會清走所有現有鏡頭（包括已生成嘅圖像／視頻），要重新生成。
+                  <br />
+                  已生成嘅圖像／視頻會被捨棄，已花費嘅成本唔會退返
+                  {typeof spentSoFar === "number" && spentSoFar > 0
+                    ? `（本專案已使 $${spentSoFar.toFixed(2)}）`
+                    : ""}
+                  。
+                </>
+              }
+              destructive
+              confirmLabel="確定重新生成"
+              onConfirm={() => regen.run(() => api.post(`/api/episodes/${epId}/storyboard`))}
+            />
             <Button
               size="sm"
               disabled={confirm.busy || regen.busy}
+              aria-busy={confirm.busy}
               onClick={() => confirm.run(() => api.post(`/api/episodes/${epId}/storyboard/confirm`))}
             >
               {confirm.busy ? <Loader2 className="animate-spin" /> : "確認分鏡"}
@@ -543,16 +605,18 @@ function ShotMediaGrid({
   media,
   episodeId,
   live,
+  unitUsd,
 }: {
   shots: ShotView[];
   media: "image" | "video";
   episodeId: string;
   live?: LiveTaskMap;
+  unitUsd?: number | null;
 }) {
   return (
     <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
       {shots.map((sh) => (
-        <ShotMediaCell key={sh.id} shot={sh} media={media} episodeId={episodeId} live={live} />
+        <ShotMediaCell key={sh.id} shot={sh} media={media} episodeId={episodeId} live={live} unitUsd={unitUsd} />
       ))}
     </div>
   );
@@ -563,15 +627,19 @@ function ShotMediaCell({
   media,
   episodeId,
   live,
+  unitUsd,
 }: {
   shot: ShotView;
   media: "image" | "video";
   episodeId: string;
   live?: LiveTaskMap;
+  unitUsd?: number | null;
 }) {
   const { busy, err, run } = useAction(qk.episode(episodeId));
+  const [regenConfirmOpen, setRegenConfirmOpen] = useState(false);
   const url = media === "image" ? shot.imageUrl : shot.videoUrl;
   const endpoint = media === "image" ? "generate-image" : "generate-video";
+  const mediaLabel = media === "image" ? "圖像" : "視頻";
 
   // In-flight = server said so at view load (survives reloads) OR the live SSE
   // stream says so now. Locks the button — the server-side dedupeActive guard is
@@ -581,6 +649,9 @@ function ShotMediaCell({
   const serverTask = media === "image" ? shot.activeImageTask : shot.activeVideoTask;
   const inFlight = Boolean(liveState) || Boolean(serverTask);
   const pct = liveState?.progress ?? serverTask?.progress;
+
+  const priceSuffix = typeof unitUsd === "number" ? ` ~$${unitUsd.toFixed(2)}` : "";
+  const generate = () => run(() => api.post(`/api/shots/${shot.id}/${endpoint}`));
 
   return (
     <div className="overflow-hidden rounded-lg border">
@@ -611,20 +682,37 @@ function ShotMediaCell({
           size="sm"
           variant="outline"
           disabled={busy || inFlight}
-          onClick={() => run(() => api.post(`/api/shots/${shot.id}/${endpoint}`))}
+          aria-busy={busy || inFlight}
+          title={url ? `重生會產生新一次生成費用${priceSuffix}，舊有媒體會被取代` : `生成${mediaLabel}${priceSuffix}`}
+          onClick={() => {
+            if (url) {
+              setRegenConfirmOpen(true);
+              return;
+            }
+            generate();
+          }}
         >
           {busy || inFlight ? (
             <>
               <Loader2 className="animate-spin" /> {inFlight ? `生成中${pct ? ` ${pct}%` : ""}` : ""}
             </>
           ) : url ? (
-            "重生"
+            `重生${priceSuffix}`
           ) : (
-            "生成"
+            `生成${priceSuffix}`
           )}
         </Button>
       </div>
       {err && <p className="px-2 pb-2 text-xs text-destructive">{err}</p>}
+      <ConfirmDialog
+        open={regenConfirmOpen}
+        onOpenChange={setRegenConfirmOpen}
+        title={`重生${mediaLabel}？`}
+        description={`重生會產生新一次生成費用${priceSuffix ? `（${priceSuffix.trim()}）` : ""}，舊有媒體會被取代，已花費嘅成本唔會退返。`}
+        destructive
+        confirmLabel="確定重生"
+        onConfirm={generate}
+      />
     </div>
   );
 }
@@ -662,7 +750,13 @@ export function ImagesPanel({ view, progress, live }: PanelProps) {
       {view.shots.length === 0 ? (
         <EmptyState>先完成分鏡站。</EmptyState>
       ) : (
-        <ShotMediaGrid shots={view.shots} media="image" episodeId={view.episode.id} live={live} />
+        <ShotMediaGrid
+          shots={view.shots}
+          media="image"
+          episodeId={view.episode.id}
+          live={live}
+          unitUsd={view.cost?.activeModels?.image.unitUsd}
+        />
       )}
     </Station>
   );
@@ -678,7 +772,13 @@ export function VideosPanel({ view, progress, live }: PanelProps) {
       {view.shots.length === 0 ? (
         <EmptyState>先完成分鏡站。</EmptyState>
       ) : (
-        <ShotMediaGrid shots={view.shots} media="video" episodeId={view.episode.id} live={live} />
+        <ShotMediaGrid
+          shots={view.shots}
+          media="video"
+          episodeId={view.episode.id}
+          live={live}
+          unitUsd={view.cost?.activeModels?.video.unitUsd}
+        />
       )}
     </Station>
   );
@@ -688,7 +788,7 @@ export function VideosPanel({ view, progress, live }: PanelProps) {
 export function VoicePanel({ view, progress }: PanelProps) {
   const { voiceLines } = view;
   return (
-    <Station stage="voice" progress={progress}>
+    <Station stage="voice" progress={progress} episodeId={view.episode.id} promptIds={["voice_analyze"]}>
       {voiceLines.length === 0 ? (
         <EmptyState>仲未有台詞。用右下角「下一步」分析台詞並配音。</EmptyState>
       ) : (

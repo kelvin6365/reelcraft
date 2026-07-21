@@ -1,4 +1,5 @@
 import type { ApiType, ModelKey } from "@/lib/ai/model-key";
+import type { PromptSource } from "@/lib/prompts/resolve-prompt";
 
 export interface CallContext {
   userId: string;
@@ -7,6 +8,10 @@ export interface CallContext {
   episodeId?: string;
   promptId?: string;
   promptVersion?: string;
+  // 進階模式 (advanced prompt mode): which layer resolved the prompt, and the
+  // exact rendered text handed to the model — logged verbatim into AiCallLog.
+  promptSource?: PromptSource;
+  renderedPrompt?: string;
 }
 
 // ---------- text ----------

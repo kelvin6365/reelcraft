@@ -10,7 +10,7 @@ import { createMediaFromBuffer } from "@/lib/media/service";
 import { composeShot, concatAudio, concatShots, imageToVideoClip, probeDurationMs } from "@/lib/video/ffmpeg";
 import { TaskError } from "@/lib/task/types";
 import type { TaskHandler } from "@/lib/workers/lifecycle";
-import { resolveTaskModels, loadEpisodeWithProject, textCallJson } from "@/lib/workers/handlers/shared";
+import { resolveTaskModels, loadEpisodeWithProject, textCallJson, promptOverridesFromTask } from "@/lib/workers/handlers/shared";
 
 interface StylePack {
   prefix?: string;
@@ -176,7 +176,7 @@ export const imageShotHandler: TaskHandler = async ({ task, reportProgress }) =>
 
   reportProgress(10);
   const out = await textCallJson(
-    { userId: task.userId, taskId: task.id, projectId: project.id, episodeId: episode.id },
+    { userId: task.userId, taskId: task.id, projectId: project.id, episodeId: episode.id, oneOff: promptOverridesFromTask(task) },
     models.text,
     "image_prompt_shot",
     {

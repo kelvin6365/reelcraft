@@ -3,12 +3,18 @@
 import { prisma } from "@/lib/db";
 import { newId } from "@/lib/ids";
 import { callModel } from "@/lib/ai/call-model";
-import { buildPrompt } from "@/lib/prompts/build-prompt";
+import { resolvePrompt } from "@/lib/prompts/resolve-prompt";
 import { submitTask } from "@/lib/task/submit";
 import { TASK_TYPE, TaskError } from "@/lib/task/types";
 import { parseSrt } from "@/lib/srt";
 import type { TaskHandler } from "@/lib/workers/lifecycle";
-import { resolveTaskModels, loadEpisodeWithProject, sliceByAnchors, textCallJson } from "@/lib/workers/handlers/shared";
+import {
+  resolveTaskModels,
+  loadEpisodeWithProject,
+  sliceByAnchors,
+  textCallJson,
+  promptOverridesFromTask,
+} from "@/lib/workers/handlers/shared";
 import type { Character } from "@prisma/client";
 
 // 人物小傳 → prompt 注入文本（跳過空欄；全空角色不出行）。
@@ -39,15 +45,30 @@ export const rewriteScriptHandler: TaskHandler = async ({ task, reportProgress }
   reportProgress(10);
   // 人物小傳反哺：第 2 集起已有已抽取角色 → 注入小傳令對白貼人設、防全季人設漂移。
   const bios = formatCharacterBios(await prisma.character.findMany({ where: { projectId: project.id } }));
-  const { text, version } = buildPrompt("rewrite_script", {
+  const variables = {
     novel_text: episode.rawText.slice(0, 30_000),
     style_note: project.stylePackId,
     theme: project.theme.trim() || "（未設定，按原文精神改寫）",
     character_bios: bios || "（暫無，首集由你根據原文塑造）",
+  };
+  const oneOff = promptOverridesFromTask(task);
+  const p = await resolvePrompt("rewrite_script", variables, {
+    userId: task.userId,
+    projectId: project.id,
+    oneOffText: oneOff.rewrite_script,
   });
   const result = await callModel(
-    { userId: task.userId, taskId: task.id, projectId: project.id, episodeId: episode.id, promptId: "rewrite_script", promptVersion: version },
-    { modelKey: models.text as `${string}::${string}`, messages: [{ role: "user", content: text }] },
+    {
+      userId: task.userId,
+      taskId: task.id,
+      projectId: project.id,
+      episodeId: episode.id,
+      promptId: "rewrite_script",
+      promptVersion: p.version,
+      promptSource: p.source,
+      renderedPrompt: p.text,
+    },
+    { modelKey: models.text as `${string}::${string}`, messages: [{ role: "user", content: p.text }] },
   );
   if (!result.text.trim()) throw new TaskError("LLM_OUTPUT_INVALID", "empty script", true);
 
@@ -72,7 +93,7 @@ export const scriptReviewHandler: TaskHandler = async ({ task, reportProgress })
 
   reportProgress(10);
   const out = await textCallJson(
-    { userId: task.userId, taskId: task.id, projectId: project.id, episodeId: episode.id },
+    { userId: task.userId, taskId: task.id, projectId: project.id, episodeId: episode.id, oneOff: promptOverridesFromTask(task) },
     models.text,
     "script_review",
     { script_text: episode.scriptText.slice(0, 30_000) },
@@ -91,7 +112,7 @@ export const extractAssetsHandler: TaskHandler = async ({ task, reportProgress }
 
   reportProgress(10);
   const out = await textCallJson(
-    { userId: task.userId, taskId: task.id, projectId: project.id, episodeId: episode.id },
+    { userId: task.userId, taskId: task.id, projectId: project.id, episodeId: episode.id, oneOff: promptOverridesFromTask(task) },
     models.text,
     "extract_assets",
     { script_text: source.slice(0, 30_000) },
@@ -145,7 +166,7 @@ export const buildScenesHandler: TaskHandler = async ({ task, reportProgress }) 
 
   reportProgress(10);
   const out = await textCallJson(
-    { userId: task.userId, taskId: task.id, projectId: project.id, episodeId: episode.id },
+    { userId: task.userId, taskId: task.id, projectId: project.id, episodeId: episode.id, oneOff: promptOverridesFromTask(task) },
     models.text,
     "build_scenes",
     { script_text: source.slice(0, 30_000) },
@@ -193,7 +214,7 @@ export const storyboardRunHandler: TaskHandler = async ({ task, reportProgress }
   const scenes = await prisma.scene.findMany({ where: { episodeId: episode.id }, orderBy: { sceneIndex: "asc" } });
   if (scenes.length === 0) throw new TaskError("NO_SCENES", "run BUILD_SCENES first", false);
 
-  const ctx = { userId: task.userId, taskId: task.id, projectId: project.id, episodeId: episode.id };
+  const ctx = { userId: task.userId, taskId: task.id, projectId: project.id, episodeId: episode.id, oneOff: promptOverridesFromTask(task) };
   await prisma.shot.deleteMany({ where: { episodeId: episode.id } }); // rebuild is idempotent
 
   let globalIndex = 0;
@@ -320,7 +341,7 @@ export const voiceAnalyzeHandler: TaskHandler = async ({ task, reportProgress })
 
   reportProgress(10);
   const out = await textCallJson(
-    { userId: task.userId, taskId: task.id, projectId: project.id, episodeId: episode.id },
+    { userId: task.userId, taskId: task.id, projectId: project.id, episodeId: episode.id, oneOff: promptOverridesFromTask(task) },
     models.text,
     "voice_analyze",
     { scene_text: sceneText, shot_list_json: JSON.stringify(shotList) },

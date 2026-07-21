@@ -72,6 +72,12 @@ const ERROR_COPY: Record<string, ErrorCopyEntry> = {
     message: "發生未知錯誤，請重試或聯絡支援",
     terminal: false,
   },
+  // guard-allow(no-inline-prompt)
+  PROMPT_OVERRIDE_INVALID: {
+    message: "自訂 Prompt 同最新變數對唔上，請去模板頁更新或還原官方版",
+    terminal: true,
+    action: { href: "/settings", label: "去設定" },
+  },
 };
 
 // 訊息前綴比對，用嚟兜 HTTP_xxx / TEMPLATE_HTTP_xxx / FAL_TIMEOUT 等有動態後綴嘅 code。

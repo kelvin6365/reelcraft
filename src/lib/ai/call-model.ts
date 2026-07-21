@@ -101,6 +101,8 @@ function logAiCall(ctx: CallContext, req: TextRequest, f: LogFields): Promise<vo
         status: f.status,
         errorCode: f.errorCode,
         providerRequestId: f.providerRequestId,
+        promptSource: ctx.promptSource,
+        renderedPrompt: ctx.renderedPrompt?.slice(0, 200_000),
       },
     })
     .then(() => {})

@@ -5,7 +5,7 @@
 import { prisma } from "@/lib/db";
 import { TaskError } from "@/lib/task/types";
 import type { TaskHandler } from "@/lib/workers/lifecycle";
-import { resolveTaskModels, sliceByAnchors, textCallJson } from "@/lib/workers/handlers/shared";
+import { resolveTaskModels, sliceByAnchors, textCallJson, promptOverridesFromTask } from "@/lib/workers/handlers/shared";
 import { applyHeuristicRisk, planConfigFromJson, targetHint } from "@/lib/planning/plan";
 
 const SOURCE_CAP = 30_000; // single-call cap; longer novels are a v2 two-stage flow
@@ -21,7 +21,7 @@ export const episodeSplitHandler: TaskHandler = async ({ task, reportProgress })
 
   reportProgress(10);
   const out = await textCallJson(
-    { userId: task.userId, taskId: task.id, projectId: project.id },
+    { userId: task.userId, taskId: task.id, projectId: project.id, oneOff: promptOverridesFromTask(task) },
     models.text,
     "episode_split",
     {

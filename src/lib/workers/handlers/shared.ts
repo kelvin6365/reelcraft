@@ -1,6 +1,6 @@
 import { prisma } from "@/lib/db";
 import { callModel } from "@/lib/ai/call-model";
-import { buildPrompt } from "@/lib/prompts/build-prompt";
+import { resolvePrompt } from "@/lib/prompts/resolve-prompt";
 import { safeParseJson } from "@/lib/prompts/parse";
 import { outputSchemas, type OutputSchemaId } from "@/lib/prompts/schemas";
 import { TaskError } from "@/lib/task/types";
@@ -38,22 +38,26 @@ export async function loadEpisodeWithProject(task: Task): Promise<{ episode: Epi
   return { episode: rest as Episode, project };
 }
 
-// buildPrompt → callModel → parse → zod validate, with one corrective retry on
-// bad JSON/schema (the retry appends the error so the model can fix itself).
+// resolvePrompt → callModel → parse → zod validate, with one corrective retry
+// on bad JSON/schema (the retry appends the error so the model can fix itself).
 export async function textCallJson<Id extends OutputSchemaId>(
-  ctx: { userId: string; taskId: string; projectId?: string; episodeId?: string },
+  ctx: { userId: string; taskId: string; projectId?: string; episodeId?: string; oneOff?: Record<string, string> },
   modelKey: string,
   promptId: Id,
   variables: Record<string, string>,
 ): Promise<z.infer<(typeof outputSchemas)[Id]>> {
   const schema = outputSchemas[promptId];
-  const { text, version } = buildPrompt(promptId, variables);
+  const p = await resolvePrompt(promptId, variables, {
+    userId: ctx.userId,
+    projectId: ctx.projectId,
+    oneOffText: ctx.oneOff?.[promptId],
+  });
 
   let lastError = "";
   for (let attempt = 1; attempt <= 2; attempt++) {
-    const content = attempt === 1 ? text : `${text}\n\n【上次輸出無效，錯誤：${lastError.slice(0, 300)}。請只輸出合法 JSON。】`;
+    const content = attempt === 1 ? p.text : `${p.text}\n\n【上次輸出無效，錯誤：${lastError.slice(0, 300)}。請只輸出合法 JSON。】`;
     const result = await callModel(
-      { ...ctx, promptId, promptVersion: version },
+      { ...ctx, promptId, promptVersion: p.version, promptSource: p.source, renderedPrompt: content },
       { modelKey: modelKey as `${string}::${string}`, messages: [{ role: "user", content }] },
     );
     try {
@@ -65,6 +69,12 @@ export async function textCallJson<Id extends OutputSchemaId>(
     }
   }
   throw new TaskError("LLM_OUTPUT_INVALID", `${promptId}: ${lastError.slice(0, 500)}`, false);
+}
+
+// Reads the per-task promptOverrides map (Slice 1: always empty — nothing
+// populates the payload yet; wiring lands in a later slice's rerun-prompt API).
+export function promptOverridesFromTask(task: { payload: unknown }): Record<string, string> {
+  return (task.payload as { promptOverrides?: Record<string, string> })?.promptOverrides ?? {};
 }
 
 // Anchor location with graceful fallback: if the LLM's anchors don't appear in
