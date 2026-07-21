@@ -2,6 +2,7 @@
 // 專案總覽 — rebuilt to the Pencil ref (frame nfIj9): metric cards, projects
 // table with status badges, sidebar shell. Data layer is TanStack Query.
 import { Suspense, useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Plus } from "lucide-react";
@@ -9,6 +10,7 @@ import { api, ApiClientError } from "@/ui/api";
 import { useSession } from "@/ui/auth-client";
 import { balanceQuery, projectsQuery, usageQuery } from "@/ui/query-keys";
 import type { ProjectSummary } from "@/ui/types";
+import { ProviderReadinessBanner } from "@/ui/ProviderReadinessBanner";
 import { AppShell } from "@/components/app-shell";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -124,12 +126,14 @@ function ProjectsPageInner() {
       }
     >
       <div className="space-y-6 p-8">
+        <ProviderReadinessBanner />
+
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">專案總覽</h1>
           <p className="mt-1 text-sm text-muted-foreground">貼一段小說，行八站流程出一集短劇。</p>
         </div>
 
-        <div className="grid grid-cols-2 gap-4 xl:grid-cols-4">
+        <div className="grid grid-cols-2 gap-4 md:grid-cols-2 lg:grid-cols-4">
           {metrics.map((m) => (
             <Card key={m.label}>
               <CardContent className="space-y-1 p-6">
@@ -185,7 +189,15 @@ function ProjectsPageInner() {
                         className="cursor-pointer"
                         onClick={() => router.push(`/projects/${p.id}`)}
                       >
-                        <TableCell className="font-medium">{p.name}</TableCell>
+                        <TableCell className="font-medium">
+                          <Link
+                            href={`/projects/${p.id}`}
+                            className="rounded-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            {p.name}
+                          </Link>
+                        </TableCell>
                         <TableCell className="text-muted-foreground">{p.stylePackId}</TableCell>
                         <TableCell className="text-muted-foreground">{p.videoRatio}</TableCell>
                         <TableCell>{p.episodes.length} 集</TableCell>
@@ -265,9 +277,9 @@ function CreateProjectDialog({
             />
           </div>
           <div className="space-y-2">
-            <Label>輸入類型</Label>
+            <Label htmlFor="input-type">輸入類型</Label>
             <Select value={inputType} onValueChange={setInputType}>
-              <SelectTrigger className="w-full">
+              <SelectTrigger id="input-type" className="w-full">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -280,9 +292,9 @@ function CreateProjectDialog({
             </Select>
           </div>
           <div className="space-y-2">
-            <Label>畫風包</Label>
+            <Label htmlFor="style-pack">畫風包</Label>
             <Select value={stylePackId} onValueChange={setStylePackId}>
-              <SelectTrigger className="w-full">
+              <SelectTrigger id="style-pack" className="w-full">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -295,9 +307,9 @@ function CreateProjectDialog({
             </Select>
           </div>
           <div className="space-y-2">
-            <Label>比例</Label>
+            <Label htmlFor="video-ratio">比例</Label>
             <Select value={videoRatio} onValueChange={setVideoRatio}>
-              <SelectTrigger className="w-full">
+              <SelectTrigger id="video-ratio" className="w-full">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>

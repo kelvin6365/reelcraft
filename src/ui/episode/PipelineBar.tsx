@@ -27,7 +27,7 @@ export function PipelineBar({
         </span>
       </CardHeader>
       <CardContent className="space-y-4">
-        <div className="flex items-start">
+        <div className="flex items-start overflow-x-auto">
           {STATIONS.map((st, i) => {
             const s = byKey[st.key];
             const pct = progress[st.key];

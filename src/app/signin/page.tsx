@@ -2,7 +2,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { Clapperboard } from "lucide-react";
+import { Clapperboard, Loader2 } from "lucide-react";
 import { signIn } from "@/ui/auth-client";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -50,10 +50,17 @@ export default function SignInPage() {
                 onChange={(e) => setEmail(e.target.value)}
                 required
                 autoComplete="email"
+                aria-invalid={err ? true : undefined}
+                aria-describedby={err ? "signin-error" : undefined}
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="password">密碼</Label>
+              <div className="flex items-center justify-between">
+                <Label htmlFor="password">密碼</Label>
+                <Link href="/forgot-password" className="text-sm text-primary hover:underline">
+                  忘記密碼？
+                </Link>
+              </div>
               <Input
                 id="password"
                 type="password"
@@ -61,14 +68,21 @@ export default function SignInPage() {
                 onChange={(e) => setPassword(e.target.value)}
                 required
                 autoComplete="current-password"
+                aria-invalid={err ? true : undefined}
+                aria-describedby={err ? "signin-error" : undefined}
               />
             </div>
-            {err && <p className="text-sm text-destructive">{err}</p>}
-            <Button type="submit" className="w-full" disabled={busy}>
+            {err && (
+              <p id="signin-error" className="text-sm text-destructive">
+                {err}
+              </p>
+            )}
+            <Button type="submit" className="w-full" disabled={busy} aria-busy={busy}>
+              {busy && <Loader2 className="animate-spin" />}
               {busy ? "登入中…" : "登入"}
             </Button>
             <p className="text-center text-sm text-muted-foreground">
-              未有帳戶？
+              未有帳戶？{" "}
               <Link href="/signup" className="text-primary hover:underline">
                 建立帳戶
               </Link>

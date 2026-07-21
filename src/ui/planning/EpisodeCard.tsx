@@ -13,7 +13,16 @@ import type { PlanConfigView, PlannedEpisode, RiskFlag, RiskLevel } from "@/ui/t
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
 
 const LEVEL_LABEL: Record<RiskLevel, string> = { ok: "自動通過", review: "建議覆核", problem: "需人工覆核" };
@@ -60,6 +69,8 @@ export function EpisodeCard({
   planConfig: PlanConfigView | null;
 }) {
   const [title, setTitle] = useState(ep.title);
+  const [anchorDialog, setAnchorDialog] = useState<"split" | "move" | null>(null);
+  const [anchorText, setAnchorText] = useState("");
   const { busy, err, run } = useAction(qk.project(id));
 
   const level = ep.risk?.level ?? "ok";
@@ -76,30 +87,33 @@ export function EpisodeCard({
       void run(() => api.patch(`/api/projects/${id}/plan`, { op: "merge", index: ep.index }));
       return;
     }
-    if (kind === "split") {
-      const at = window.prompt("請輸入分段點的原文片段（下一集由此句開始）：");
-      if (!at?.trim()) return;
-      void run(() =>
+    setAnchorText("");
+    setAnchorDialog(kind);
+  }
+
+  async function confirmAnchor() {
+    const at = anchorText.trim();
+    if (!at || !anchorDialog) return;
+    if (anchorDialog === "split") {
+      await run(() =>
         api.patch(`/api/projects/${id}/plan`, {
           op: "split",
           index: ep.index,
-          atEndAnchor: at.trim(),
-          nextStartAnchor: at.trim(),
+          atEndAnchor: at,
+          nextStartAnchor: at,
         }),
       );
-      return;
+    } else {
+      await run(() =>
+        api.patch(`/api/projects/${id}/plan`, {
+          op: "move",
+          index: ep.index,
+          newEndAnchor: at,
+          newNextStartAnchor: at,
+        }),
+      );
     }
-    // move boundary between this episode and the next
-    const at = window.prompt("請輸入新邊界的原文片段（下一集由此句開始）：");
-    if (!at?.trim()) return;
-    void run(() =>
-      api.patch(`/api/projects/${id}/plan`, {
-        op: "move",
-        index: ep.index,
-        newEndAnchor: at.trim(),
-        newNextStartAnchor: at.trim(),
-      }),
-    );
+    setAnchorDialog(null);
   }
 
   function replan() {
@@ -195,6 +209,48 @@ export function EpisodeCard({
         </div>
         {err && <p className="text-sm text-destructive">{err}</p>}
       </CardContent>
+
+      <Dialog open={anchorDialog !== null} onOpenChange={(open) => !open && setAnchorDialog(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{anchorDialog === "split" ? "拆分呢一集" : "移動同下一集嘅邊界"}</DialogTitle>
+            <DialogDescription>
+              {anchorDialog === "split"
+                ? "下一集會由你輸入嘅原文片段開始。"
+                : "呢一集同下一集嘅邊界會改到你輸入嘅原文片段。"}
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-1.5">
+            <Label className="text-xs text-muted-foreground">原文預覽（第 {ep.index} 集）</Label>
+            <div className="max-h-40 overflow-y-auto rounded-md border bg-muted/30 p-3 text-sm text-muted-foreground">
+              {ep.summary || `${ep.startAnchor} … ${ep.endAnchor}`}
+            </div>
+          </div>
+
+          <div className="space-y-1.5">
+            <Label htmlFor="anchor-input">原文片段（切分錨點）</Label>
+            <Input
+              id="anchor-input"
+              value={anchorText}
+              onChange={(e) => setAnchorText(e.target.value)}
+              placeholder="喺呢度貼上原文片段…"
+              autoFocus
+            />
+            <p className="text-xs text-muted-foreground">請由原文複製一小段文字作為切分錨點，需一字不差。</p>
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setAnchorDialog(null)} disabled={busy}>
+              取消
+            </Button>
+            <Button onClick={confirmAnchor} disabled={busy || !anchorText.trim()}>
+              {busy && <Loader2 className="size-4 animate-spin" />}
+              確認
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </Card>
   );
 }

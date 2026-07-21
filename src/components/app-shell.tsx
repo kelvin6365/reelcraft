@@ -4,7 +4,7 @@
 // page content in a SidebarInset. Replaces the old TopBar.
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { Clapperboard, Gauge, LayoutDashboard, LogOut, Plus, Settings, Workflow } from "lucide-react";
+import { Clapperboard, Gauge, LayoutDashboard, LogOut, Settings } from "lucide-react";
 import type { ReactNode } from "react";
 import { signOut, useSession } from "@/ui/auth-client";
 import { BalanceChip } from "@/ui/BalanceChip";
@@ -33,8 +33,6 @@ import {
 
 const NAV_ITEMS = [
   { key: "projects", label: "專案總覽", href: "/projects", icon: LayoutDashboard },
-  { key: "new", label: "新專案", href: "/projects?new=1", icon: Plus },
-  { key: "workflow", label: "工作流", href: "/projects", icon: Workflow },
   { key: "usage", label: "用量", href: "/usage", icon: Gauge },
   { key: "settings", label: "設定", href: "/settings", icon: Settings },
 ] as const;
@@ -143,7 +141,7 @@ export function AppShell({
         </SidebarFooter>
       </Sidebar>
       <SidebarInset>
-        <header className="flex h-14 shrink-0 items-center gap-3 border-b px-6">
+        <header className="sticky top-0 z-20 flex h-14 shrink-0 items-center gap-3 border-b bg-background px-6">
           <SidebarTrigger className="-ml-2" />
           {title ? <div className="min-w-0 flex-1 text-sm font-medium">{title}</div> : <div className="flex-1" />}
           <div className="flex items-center gap-3">
@@ -151,7 +149,10 @@ export function AppShell({
             {actions}
           </div>
         </header>
-        <main className="flex-1 overflow-auto">{children}</main>
+        {/* No overflow on <main>: scrolling happens at window level; an overflow-auto
+            here would become the sticky containing scroller (which never scrolls)
+            and silently break position:sticky in page content. */}
+        <main className="flex-1">{children}</main>
       </SidebarInset>
     </SidebarProvider>
   );

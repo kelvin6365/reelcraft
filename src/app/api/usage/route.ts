@@ -1,6 +1,7 @@
 // Usage dashboard data — rolls up ai_call_logs for the caller.
 // spec: docs/tech/04-audit.md §用量 UI (M2). Query params:
-//   from,to  ISO dates (default: last 30 days)
+//   from,to  ISO dates (default: last `days` days) — take precedence over `days` when given
+//   days     7|30|90 (default: 30) — invalid/out-of-set values fall back to 30
 //   groupBy  day|project|model|apiType|episode (default: day)
 // Returns { rows, totals, errorTop, range }. Aggregation math lives in
 // src/lib/usage.ts (pure, unit-tested). estCostUsd is null-safe: rows priced
@@ -11,11 +12,18 @@ import { ok } from "@/lib/api/errors";
 import { aggregateUsage, USAGE_GROUP_BYS, type UsageGroupBy, type UsageLogRow } from "@/lib/usage";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
+const ALLOWED_DAYS = [7, 30, 90] as const;
+const DEFAULT_DAYS = 30;
 
 function parseDate(raw: string | null): Date | null {
   if (!raw) return null;
   const d = new Date(raw);
   return Number.isNaN(d.getTime()) ? null : d;
+}
+
+function parseDays(raw: string | null): number {
+  const n = Number(raw);
+  return ALLOWED_DAYS.includes(n as (typeof ALLOWED_DAYS)[number]) ? n : DEFAULT_DAYS;
 }
 
 export const GET = withAuth(async ({ userId, req }) => {
@@ -26,8 +34,9 @@ export const GET = withAuth(async ({ userId, req }) => {
     ? (groupByRaw as UsageGroupBy)
     : "day";
 
+  const days = parseDays(sp.get("days"));
   const to = parseDate(sp.get("to")) ?? new Date();
-  const from = parseDate(sp.get("from")) ?? new Date(to.getTime() - 30 * DAY_MS);
+  const from = parseDate(sp.get("from")) ?? new Date(to.getTime() - days * DAY_MS);
 
   const raw = await prisma.aiCallLog.findMany({
     where: { userId, at: { gte: from, lte: to } },

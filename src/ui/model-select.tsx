@@ -56,40 +56,43 @@ export function ModelSelect({
   const providerOrder = providers.map((p) => p.id).filter((id) => forType.some((m) => m.provider === id));
 
   return (
-    <select
-      value={value}
-      onChange={(e) => onChange(e.target.value)}
-      disabled={disabled}
-      className="flex h-9 w-full items-center justify-between rounded-md border bg-transparent px-3 py-2 text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-input dark:bg-input/30"
-    >
-      <option value="">{placeholderLabel}</option>
-      {providerOrder.map((providerId) => {
-        const groupModels = forType.filter((m) => m.provider === providerId);
-        const connected = connectedById.get(providerId) ?? "none";
-        const notConnected = connected === "none";
-        return (
-          <optgroup key={providerId} label={labelById.get(providerId) ?? providerId}>
-            {groupModels.map((m) => {
-              const modelId = m.modelKey.slice(m.modelKey.indexOf("::") + 2);
-              const extraReason = notConnected ? null : (extraDisabledReason?.(m) ?? null);
-              const isDisabled = notConnected || extraReason !== null;
-              const reason = notConnected ? "此供應商尚未連接（需自備金鑰或平台金鑰）" : extraReason;
-              return (
-                <option
-                  key={m.modelKey}
-                  value={m.modelKey}
-                  disabled={isDisabled}
-                  title={reason ?? priceHint(m)}
-                >
-                  {[modelId, stars(m), priceTier(m)].filter(Boolean).join(" ")} · {priceHint(m)}
-                  {notConnected ? "（未連接）" : ""}
-                  {extraReason ? `（${extraReason}）` : ""}
-                </option>
-              );
-            })}
-          </optgroup>
-        );
-      })}
-    </select>
+    <div className="space-y-1">
+      <select
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        disabled={disabled}
+        className="flex h-9 w-full items-center justify-between rounded-md border bg-transparent px-3 py-2 text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-input dark:bg-input/30"
+      >
+        <option value="">{placeholderLabel}</option>
+        {providerOrder.map((providerId) => {
+          const groupModels = forType.filter((m) => m.provider === providerId);
+          const connected = connectedById.get(providerId) ?? "none";
+          const notConnected = connected === "none";
+          return (
+            <optgroup key={providerId} label={labelById.get(providerId) ?? providerId}>
+              {groupModels.map((m) => {
+                const modelId = m.modelKey.slice(m.modelKey.indexOf("::") + 2);
+                const extraReason = notConnected ? null : (extraDisabledReason?.(m) ?? null);
+                const isDisabled = notConnected || extraReason !== null;
+                const reason = notConnected ? "此供應商尚未連接（需自備金鑰或平台金鑰）" : extraReason;
+                return (
+                  <option
+                    key={m.modelKey}
+                    value={m.modelKey}
+                    disabled={isDisabled}
+                    title={reason ?? priceHint(m)}
+                  >
+                    {[modelId, stars(m), priceTier(m)].filter(Boolean).join(" ")} · {priceHint(m)}
+                    {notConnected ? "（未連接）" : ""}
+                    {extraReason ? `（${extraReason}）` : ""}
+                  </option>
+                );
+              })}
+            </optgroup>
+          );
+        })}
+      </select>
+      <p className="text-xs text-muted-foreground">★ 推薦度 · $ 價格級</p>
+    </div>
   );
 }

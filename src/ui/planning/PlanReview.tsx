@@ -11,6 +11,7 @@ import { qk } from "@/ui/query-keys";
 import { EpisodeCard } from "./EpisodeCard";
 import type { PlanConfigView, PlanRisk, PlannedEpisode } from "@/ui/types";
 import { Button } from "@/components/ui/button";
+import { ConfirmDialog } from "@/components/confirm-dialog";
 import {
   Card,
   CardContent,
@@ -37,6 +38,7 @@ export function PlanReview({
   const [onlyProblems, setOnlyProblems] = useState(true);
   const [greenOpen, setGreenOpen] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const [conflictOpen, setConflictOpen] = useState(false);
   const queryClient = useQueryClient();
 
   const confirmMutation = useMutation({
@@ -59,10 +61,7 @@ export function PlanReview({
     } catch (e) {
       const ce = e as ApiClientError;
       if (ce.code === "EPISODES_EXIST" && !force) {
-        if (window.confirm("呢個項目已經有劇集。重新確認會清走未開工嘅集並重建。繼續？")) {
-          await confirm(true);
-          return;
-        }
+        setConflictOpen(true);
       } else {
         setErr(ce.message);
       }
@@ -141,6 +140,16 @@ export function PlanReview({
           {confirming ? "生成中…" : `確認生成 ${tally.total} 集`}
         </Button>
       </CardFooter>
+
+      <ConfirmDialog
+        open={conflictOpen}
+        onOpenChange={setConflictOpen}
+        title="呢個項目已經有劇集"
+        description="重新確認會清走未開工嘅集並重建。繼續？"
+        destructive
+        confirmLabel="重新確認"
+        onConfirm={() => confirm(true)}
+      />
     </Card>
   );
 }

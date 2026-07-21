@@ -1,11 +1,22 @@
 "use client";
 import { useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { Cloud, Globe, Zap } from "lucide-react";
+import { CheckCircle2, Cloud, Eye, EyeOff, Globe, XCircle, Zap } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { api, ApiClientError } from "@/ui/api";
 import { qk } from "@/ui/query-keys";
 import type { ConnectionStatus, ProviderKeyView } from "@/ui/types";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -25,6 +36,20 @@ const PROVIDER_ICON: Record<string, LucideIcon> = {
   atlascloud: Cloud,
 };
 
+// Only providers with a publicly documented, stable key prefix are validated
+// here — guessing at undocumented formats would just produce false negatives.
+const KEY_PREFIX_RULES: Record<string, { prefix: string; label: string }> = {
+  openrouter: { prefix: "sk-or-", label: "OpenRouter" },
+};
+
+function formatError(provider: string, trimmed: string): string | null {
+  const rule = KEY_PREFIX_RULES[provider];
+  if (rule && !trimmed.startsWith(rule.prefix)) {
+    return `呢條唔似係 ${rule.label} 金鑰（應以 ${rule.prefix} 開頭）`;
+  }
+  return null;
+}
+
 export function ProviderKeyRow({
   provider,
   label,
@@ -40,6 +65,8 @@ export function ProviderKeyRow({
 }) {
   const queryClient = useQueryClient();
   const [value, setValue] = useState("");
+  const [showKey, setShowKey] = useState(false);
+  const [confirmOpen, setConfirmOpen] = useState(false);
   const [testBusy, setTestBusy] = useState(false);
   const [msg, setMsg] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
 
@@ -47,6 +74,7 @@ export function ProviderKeyRow({
     mutationFn: (apiKey: string) => api.put("/api/user/provider-keys", { provider, apiKey }),
     onSuccess: () => {
       setValue("");
+      setShowKey(false);
       setMsg({ kind: "ok", text: "已儲存" });
       void queryClient.invalidateQueries({ queryKey: qk.providerKeys });
     },
@@ -67,17 +95,25 @@ export function ProviderKeyRow({
   });
 
   const busy = saveMutation.isPending || removeMutation.isPending || testBusy;
+  const hasUnsavedValue = value.trim().length > 0;
 
   function save() {
-    if (value.trim().length < 8) {
+    const trimmed = value.trim();
+    if (trimmed.length < 8) {
       setMsg({ kind: "err", text: "金鑰太短（至少 8 字元）" });
       return;
     }
+    const fErr = formatError(provider, trimmed);
+    if (fErr) {
+      setMsg({ kind: "err", text: fErr });
+      return;
+    }
     setMsg(null);
-    saveMutation.mutate(value.trim());
+    saveMutation.mutate(trimmed);
   }
 
   function remove() {
+    setConfirmOpen(false);
     setMsg(null);
     removeMutation.mutate();
   }
@@ -123,26 +159,69 @@ export function ProviderKeyRow({
         )}
       </div>
       <div className="flex flex-wrap items-center gap-2">
-        <Input
-          type="password"
-          autoComplete="off"
-          placeholder={stored ? "輸入新金鑰以替換" : "貼上 API 金鑰"}
-          value={value}
-          onChange={(e) => setValue(e.target.value)}
-          disabled={busy}
-          className="min-w-0 flex-1"
-        />
+        <div className="relative min-w-0 flex-1">
+          <Input
+            type={showKey ? "text" : "password"}
+            autoComplete="off"
+            placeholder={stored ? "輸入新金鑰以替換" : "貼上 API 金鑰"}
+            value={value}
+            onChange={(e) => setValue(e.target.value)}
+            disabled={busy}
+            className="pr-9"
+          />
+          <button
+            type="button"
+            onClick={() => setShowKey((s) => !s)}
+            disabled={busy || value.length === 0}
+            aria-label={showKey ? "隱藏金鑰" : "顯示金鑰"}
+            className="absolute inset-y-0 right-0 flex w-9 items-center justify-center text-muted-foreground hover:text-foreground disabled:opacity-40"
+          >
+            {showKey ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
+          </button>
+        </div>
         <Button size="sm" onClick={save} disabled={busy || value.trim().length === 0}>
           儲存
         </Button>
-        <Button size="sm" variant="outline" onClick={test} disabled={busy || !stored}>
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={test}
+          disabled={busy || !stored}
+          title={hasUnsavedValue ? "測試只會用已儲存嘅金鑰" : undefined}
+        >
           測試
         </Button>
-        <Button size="sm" variant="ghost" className="text-destructive hover:text-destructive" onClick={remove} disabled={busy || !stored}>
-          刪除
-        </Button>
+        <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
+          <AlertDialogTrigger asChild>
+            <Button size="sm" variant="ghost" className="text-destructive hover:text-destructive" disabled={busy || !stored}>
+              刪除
+            </Button>
+          </AlertDialogTrigger>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>刪除 {label} 金鑰？</AlertDialogTitle>
+              <AlertDialogDescription>刪除後使用該供應商嘅模型會即時失效。呢個操作無法復原。</AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>取消</AlertDialogCancel>
+              <AlertDialogAction className="bg-destructive text-white hover:bg-destructive/90" onClick={remove}>
+                確認刪除
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+        {hasUnsavedValue && (
+          <span className="text-xs text-muted-foreground">測試只會用已儲存嘅金鑰，先儲存先可以測試新金鑰</span>
+        )}
         {msg && (
-          <span className={`text-sm ${msg.kind === "ok" ? "text-muted-foreground" : "text-destructive"}`}>{msg.text}</span>
+          <span
+            role="status"
+            aria-live="polite"
+            className={`inline-flex items-center gap-1 text-sm ${msg.kind === "ok" ? "text-muted-foreground" : "text-destructive"}`}
+          >
+            {msg.kind === "ok" ? <CheckCircle2 className="size-3.5" /> : <XCircle className="size-3.5" />}
+            {msg.text}
+          </span>
         )}
       </div>
     </div>

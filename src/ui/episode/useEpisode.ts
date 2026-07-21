@@ -4,10 +4,16 @@
 // (TanStack dedupes concurrent refetches, so no manual debounce needed);
 // PROGRESS events feed a per-stage "生成中 x%" indicator kept as local state —
 // ephemeral UI state, deliberately outside the query cache.
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { episodeQuery, qk } from "@/ui/query-keys";
 import type { LiveTaskMap, SseEvent, StageKey } from "@/ui/types";
+
+// If no SSE event lands within this window while a task is active, the
+// connection is probably stuck (proxy/network hiccup) — surface a warning
+// rather than silently showing stale progress.
+const STALL_TIMEOUT_MS = 30_000;
+const STALL_CHECK_INTERVAL_MS = 5_000;
 
 const TASK_TYPE_TO_STAGE: Record<string, StageKey> = {
   REWRITE_SCRIPT: "script",
@@ -30,6 +36,10 @@ export function useEpisode(episodeId: string) {
   // per-target in-flight state (`${taskType}:${targetId}`) — drives per-cell
   // "生成中 x%" indicators and button locking in the media grids
   const [live, setLive] = useState<LiveTaskMap>({});
+  const [stalled, setStalled] = useState(false);
+  // bump to force the SSE effect below to tear down and reconnect
+  const [connectionEpoch, setConnectionEpoch] = useState(0);
+  const lastEventAtRef = useRef(Date.now());
 
   const view = query.data ?? null;
   const error = query.error ? query.error.message : null;
@@ -38,8 +48,12 @@ export function useEpisode(episodeId: string) {
   const projectId = view?.episode.projectId;
   useEffect(() => {
     if (!projectId) return;
+    lastEventAtRef.current = Date.now();
+    setStalled(false);
     const es = new EventSource(`/api/sse?projectId=${projectId}`);
     es.onmessage = (msg) => {
+      lastEventAtRef.current = Date.now();
+      setStalled(false);
       let ev: SseEvent;
       try {
         ev = JSON.parse(msg.data) as SseEvent;
@@ -68,11 +82,34 @@ export function useEpisode(episodeId: string) {
       /* browser auto-reconnects EventSource */
     };
     return () => es.close();
-  }, [projectId, episodeId, queryClient]);
+  }, [projectId, episodeId, queryClient, connectionEpoch]);
+
+  // Poll for staleness: only meaningful while something is actually in flight
+  // (a live target cell or a per-stage progress percentage).
+  useEffect(() => {
+    const hasActiveTask = Object.keys(live).length > 0 || Object.values(progress).some((v) => v !== undefined);
+    if (!hasActiveTask) {
+      setStalled(false);
+      return;
+    }
+    const t = setInterval(() => {
+      if (Date.now() - lastEventAtRef.current > STALL_TIMEOUT_MS) setStalled(true);
+    }, STALL_CHECK_INTERVAL_MS);
+    return () => clearInterval(t);
+  }, [live, progress]);
 
   const refetch = async () => {
     await queryClient.invalidateQueries({ queryKey: qk.episode(episodeId) });
   };
 
-  return { view, error, progress, live, refetch };
+  // Refetch the episode data and force the SSE connection to be recreated —
+  // exposed for the "連線可能中斷" warning's 重新整理 action.
+  const reconnect = async () => {
+    await refetch();
+    lastEventAtRef.current = Date.now();
+    setStalled(false);
+    setConnectionEpoch((n) => n + 1);
+  };
+
+  return { view, error, progress, live, refetch, stalled, reconnect };
 }

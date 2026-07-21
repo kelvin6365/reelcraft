@@ -2,10 +2,10 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { Clapperboard } from "lucide-react";
+import { Clapperboard, Loader2 } from "lucide-react";
 import { signUp } from "@/ui/auth-client";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 
@@ -42,6 +42,7 @@ export default function SignUpPage() {
             <Clapperboard className="size-5" />
           </div>
           <CardTitle className="text-xl">建立 ReelCraft 帳戶</CardTitle>
+          <CardDescription>貼一段小說，出一集短劇。</CardDescription>
         </CardHeader>
         <CardContent>
           <form onSubmit={onSubmit} className="space-y-4">
@@ -58,6 +59,8 @@ export default function SignUpPage() {
                 onChange={(e) => setEmail(e.target.value)}
                 required
                 autoComplete="email"
+                aria-invalid={err ? true : undefined}
+                aria-describedby={err ? "signup-error" : undefined}
               />
             </div>
             <div className="space-y-2">
@@ -69,14 +72,21 @@ export default function SignUpPage() {
                 onChange={(e) => setPassword(e.target.value)}
                 required
                 autoComplete="new-password"
+                aria-invalid={err ? true : undefined}
+                aria-describedby={err ? "signup-error" : undefined}
               />
             </div>
-            {err && <p className="text-sm text-destructive">{err}</p>}
-            <Button type="submit" className="w-full" disabled={busy}>
+            {err && (
+              <p id="signup-error" className="text-sm text-destructive">
+                {err}
+              </p>
+            )}
+            <Button type="submit" className="w-full" disabled={busy} aria-busy={busy}>
+              {busy && <Loader2 className="animate-spin" />}
               {busy ? "建立中…" : "建立帳戶"}
             </Button>
             <p className="text-center text-sm text-muted-foreground">
-              已有帳戶？
+              已有帳戶？{" "}
               <Link href="/signin" className="text-primary hover:underline">
                 登入
               </Link>

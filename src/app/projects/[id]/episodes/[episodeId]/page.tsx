@@ -2,6 +2,7 @@
 import { use } from "react";
 import { AppShell } from "@/components/app-shell";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { useEpisode } from "@/ui/episode/useEpisode";
@@ -27,7 +28,7 @@ export default function EpisodeWorkspacePage({
   params: Promise<{ id: string; episodeId: string }>;
 }) {
   const { episodeId } = use(params);
-  const { view, error, progress, live } = useEpisode(episodeId);
+  const { view, error, progress, live, stalled, reconnect } = useEpisode(episodeId);
 
   if (error && !view) {
     return (
@@ -75,8 +76,19 @@ export default function EpisodeWorkspacePage({
 
         <PipelineBar stages={view.stages} progress={progress} />
 
+        {stalled && (
+          <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-sm text-amber-700 dark:text-amber-400">
+            <span>連線可能中斷，資料可能唔係最新 — 重新整理</span>
+            <Button variant="outline" size="sm" onClick={() => void reconnect()}>
+              重新整理
+            </Button>
+          </div>
+        )}
+
+        {/* Mobile: sidebar (下一步 + 成本) comes first so it's not buried below
+            all eight station panels; desktop keeps the two-column layout. */}
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1fr)_360px]">
-          <div className="min-w-0 space-y-6">
+          <div className="order-last min-w-0 space-y-6 lg:order-none">
             <InputPanel view={view} progress={progress} />
             <AssetsPanel view={view} progress={progress} live={live} />
             <ScriptPanel view={view} progress={progress} />
@@ -87,8 +99,8 @@ export default function EpisodeWorkspacePage({
             <ExportPanel view={view} progress={progress} />
           </div>
 
-          <div className="space-y-6 self-start lg:sticky lg:top-20">
-            <NextActionCard nextAction={view.nextAction} episodeId={episodeId} />
+          <div className="order-first space-y-6 self-start lg:order-none lg:sticky lg:top-20">
+            <NextActionCard nextAction={{ ...view.nextAction, estCostUsd: stageEstCostUsd(view) }} episodeId={episodeId} />
             <CostCard view={view} />
           </div>
         </div>
@@ -97,6 +109,17 @@ export default function EpisodeWorkspacePage({
       <FailureDrawer episodeId={episodeId} failedCount={view.failedTasks} />
     </AppShell>
   );
+}
+
+// 一鍵執行 button on the NextActionCard shows the estimate for the stage it's
+// about to kick off, reusing the same downstream numbers CostCard renders —
+// no separate calculation, just a lookup by stage.
+function stageEstCostUsd(view: EpisodeView): number | undefined {
+  const downstream = view.cost?.downstream;
+  if (!downstream) return undefined;
+  if (view.nextAction.stage === "images" && downstream.estImageUsd > 0) return downstream.estImageUsd;
+  if (view.nextAction.stage === "videos" && downstream.estVideoUsd > 0) return downstream.estVideoUsd;
+  return undefined;
 }
 
 function CostRow({ label, value }: { label: string; value: string }) {

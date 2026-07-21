@@ -15,6 +15,9 @@ export interface NextAction {
   endpoint: string | null;
   blockedBy: string[];
   busy: boolean;
+  // Optional predicted spend for the next 一鍵執行 click, e.g. for the images/
+  // videos stages (see EpisodeView.cost.downstream). Absent = don't show a hint.
+  estCostUsd?: number;
 }
 
 export interface ProjectSummary {
@@ -238,6 +241,27 @@ export interface FailedTask {
   targetId: string | null;
 }
 
+// GET /api/projects/:id/failed-tasks — project-wide failure overview, one row
+// per failed task, with the owning episode's number attached for grouping.
+export interface ProjectFailedTask extends FailedTask {
+  episodeId: string | null;
+  episodeNumber: number | null;
+}
+
+// POST /api/tasks/retry-bulk
+export interface BulkRetryResult {
+  id: string;
+  ok: boolean;
+  skipped?: boolean;
+  error?: string;
+}
+
+export interface BulkRetryResponse {
+  retried: number;
+  total: number;
+  results: BulkRetryResult[];
+}
+
 // SSE event payload (see /api/sse route).
 export interface SseEvent {
   taskId: string;
@@ -353,4 +377,89 @@ export interface ModelsResponse {
   providers: ProviderView[];
   models: ModelCatalogItem[];
   generatedImageCount?: number;
+}
+
+// GET /api/user/provider-readiness — onboarding guardrail (ProviderReadinessBanner).
+// One entry per apiType slot in the caller's current resolved model defaults.
+// PRESENCE only — never key material.
+export interface ProviderReadinessItem {
+  apiType: ApiTypeKey;
+  apiTypeLabel: string;
+  provider: string;
+  providerLabel: string;
+  modelKey: string;
+  ready: boolean;
+  source: "platform" | "user" | null;
+}
+
+export interface ProviderReadinessResponse {
+  items: ProviderReadinessItem[];
+  allReady: boolean;
+}
+
+// ---------- 進階模式 (advanced prompt mode) ----------
+export type PromptSource = "system" | "user" | "project" | "oneoff";
+
+// GET /api/user/preferences
+export interface UserPreferences {
+  advancedMode: boolean;
+}
+
+// GET /api/prompts?projectId= — one row per catalog prompt.
+export interface PromptStatusView {
+  promptId: string;
+  description: string;
+  version: string;
+  variables: string[];
+  source: PromptSource;
+  hasUserOverride: boolean;
+  hasProjectOverride: boolean;
+  baseVersion?: string;
+  drifted: boolean;
+}
+
+// GET /api/prompts/:promptId?projectId= — full editor payload.
+export interface PromptOverrideView {
+  content: string;
+  baseVersion: string;
+  baseContent: string;
+  updatedAt: string;
+}
+
+export interface PromptDetailView extends PromptStatusView {
+  system: string;
+  user: PromptOverrideView | null;
+  project: PromptOverrideView | null;
+  effective: { content: string; source: PromptSource };
+}
+
+// GET /api/episodes/:id/last-prompt?promptId=
+export interface LastPromptLog {
+  at: string;
+  modelKey: string;
+  promptVersion: string | null;
+  promptSource: PromptSource | null;
+  renderedPrompt: string | null;
+  inputTokens: number | null;
+  outputTokens: number | null;
+  estCostUsd: number | null;
+  status: string;
+  errorCode: string | null;
+}
+
+export interface LastPromptResponse {
+  log: LastPromptLog | null;
+  // Always UNRENDERED — {變數} placeholders are literal, never fabricate a render.
+  template: {
+    content: string;
+    source: PromptSource;
+    version: string;
+    baseVersion?: string;
+    drifted: boolean;
+  };
+}
+
+// POST /api/episodes/:id/prompt-rerun
+export interface PromptRerunResponse {
+  taskId: string;
 }

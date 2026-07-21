@@ -2,7 +2,7 @@
 // Pre-plan setup panel: paste the full novel (saved on blur), pick ONE target
 // anchor (每集約 N 秒 / 總共 N 集) + hook strength, then trigger EPISODE_SPLIT.
 // While planStatus==='planning' the parent polls; we just show a spinner here.
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Loader2 } from "lucide-react";
 import { api } from "@/ui/api";
 import { qk } from "@/ui/query-keys";
@@ -52,6 +52,18 @@ export function PlanSetup({
 
   const planning = planStatus === "planning";
   const isLong = sourceText.length > LONG_NOVEL_CHARS;
+  const sourceDirty = sourceText.trim() !== savedText;
+
+  // Warn on tab-close/reload while the novel textarea has unsaved edits
+  // (blur/save hasn't fired yet) — losing a pasted novel is expensive to redo.
+  useEffect(() => {
+    if (!sourceDirty) return;
+    function handleBeforeUnload(e: BeforeUnloadEvent) {
+      e.preventDefault();
+    }
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    return () => window.removeEventListener("beforeunload", handleBeforeUnload);
+  }, [sourceDirty]);
 
   async function saveSourceOnBlur() {
     const text = sourceText.trim();
@@ -94,7 +106,7 @@ export function PlanSetup({
       <CardHeader>
         <CardTitle>劇集規劃</CardTitle>
         <CardDescription>
-          貼上成本小說原文，設一個目標，AI 幫你切集並自評風險，你只需審核亮燈嗰幾集。
+          貼上成篇小說原文，設一個目標，AI 幫你切集並自評風險，你只需審核亮燈嗰幾集。
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
@@ -167,26 +179,35 @@ export function PlanSetup({
             </div>
           </RadioGroup>
 
-          <div className="flex items-center gap-2">
-            <span className="text-sm text-muted-foreground">鉤子強度</span>
-            <Button
-              type="button"
-              size="sm"
-              variant={hookStrength === "normal" ? "default" : "outline"}
-              onClick={() => setHookStrength("normal")}
-              disabled={planning}
-            >
-              一般
-            </Button>
-            <Button
-              type="button"
-              size="sm"
-              variant={hookStrength === "strong" ? "default" : "outline"}
-              onClick={() => setHookStrength("strong")}
-              disabled={planning}
-            >
-              強鉤子
-            </Button>
+          <div className="space-y-1">
+            <div className="flex items-center gap-2">
+              <span className="text-sm text-muted-foreground">鉤子強度</span>
+              <Button
+                type="button"
+                size="sm"
+                variant={hookStrength === "normal" ? "default" : "outline"}
+                onClick={() => setHookStrength("normal")}
+                disabled={planning}
+                title="一般＝貼近原文節奏，鉤子按劇情自然強度"
+              >
+                一般
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant={hookStrength === "strong" ? "default" : "outline"}
+                onClick={() => setHookStrength("strong")}
+                disabled={planning}
+                title="強鉤子＝更多懸念同反轉，適合投流"
+              >
+                強鉤子
+              </Button>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              {hookStrength === "strong"
+                ? "強鉤子＝每集結尾加強懸念同反轉，適合投流搶留存。"
+                : "一般＝貼近原文節奏，唔強行加戲。"}
+            </p>
           </div>
         </div>
 
