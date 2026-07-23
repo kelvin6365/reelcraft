@@ -1,23 +1,13 @@
-import { prisma } from "@/lib/db";
 import { withAuth } from "@/lib/api/with-auth";
 import { ok } from "@/lib/api/errors";
 import { getOwnedEpisode } from "@/lib/api/episode-actions";
-import { submitTask } from "@/lib/task/submit";
-import { TASK_TYPE } from "@/lib/task/types";
+import { parseShotIds, submitShotMediaBatch } from "@/lib/api/shot-batch";
 
 export const POST = withAuth(
-  async ({ userId, params }) => {
+  async ({ userId, params, req }) => {
     const episode = await getOwnedEpisode(userId, params.id);
-    const shots = await prisma.shot.findMany({ where: { episodeId: episode.id, imageMediaId: null } });
-    let submitted = 0;
-    for (const shot of shots) {
-      await submitTask({
-        userId, type: TASK_TYPE.IMAGE_SHOT, targetType: "shot", targetId: shot.id,
-        projectId: episode.projectId, episodeId: episode.id, payload: { at: Date.now() },
-      });
-      submitted++;
-    }
-    return ok({ submitted });
+    const shotIds = parseShotIds(await req.json().catch(() => null));
+    return ok(await submitShotMediaBatch({ userId, episode, media: "image", shotIds }));
   },
   { auditAction: "episode.generate-shot-images" },
 );

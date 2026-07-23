@@ -1,9 +1,7 @@
-// Project-level failure overview: every failed task across this project's episodes,
-// with the episode number attached so the UI can group rows per episode
-// (ProjectFailurePanel card near the top of /projects/:id).
 import { prisma } from "@/lib/db";
 import { withAuth } from "@/lib/api/with-auth";
 import { ApiError, ok } from "@/lib/api/errors";
+import { filterUnresolvedFailures } from "@/lib/task/superseded";
 
 async function getOwned(userId: string, id: string) {
   const project = await prisma.project.findFirst({ where: { id, userId } });
@@ -29,12 +27,20 @@ export const GET = withAuth(async ({ userId, params }) => {
       targetType: true,
       targetId: true,
       episodeId: true,
+      queuedAt: true,
+      finishedAt: true,
     },
   });
 
-  // Task.episodeId has no Prisma relation to Episode, so episode numbers are
-  // resolved with a second lookup (same pattern as GET /api/projects/:id).
-  const episodeIds = [...new Set(tasks.map((t) => t.episodeId).filter((id): id is string => !!id))];
+  // Same superseded filter as the episode drawer — a project-wide list must not
+  // resurrect failures a later regeneration already fixed.
+  const completed = await prisma.task.findMany({
+    where: { userId, projectId: project.id, status: "completed" },
+    select: { type: true, targetId: true, queuedAt: true, finishedAt: true },
+  });
+  const unresolved = filterUnresolvedFailures(tasks, completed);
+
+  const episodeIds = [...new Set(unresolved.map((t) => t.episodeId).filter((id): id is string => !!id))];
   const episodes = await prisma.episode.findMany({
     where: { id: { in: episodeIds } },
     select: { id: true, episodeNumber: true },
@@ -42,7 +48,7 @@ export const GET = withAuth(async ({ userId, params }) => {
   const episodeNumberById = new Map(episodes.map((e) => [e.id, e.episodeNumber]));
 
   return ok(
-    tasks.map((t) => ({
+    unresolved.map((t) => ({
       ...t,
       episodeNumber: t.episodeId ? (episodeNumberById.get(t.episodeId) ?? null) : null,
     })),

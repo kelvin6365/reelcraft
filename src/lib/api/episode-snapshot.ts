@@ -1,31 +1,37 @@
-// Builds the aggregate view for GET /api/episodes/:id — the single source the
-// UI needs: stage states, counts, and the Next Best Action.
 import { prisma } from "@/lib/db";
 import { ApiError } from "@/lib/api/errors";
 import { computeNextAction, computeStages, type EpisodeSnapshot } from "@/lib/next-action";
 import { attachMediaUrls } from "@/lib/media/service";
 import { ACTIVE_STATUSES } from "@/lib/task/types";
+import { countByStage } from "@/lib/task/stage-map";
+import { filterUnresolvedFailures } from "@/lib/task/superseded";
 
-// storyboard is "confirmed" once the episode has advanced past the review gate
 const CONFIRMED_STATUSES = ["images", "videos", "export", "done"];
 
-// Builds the pure state snapshot for an episode. Shared by the episode view
-// (GET /api/episodes/:id) AND the batch auto-advance engine — keep it the single
-// source of pipeline-state truth.
 export async function buildEpisodeSnapshot(
   episode: { id: string; projectId: string; rawText: string; scriptText: string; status: string; exportMediaId: string | null },
   inputType: string,
-): Promise<{ snapshot: EpisodeSnapshot; characters: Awaited<ReturnType<typeof prisma.character.findMany>>; locations: Awaited<ReturnType<typeof prisma.location.findMany>>; shots: Awaited<ReturnType<typeof prisma.shot.findMany>>; voiceLines: Awaited<ReturnType<typeof prisma.voiceLine.findMany>>; activeTasks: { id: string; type: string; targetId: string; status: string; progress: number }[] }> {
+): Promise<{ snapshot: EpisodeSnapshot; characters: Awaited<ReturnType<typeof prisma.character.findMany>>; locations: Awaited<ReturnType<typeof prisma.location.findMany>>; shots: Awaited<ReturnType<typeof prisma.shot.findMany>>; voiceLines: Awaited<ReturnType<typeof prisma.voiceLine.findMany>>; activeTasks: { id: string; type: string; targetId: string; status: string; progress: number }[]; failedTaskTypes: string[] }> {
   const episodeId = episode.id;
-  const [characters, locations, scenes, shots, voiceLines, activeTasks, failedTasks] = await Promise.all([
+  const [characters, locations, scenes, shots, voiceLines, activeTasks, terminalTasks] = await Promise.all([
     prisma.character.findMany({ where: { projectId: episode.projectId } }),
     prisma.location.findMany({ where: { projectId: episode.projectId } }),
     prisma.scene.count({ where: { episodeId } }),
     prisma.shot.findMany({ where: { episodeId }, orderBy: { shotIndex: "asc" } }),
     prisma.voiceLine.findMany({ where: { episodeId }, orderBy: { lineIndex: "asc" } }),
     prisma.task.findMany({ where: { episodeId, status: { in: ACTIVE_STATUSES } }, select: { id: true, type: true, targetId: true, status: true, progress: true } }),
-    prisma.task.count({ where: { episodeId, status: "failed" } }),
+    prisma.task.findMany({
+      where: { episodeId, status: { in: ["failed", "completed"] } },
+      select: { type: true, targetId: true, status: true, queuedAt: true, finishedAt: true },
+    }),
   ]);
+
+  // Only failures that are still outstanding — a later success on the same
+  // (type, targetId) retires the old red mark. See lib/task/superseded.ts.
+  const unresolvedFailures = filterUnresolvedFailures(
+    terminalTasks.filter((t) => t.status === "failed"),
+    terminalTasks.filter((t) => t.status === "completed"),
+  );
 
   const snapshot: EpisodeSnapshot = {
     hasRawText: episode.rawText.length > 0,
@@ -54,9 +60,9 @@ export async function buildEpisodeSnapshot(
     },
     hasExport: Boolean(episode.exportMediaId),
     runningTaskTypes: activeTasks.map((t) => t.type),
-    failedTasks,
+    failedTasks: unresolvedFailures.length,
   };
-  return { snapshot, characters, locations, shots, voiceLines, activeTasks };
+  return { snapshot, characters, locations, shots, voiceLines, activeTasks, failedTaskTypes: unresolvedFailures.map((t) => t.type) };
 }
 
 export async function buildEpisodeView(userId: string, episodeId: string) {
@@ -66,11 +72,9 @@ export async function buildEpisodeView(userId: string, episodeId: string) {
   });
   if (!episode) throw new ApiError("NOT_FOUND", 404, "episode not found");
 
-  const { snapshot, characters, locations, shots, voiceLines, activeTasks } = await buildEpisodeSnapshot(episode, episode.project.inputType);
+  const { snapshot, characters, locations, shots, voiceLines, activeTasks, failedTaskTypes } = await buildEpisodeSnapshot(episode, episode.project.inputType);
   const failedTasks = snapshot.failedTasks;
 
-  // Per-shot in-flight task state (survives page reloads; live SSE keeps it fresh
-  // afterwards). Keyed maps so the grid cells can lock their buttons + show progress.
   const activeByKey = new Map<string, { taskId: string; status: string; progress: number }>();
   for (const t of activeTasks) {
     if (t.targetId) activeByKey.set(`${t.type}:${t.targetId}`, { taskId: t.id, status: t.status, progress: t.progress });
@@ -84,7 +88,6 @@ export async function buildEpisodeView(userId: string, episodeId: string) {
     attachMediaUrls([episode], ["exportMediaId"]),
   ]);
 
-  // candidate grids need URLs too (3-choose-1 lock UI)
   const { getStorage } = await import("@/lib/storage");
   const storage = getStorage();
   const allCandidateIds = [
@@ -128,9 +131,13 @@ export async function buildEpisodeView(userId: string, episodeId: string) {
       activeImageTask: activeByKey.get(`IMAGE_SHOT:${(sh as { id: string }).id}`) ?? null,
       activeVideoTask: activeByKey.get(`VIDEO_SHOT:${(sh as { id: string }).id}`) ?? null,
     })),
-    voiceLines: voiceLinesWithUrls,
+    voiceLines: voiceLinesWithUrls.map((v) => ({
+      ...v,
+      activeTask: activeByKey.get(`TTS_LINE:${(v as { id: string }).id}`) ?? null,
+    })),
     stages: computeStages(snapshot),
     nextAction: computeNextAction(snapshot, episodeId),
     failedTasks,
+    failedByStage: countByStage(failedTaskTypes),
   };
 }

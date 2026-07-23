@@ -1,5 +1,3 @@
-// Text-queue pipeline handlers: script rewrite, asset extraction, scene build,
-// storyboard 4-phase run, voice analysis.
 import { prisma } from "@/lib/db";
 import { newId } from "@/lib/ids";
 import { callModel } from "@/lib/ai/call-model";
@@ -7,6 +5,8 @@ import { resolvePrompt } from "@/lib/prompts/resolve-prompt";
 import { submitTask } from "@/lib/task/submit";
 import { TASK_TYPE, TaskError } from "@/lib/task/types";
 import { parseSrt } from "@/lib/srt";
+import { matchReusableAudio } from "@/lib/voice/reuse-audio";
+import { planResume } from "@/lib/storyboard/resume";
 import type { TaskHandler } from "@/lib/workers/lifecycle";
 import {
   resolveTaskModels,
@@ -17,7 +17,6 @@ import {
 } from "@/lib/workers/handlers/shared";
 import type { Character } from "@prisma/client";
 
-// 人物小傳 → prompt 注入文本（跳過空欄；全空角色不出行）。
 interface CharacterBioJson { age?: string; occupation?: string; personality?: string; painPoint?: string; backstory?: string }
 function formatCharacterBios(characters: Character[]): string {
   return characters
@@ -43,7 +42,6 @@ export const rewriteScriptHandler: TaskHandler = async ({ task, reportProgress }
   const models = await resolveTaskModels(task, project);
 
   reportProgress(10);
-  // 人物小傳反哺：第 2 集起已有已抽取角色 → 注入小傳令對白貼人設、防全季人設漂移。
   const bios = formatCharacterBios(await prisma.character.findMany({ where: { projectId: project.id } }));
   const variables = {
     novel_text: episode.rawText.slice(0, 30_000),
@@ -72,20 +70,15 @@ export const rewriteScriptHandler: TaskHandler = async ({ task, reportProgress }
   );
   if (!result.text.trim()) throw new TaskError("LLM_OUTPUT_INVALID", "empty script", true);
 
-  // Some models prepend a polite preamble（「好的，這是…」）despite the prompt's
-  // anti-lazy rules — strip anything before the first scene heading.
   let script = result.text.trim();
   const firstScene = script.indexOf("【第");
   if (firstScene > 0) script = script.slice(firstScene);
 
   reportProgress(90);
-  // fresh script → the previous 劇本體檢 no longer applies
   await prisma.episode.update({ where: { id: episode.id }, data: { scriptText: script, scriptReview: {} } });
   return { chars: result.text.length };
 };
 
-// SCRIPT_REVIEW — 劇本體檢 (S3): checklist-based per-scene risk lights. Pure
-// information for review-by-exception; never gates the pipeline.
 export const scriptReviewHandler: TaskHandler = async ({ task, reportProgress }) => {
   const { episode, project } = await loadEpisodeWithProject(task);
   if (!episode.scriptText) throw new TaskError("NO_SOURCE", "episode has no scriptText", false);
@@ -145,7 +138,7 @@ export const extractAssetsHandler: TaskHandler = async ({ task, reportProgress }
     }
   }
   for (const l of out.locations) {
-    const name = `${l.name}·${l.timeOfDay}`; // location + time-of-day is the identity (extractor rule)
+    const name = `${l.name}·${l.timeOfDay}`;
     const existing = await prisma.location.findFirst({ where: { projectId: project.id, name } });
     if (!existing) {
       await prisma.location.create({
@@ -174,7 +167,7 @@ export const buildScenesHandler: TaskHandler = async ({ task, reportProgress }) 
 
   reportProgress(60);
   const slices = sliceByAnchors(source, out.scenes);
-  await prisma.scene.deleteMany({ where: { episodeId: episode.id } }); // rebuild is idempotent
+  await prisma.scene.deleteMany({ where: { episodeId: episode.id } });
   for (let i = 0; i < slices.length; i++) {
     const meta = out.scenes[i];
     await prisma.scene.create({
@@ -192,7 +185,6 @@ export const buildScenesHandler: TaskHandler = async ({ task, reportProgress }) 
   }
   reportProgress(95);
 
-  // one-click chain: /storyboard endpoint asks BUILD_SCENES to auto-run STORYBOARD_RUN
   const then = (task.payload as { then?: string }).then;
   if (then === TASK_TYPE.STORYBOARD_RUN) {
     await submitTask({
@@ -215,28 +207,30 @@ export const storyboardRunHandler: TaskHandler = async ({ task, reportProgress }
   if (scenes.length === 0) throw new TaskError("NO_SCENES", "run BUILD_SCENES first", false);
 
   const ctx = { userId: task.userId, taskId: task.id, projectId: project.id, episodeId: episode.id, oneOff: promptOverridesFromTask(task) };
-  await prisma.shot.deleteMany({ where: { episodeId: episode.id } }); // rebuild is idempotent
 
-  let globalIndex = 0;
-  for (let s = 0; s < scenes.length; s++) {
-    const scene = scenes[s];
-    const base = (s / scenes.length) * 100;
+  const payload = (task.payload ?? {}) as { doneSceneIds?: string[] };
+  const doneSceneIds = Array.isArray(payload.doneSceneIds) ? payload.doneSceneIds : [];
+  const { toBuild, keepSceneIds, skipped } = planResume(scenes, doneSceneIds);
+  await prisma.shot.deleteMany({ where: { episodeId: episode.id, sceneId: { notIn: keepSceneIds } } });
+  if (skipped > 0) console.log(`[storyboard] task=${task.id} resuming — ${skipped}/${scenes.length} scenes already built`);
+
+  let globalIndex = await prisma.shot.count({ where: { episodeId: episode.id } });
+  for (let s = 0; s < toBuild.length; s++) {
+    const scene = toBuild[s];
+    const base = ((skipped + s) / scenes.length) * 100;
     const span = 100 / scenes.length;
 
-    // Phase 1: plan (includes the scene's spatial blocking contract)
     const plan = await textCallJson(ctx, models.text, "storyboard_plan", { scene_text: scene.content.slice(0, 12_000) });
     await prisma.scene.update({ where: { id: scene.id }, data: { blocking: plan.blocking as object } });
     reportProgress(base + span * 0.4);
 
     const shotListJson = JSON.stringify(plan.shots);
-    // Phase 2+3 in parallel: photography + acting
     const [photo, acting] = await Promise.all([
       textCallJson(ctx, models.text, "storyboard_photography", { shot_list_json: shotListJson }),
       textCallJson(ctx, models.text, "storyboard_acting", { shot_list_json: shotListJson }),
     ]);
     reportProgress(base + span * 0.7);
 
-    // Phase 4: detail
     const detail = await textCallJson(ctx, models.text, "storyboard_detail", {
       shot_list_json: shotListJson,
       scene_type: scene.summary.slice(0, 40) || "daily",
@@ -266,22 +260,20 @@ export const storyboardRunHandler: TaskHandler = async ({ task, reportProgress }
         },
       });
     }
+
+    doneSceneIds.push(scene.id);
+    await prisma.task.update({ where: { id: task.id }, data: { payload: { ...payload, doneSceneIds } } });
   }
-  return { shots: globalIndex, scenes: scenes.length };
+  return { shots: globalIndex, scenes: scenes.length, resumedFrom: skipped };
 };
 
-// SRT input mode (M2-T3): deterministic structure from subtitle cues, no LLM.
-// One Scene + one Shot + one VoiceLine per cue. Idempotent rebuild (like buildScenes).
-// Shot images/videos still flow through the normal IMAGE_SHOT/VIDEO_SHOT handlers,
-// which read storyboardJson.plan — here a minimal {source_text, subject, index} plan.
 export const srtBuildHandler: TaskHandler = async ({ task, reportProgress }) => {
   const { episode } = await loadEpisodeWithProject(task);
   if (!episode.rawText) throw new TaskError("NO_SOURCE", "episode has no rawText", false);
 
-  const cues = parseSrt(episode.rawText); // throws terminal BAD_SRT on unparseable input
+  const cues = parseSrt(episode.rawText);
   reportProgress(20);
 
-  // idempotent rebuild — drop prior structure for this episode before recreating
   await prisma.voiceLine.deleteMany({ where: { episodeId: episode.id } });
   await prisma.shot.deleteMany({ where: { episodeId: episode.id } });
   await prisma.scene.deleteMany({ where: { episodeId: episode.id } });
@@ -300,7 +292,7 @@ export const srtBuildHandler: TaskHandler = async ({ task, reportProgress }) => 
   reportProgress(40);
   for (const cue of cues) {
     const shotId = newId();
-    const durationMs = Math.min(15_000, Math.max(1000, cue.endMs - cue.startMs)); // clamp 1s..15s
+    const durationMs = Math.min(15_000, Math.max(1000, cue.endMs - cue.startMs));
     await prisma.shot.create({
       data: {
         id: shotId,
@@ -350,10 +342,29 @@ export const voiceAnalyzeHandler: TaskHandler = async ({ task, reportProgress })
   reportProgress(60);
   const shotByIndex = new Map(shots.map((sh) => [sh.shotIndex, sh]));
   const characters = await prisma.character.findMany({ where: { projectId: project.id } });
+
+  // Reuse must key on the same fields TTS actually consumes (text + speaker +
+  // emotion + strength) and compare the strength as it is STORED (capped), so a
+  // line whose only change is emotion is correctly re-synthesized.
+  const capStrength = (s: number) => Math.min(0.5, s);
+  const previous = await prisma.voiceLine.findMany({
+    where: { episodeId: episode.id },
+    orderBy: { lineIndex: "asc" },
+    select: { speaker: true, content: true, emotion: true, emotionStrength: true, audioMediaId: true },
+  });
+  const inherited = matchReusableAudio(
+    previous,
+    out.lines.map((l) => ({
+      speaker: l.speaker,
+      content: l.text,
+      emotion: l.emotion,
+      emotionStrength: capStrength(l.emotionStrength),
+    })),
+  );
   await prisma.voiceLine.deleteMany({ where: { episodeId: episode.id } });
 
   let created = 0;
-  for (const line of out.lines) {
+  for (const [i, line] of out.lines.entries()) {
     const matched = shotByIndex.get(line.matchedShotIndex);
     const character = characters.find((c) => c.name === line.speaker);
     await prisma.voiceLine.create({
@@ -368,15 +379,15 @@ export const voiceAnalyzeHandler: TaskHandler = async ({ task, reportProgress })
         lineType: line.lineType,
         cue: line.cue,
         emotion: line.emotion,
-        emotionStrength: Math.min(0.5, line.emotionStrength),
-        matchedShotId: matched?.id, // hallucinated shot refs become null, not errors
+        emotionStrength: capStrength(line.emotionStrength),
+        matchedShotId: matched?.id,
+        audioMediaId: inherited[i],
       },
     });
   }
 
-  // fan out TTS tasks
   reportProgress(85);
-  const lines = await prisma.voiceLine.findMany({ where: { episodeId: episode.id } });
+  const lines = await prisma.voiceLine.findMany({ where: { episodeId: episode.id, audioMediaId: null } });
   for (const line of lines) {
     await submitTask({
       userId: task.userId,
@@ -387,5 +398,5 @@ export const voiceAnalyzeHandler: TaskHandler = async ({ task, reportProgress })
       episodeId: episode.id,
     });
   }
-  return { lines: created };
+  return { lines: created, reusedAudio: created - lines.length };
 };

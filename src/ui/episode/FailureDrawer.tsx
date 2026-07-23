@@ -7,7 +7,6 @@ import { api, ApiClientError } from "@/ui/api";
 import { failedTasksQuery, qk } from "@/ui/query-keys";
 import { humanizeTaskError } from "@/lib/task/error-copy";
 import type { BulkRetryResponse } from "@/ui/types";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   Sheet,
@@ -16,8 +15,15 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet";
 
-export function FailureDrawer({ episodeId, failedCount }: { episodeId: string; failedCount: number }) {
-  const [open, setOpen] = useState(false);
+export function FailureDrawer({
+  episodeId,
+  open,
+  onOpenChange,
+}: {
+  episodeId: string;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+}) {
   const [retrying, setRetrying] = useState<string | null>(null);
   const [retryError, setRetryError] = useState<{ id: string; message: string } | null>(null);
   const [bulkError, setBulkError] = useState<string | null>(null);
@@ -69,22 +75,8 @@ export function FailureDrawer({ episodeId, failedCount }: { episodeId: string; f
     }
   }
 
-  if (failedCount === 0 && !open) return null;
-
   return (
-    <Sheet open={open} onOpenChange={setOpen}>
-      <Button
-        variant="destructive"
-        className="fixed right-6 bottom-6 z-40 shadow-lg"
-        onClick={() => setOpen((o) => !o)}
-      >
-        <AlertTriangle /> 失敗任務
-        {failedCount > 0 && (
-          <Badge variant="secondary" className="ml-1 bg-white/20 text-current">
-            {failedCount}
-          </Badge>
-        )}
-      </Button>
+    <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent side="right" className="text-card-foreground">
         <SheetHeader>
           <SheetTitle className="flex items-center justify-between gap-2 text-destructive">

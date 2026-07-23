@@ -1,7 +1,7 @@
-// Task list — powers the failure drawer (?status=failed) and activity views.
 import { prisma } from "@/lib/db";
 import { withAuth } from "@/lib/api/with-auth";
 import { ok } from "@/lib/api/errors";
+import { filterUnresolvedFailures } from "@/lib/task/superseded";
 
 export const GET = withAuth(async ({ userId, req }) => {
   const episodeId = req.nextUrl.searchParams.get("episodeId") ?? undefined;
@@ -16,5 +16,12 @@ export const GET = withAuth(async ({ userId, req }) => {
       errorCode: true, errorMessage: true, targetType: true, targetId: true, queuedAt: true, finishedAt: true,
     },
   });
-  return ok(tasks);
+  if (status !== "failed") return ok(tasks);
+  // Hide failures a later success already retired, so the drawer list matches
+  // the count on the rail and in the sidebar — both go through this filter.
+  const completed = await prisma.task.findMany({
+    where: { userId, episodeId, projectId, status: "completed" },
+    select: { type: true, targetId: true, queuedAt: true, finishedAt: true },
+  });
+  return ok(filterUnresolvedFailures(tasks, completed));
 });

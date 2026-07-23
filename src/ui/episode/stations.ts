@@ -1,6 +1,5 @@
 import type { StageKey } from "@/ui/types";
 
-// The eight guided stations, in order. `dom` is the anchor id for scroll-to.
 export const STATIONS: { key: StageKey; index: number; name: string; dom: string }[] = [
   { key: "input", index: 1, name: "原文", dom: "station-input" },
   { key: "assets", index: 2, name: "資產", dom: "station-assets" },
@@ -16,7 +15,3 @@ export const STATION_BY_KEY = Object.fromEntries(STATIONS.map((s) => [s.key, s])
   StageKey,
   (typeof STATIONS)[number]
 >;
-
-export function scrollToStation(key: StageKey) {
-  document.getElementById(STATION_BY_KEY[key].dom)?.scrollIntoView({ behavior: "smooth", block: "start" });
-}

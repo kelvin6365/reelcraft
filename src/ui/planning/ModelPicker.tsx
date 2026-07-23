@@ -1,9 +1,4 @@
 "use client";
-// Per-project model picker (design doc 2026-07-19-provider-model-defaults, PR3).
-// Fetches the provider/model catalog + the caller's user-layer defaults once,
-// then renders 4 ModelSelects (文字/圖像/視頻/語音) bound to project.modelDefaults.
-// PATCHes the merged object on change (preserving other slots), with the same
-// optimistic 儲存中/已儲存 + revert-on-error pattern the old image-only picker used.
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Loader2 } from "lucide-react";
@@ -23,8 +18,6 @@ const SLOTS: { key: ApiTypeKey; label: string }[] = [
   { key: "tts", label: "語音" },
 ];
 
-// Beyond ModelSelect's own "provider not connected" disable, video models also
-// disable when they declare capabilities that exclude this project's ratio/res.
 function videoDisableReason(
   m: ModelCatalogItem,
   videoRatio: string,
@@ -34,6 +27,10 @@ function videoDisableReason(
   if (caps?.aspectRatios && !caps.aspectRatios.includes(videoRatio)) return `唔支援 ${videoRatio}`;
   if (caps?.resolutions && !caps.resolutions.includes(videoResolution)) return `唔支援 ${videoResolution}`;
   return null;
+}
+
+function imageDisableReason(m: ModelCatalogItem): string | null {
+  return m.capabilities?.supportsReferenceImages === false ? "唔支援參考圖（角色一致性會失效）" : null;
 }
 
 export function ModelPicker({
@@ -59,10 +56,6 @@ export function ModelPicker({
   async function onChange(slot: ApiTypeKey, next: string) {
     setSaved(null);
     setImageWarning(null);
-    // No local optimistic value: the select's `value` derives from the
-    // `modelDefaults` prop, which only changes once the project query
-    // invalidation lands — so an error simply leaves the select showing the
-    // prior value.
     await run(async () => {
       const merged = { ...(modelDefaults ?? {}), [slot]: next };
       await api.patch(`/api/projects/${id}`, { modelDefaults: merged });
@@ -114,7 +107,11 @@ export function ModelPicker({
                 placeholderLabel={placeholderLabel}
                 disabled={busy || !catalog}
                 extraDisabledReason={
-                  s.key === "video" ? (m) => videoDisableReason(m, videoRatio, videoResolution) : undefined
+                  s.key === "video"
+                    ? (m) => videoDisableReason(m, videoRatio, videoResolution)
+                    : s.key === "image"
+                      ? imageDisableReason
+                      : undefined
                 }
               />
             </div>

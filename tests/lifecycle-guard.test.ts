@@ -1,7 +1,3 @@
-// Regression: the status-guarded terminal writes in withTaskLifecycle prevent a
-// watchdog-requeued task (taken over by a second worker) from being double-
-// completed / double-settled. We assert the DB-level guard directly: an
-// updateMany scoped to status:'processing' is a no-op once the row left that state.
 import { afterAll, describe, expect, it } from "vitest";
 import { prisma } from "@/lib/db";
 import { newId } from "@/lib/ids";
@@ -37,16 +33,32 @@ describe("lifecycle terminal guard", () => {
       data: { status: "completed", progress: 100 },
     });
     expect(first.count).toBe(1);
-    expect(second.count).toBe(0); // the losing worker no-ops — no double settle
+    expect(second.count).toBe(0);
+  });
+
+  it("clears stale retry error fields on the completion write", async () => {
+    const task = await makeTask("processing");
+    await prisma.task.update({
+      where: { id: task.id },
+      data: { errorCode: "UNKNOWN", errorMessage: "fetch failed" },
+    });
+    await prisma.task.updateMany({
+      where: { id: task.id, status: "processing" },
+      data: { status: "completed", progress: 100, errorCode: null, errorMessage: null },
+    });
+    const fresh = await prisma.task.findUniqueOrThrow({ where: { id: task.id } });
+    expect(fresh.status).toBe("completed");
+    expect(fresh.errorCode).toBeNull();
+    expect(fresh.errorMessage).toBeNull();
   });
 
   it("does not resurrect a task the watchdog already failed", async () => {
-    const task = await makeTask("failed"); // watchdog terminalized it
+    const task = await makeTask("failed");
     const won = await prisma.task.updateMany({
       where: { id: task.id, status: "processing" },
       data: { status: "completed" },
     });
-    expect(won.count).toBe(0); // the slow worker cannot overwrite the terminal state
+    expect(won.count).toBe(0);
     const fresh = await prisma.task.findUniqueOrThrow({ where: { id: task.id } });
     expect(fresh.status).toBe("failed");
   });

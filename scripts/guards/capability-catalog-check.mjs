@@ -1,17 +1,11 @@
-// Guard: standards/capabilities.json is well-formed and every entry is keyed by a
-// strict provider::modelId (docs/tech/03-provider-layer.md, CLAUDE.md #3 & #8).
-// Why: this catalog is the ONLY source of unit prices for AiCallLog — a malformed
-// entry or a loose model key silently corrupts billing snapshots. Pure Node (no
-// TS imports); mirrors the zod schema in src/lib/ai/capabilities.ts.
 import { readFileSync } from "node:fs";
 import { report } from "./lib.mjs";
 
 const CATALOG = "standards/capabilities.json";
 const API_TYPES = new Set(["text", "image", "video", "tts"]);
 const FLAT_UNITS = new Set(["image", "second", "character"]);
-// provider::modelId — non-empty provider (no ':'), then '::', then non-empty id.
 const MODEL_KEY_RE = /^[^:]+::.+$/;
-const CAP_KEYS = new Set(["durationsSec", "resolutions", "aspectRatios", "modes"]);
+const CAP_KEYS = new Set(["durationsSec", "resolutions", "aspectRatios", "modes", "supportsReferenceImages"]);
 const PRICE_SOURCES = new Set(["openrouter-api", "manual"]);
 
 const hits = [];

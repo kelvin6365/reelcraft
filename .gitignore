@@ -7,3 +7,7 @@ next-env.d.ts
 .DS_Store
 /data/
 .gstack/
+
+# local tooling artifacts
+.codegraph/
+.cursor/

@@ -1,8 +1,3 @@
-// THE single entry point for media generation (image/video/tts) — CLAUDE.md #2.
-// Resolves provider from the model key, generates, stores the result as a
-// MediaObject, and writes one AiCallLog row per call (success or failure).
-// fal / atlascloud adapters land when API keys are provisioned; until then the
-// `fake` provider (ffmpeg-generated real assets) keeps the pipeline runnable.
 import { prisma } from "@/lib/db";
 import { env } from "@/lib/env";
 import { parseModelKeyStrict } from "@/lib/ai/model-key";
@@ -17,9 +12,6 @@ import { normalizeReferenceImages } from "@/lib/ai/outbound-image";
 import { createMediaFromBuffer, createMediaFromUrl, getMediaUrl } from "@/lib/media/service";
 import type { MediaObject } from "@prisma/client";
 
-// Outbound media normalization: providers must be able to FETCH the source
-// image. S3/R2 signed URLs are public https; local-dev storage URLs are
-// relative — convert those to a data URI (base64) instead.
 async function getOutboundImageUrl(mediaId: string): Promise<string> {
   const url = await getMediaUrl(mediaId);
   if (url?.startsWith("https://")) return url;
@@ -30,8 +22,6 @@ async function getOutboundImageUrl(mediaId: string): Promise<string> {
   return `data:${media.mimeType || "image/png"};base64,${buffer.toString("base64")}`;
 }
 
-// Declarative template provider: modelKey `template::<templateId>` — the JSON
-// file in standards/templates/ defines the whole HTTP conversation.
 async function runTemplateProvider(
   ctx: CallContext,
   apiType: "image" | "video" | "tts",
@@ -52,9 +42,9 @@ export interface ImageGenRequest {
   modelKey: string;
   prompt: string;
   negativePrompt?: string;
-  aspectRatio: string; // '9:16' | '16:9'
-  keyPrefix: string; // storage prefix, e.g. `projects/{id}/characters`
-  referenceMediaIds?: string[]; // locked asset images → img2img for character consistency
+  aspectRatio: string;
+  keyPrefix: string;
+  referenceMediaIds?: string[];
 }
 
 export interface VideoGenRequest {
@@ -98,15 +88,12 @@ async function generate(
     throw new AiError("PROVIDER_NOT_ALLOWED", "fake provider is dev/test only");
   }
 
-  // Budget guard: every media call checks the project cap first (M3 #11).
   const { assertWithinBudget } = await import("@/lib/billing/budget");
   await assertWithinBudget(ctx.projectId);
 
   const startedAt = Date.now();
   try {
     const outcome = await run(parsed);
-    // Unit price + est cost from the catalog only — user-reported prices never
-    // enter billing (docs 03-provider-layer). Missing entry → null, never throw.
     const price = priceMedia(modelKey, outcome.quantity);
     await logMediaCall(ctx, modelKey, apiType, {
       latencyMs: Date.now() - startedAt,
@@ -128,11 +115,6 @@ async function generate(
   }
 }
 
-// AtlasCloud splits text-to-image and edit into sibling models with DIFFERENT
-// prices (e.g. nano-banana-2 t2i $0.013 vs edit $0.08). When references are
-// present, swap to the /edit sibling so the right model is both called and
-// billed. fal needs no swap — its adapter derives the /edit endpoint at one
-// flat price. Only swaps when the sibling exists in the catalog.
 export function effectiveImageModelKey(modelKey: string, hasRefs: boolean): string {
   if (!hasRefs || !modelKey.startsWith("atlascloud::") || !modelKey.endsWith("/text-to-image")) return modelKey;
   const editKey = modelKey.replace(/\/text-to-image$/, "/edit");
@@ -140,12 +122,20 @@ export function effectiveImageModelKey(modelKey: string, hasRefs: boolean): stri
 }
 
 export async function generateImage(ctx: CallContext, req: ImageGenRequest): Promise<MediaObject> {
-  // Resolve locked-asset reference images once (order preserved for the 图片N legend).
   const referenceImages = req.referenceMediaIds?.length
     ? await normalizeReferenceImages(req.referenceMediaIds)
     : undefined;
 
   const modelKey = effectiveImageModelKey(req.modelKey, !!referenceImages?.length);
+
+  if (referenceImages?.length && !getCapabilities(modelKey)?.supportsReferenceImages) {
+    throw new AiError(
+      "MODEL_NO_REFERENCE_SUPPORT",
+      `${modelKey} 唔支援參考圖（img2img）——鎖定資產嘅角色一致性會失效。請喺專案設定揀一個支援參考圖嘅圖像模型。`,
+      false,
+    );
+  }
+
   return generate(ctx, "image", modelKey, async ({ provider, modelId }) => {
     if (provider === "fake") {
       const { buffer, mimeType } = await fakeImage(req.prompt, req.aspectRatio);
@@ -189,14 +179,10 @@ export async function generateImage(ctx: CallContext, req: ImageGenRequest): Pro
   });
 }
 
-// Snap a requested duration to the model's supported set (nearest, ties → longer).
-// Models like Kling only accept fixed durations; sending 3s would 422.
 function clampDuration(modelKey: string, requested: number): number {
   const caps = getCapabilities(modelKey);
   const allowed = caps?.durationsSec;
   if (!allowed || allowed.length === 0) return requested;
-  // nearest; on an exact tie prefer the LONGER duration (b - a) so a midpoint
-  // request never silently loses footage.
   return [...allowed].sort((a, b) => Math.abs(a - requested) - Math.abs(b - requested) || b - a)[0];
 }
 
@@ -210,7 +196,6 @@ export async function generateVideo(ctx: CallContext, req: VideoGenRequest): Pro
     }
     if (provider === "fal" || provider === "atlascloud") {
       const apiKey = await getProviderKey(ctx.userId, provider);
-      // i2v: providers pull the source frame — public signed URL, or data URI in local-dev.
       const imageUrl = req.sourceImageMediaId ? await getOutboundImageUrl(req.sourceImageMediaId) : null;
       const gen = provider === "fal" ? falVideo : atlasVideo;
       const { url, providerRequestId } = await gen({
@@ -251,8 +236,6 @@ export async function generateTts(ctx: CallContext, req: TtsGenRequest): Promise
       const gen = provider === "fal" ? falTts : atlasTts;
       const { url, providerRequestId } = await gen({ modelId, text: req.text, referenceAudioUrl, apiKey });
       const media = await createMediaFromUrl({ userId: ctx.userId, url, keyPrefix: req.keyPrefix });
-      // fal TTS bills per character; quantity = text length (audio seconds are
-      // informational only — the catalog prices IndexTTS-2 per character).
       return { media, quantity: req.text.length, unit: "character", providerRequestId };
     }
     if (provider === "template") {
@@ -277,7 +260,6 @@ interface MediaLogFields {
   errorCode?: string;
 }
 
-// Awaited by callers so the row is durable before ENFORCE settlement sums it.
 function logMediaCall(ctx: CallContext, modelKey: string, apiType: string, f: MediaLogFields): Promise<void> {
   return prisma.aiCallLog
     .create({

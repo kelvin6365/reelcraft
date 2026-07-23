@@ -1,7 +1,7 @@
 {
   "promptId": "image_prompt_shot",
   "variables": {
-    "shot_json": "{\"plan\":{\"subject\":\"林知夏推門入店\",\"characters\":[\"林知夏\"]},\"detail\":{\"shotSize\":\"全景\",\"camera\":\"固定\"}}",
+    "shot_json": "{\"plan\":{\"subject\":\"林知夏推門入店\",\"beat\":\"她鼓起勇氣走進來\",\"characters\":[\"林知夏\"],\"dialogue\":\"對唔住我遲到咗\"},\"photography\":{\"lighting\":\"窗外冷藍逆光，室內暖黃補光\",\"dof\":\"shallow\",\"focusFace\":\"林知夏\",\"tone\":\"低飽和暖冷對比\"},\"acting\":{\"expression\":\"眉頭微蹙、嘴角緊抿\",\"bodyAction\":\"右手仍按在門把上、身體半側\",\"eyeline\":\"望向店內深處\"},\"detail\":{\"shotSize\":\"全景\",\"angle\":\"平視\",\"camera\":\"固定\"}}",
     "scene_blocking": "軸線：鏡頭一律在窗一側；林知夏=畫面左、面向畫面右、坐窗邊桌左側；道具：桌上有咖啡杯",
     "reference_legend": "图片1=林知夏（角色）；图片2=咖啡店·夜（場景）",
     "locked_assets": "图片1（林知夏（角色））: 二十多歲女性，及肩黑髮",
@@ -15,6 +15,11 @@
     "Never render any text",
     "嚴禁",
     "Render as ONE single cinematic frame",
-    "turnaround sheet"
+    "turnaround sheet",
+    "分鏡欄位對照",
+    "detail.shotSize",
+    "photography.dof",
+    "shallow depth of field",
+    "由 photography.lighting／tone 譯出的明確英文布光片語"
   ]
 }

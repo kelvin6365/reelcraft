@@ -2,7 +2,8 @@
   "name": "Anime 01",
   "prefix": "modern anime key visual, clean cel shading, crisp lineart, soft gradient lighting, vivid but controlled palette, expressive eyes, detailed background art, 2d animation style",
   "assetPrefix": "modern anime character design, clean cel shading, crisp lineart, flat neutral colors, expressive eyes, 2d animation style",
+  "locationPrefix": "2d anime scene illustration, detailed anime background art, cinematic anime lighting, realistic light and shadow with soft cel shading, masterful composition, golden ratio framing, rim light, rich layered colors, balanced warm-cool contrast, controlled saturation, delicate textures, intricate refined detail, 8K ultra-detailed",
   "negativePrompt": "photorealistic, 3d render, realistic skin texture, muddy colors, sketchy lines, extra fingers, deformed hands, text, watermark, signature",
   "bannedWords": ["film grain", "grain", "noise", "photo", "realistic skin pores"],
-  "notes": "現代日系動畫感。乾淨線條與 cel shading，避免寫實化污染。兩種用法：鏡頭圖 prefix 作 style_suffix 接尾（image_prompt_shot）；資產圖用 assetPrefix 行先——只帶身份層風格，場景 look（漸變光/背景美術）唔准 bake 入參考圖。"
+  "notes": "現代日系動畫感。乾淨線條與 cel shading，避免寫實化污染。三種用法：鏡頭圖 prefix 作 style_suffix 接尾（image_prompt_shot）；人物資產用 assetPrefix 行先——只帶身份層風格；場景資產用 locationPrefix 行先（教材三段式：風格＋本體＋質感要求）——帶環境層風格，無人物無文字。"
 }

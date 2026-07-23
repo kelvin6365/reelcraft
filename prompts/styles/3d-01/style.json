@@ -2,7 +2,8 @@
   "name": "3D 動畫",
   "prefix": "3d animated film still, stylized pixar-like character rendering, soft global illumination, subsurface skin scattering, expressive faces, detailed environment, cinematic composition",
   "assetPrefix": "stylized 3d animated character design, clean smooth rendering with polished edges, unified single light source, soft even studio lighting, expressive face, correct stylized head-to-body proportions, feet planted on the ground, finely detailed",
+  "locationPrefix": "high-end 3d animated environment render, game-cinematic CG quality, realistic light and shadow, soft stylized shading, masterful composition, golden ratio framing, rim light, rich layered colors, balanced warm-cool contrast, controlled saturation, fine material textures, intricate refined detail, 8K ultra-detailed",
   "negativePrompt": "photorealistic human, live action, 2d flat illustration, sketch, low poly, plastic dead eyes, uncanny valley, deformed hands, text, watermark",
   "bannedWords": ["film grain", "noise", "motion blur"],
-  "notes": "風格化 3D 動畫（Pixar/爆款 3D 短劇向）。兩種用法：鏡頭圖 prefix 接尾；資產圖用 assetPrefix 行先——只帶角色渲染風格，場景光唔准 bake 入參考圖。"
+  "notes": "風格化 3D 動畫（Pixar/爆款 3D 短劇向）。三種用法：鏡頭圖 prefix 接尾；人物資產用 assetPrefix 行先——只帶角色渲染風格；場景資產用 locationPrefix 行先（教材三段式）——帶環境層風格，無人物無文字。"
 }

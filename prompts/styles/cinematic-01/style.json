@@ -2,7 +2,8 @@
   "name": "Cinematic 01",
   "prefix": "cinematic film still, anamorphic lens, natural volumetric lighting, muted teal-and-amber color grade, shallow depth of field, 35mm, high dynamic range, photorealistic detail",
   "assetPrefix": "photorealistic, true-to-life natural color, sharp focus throughout, raw unretouched skin texture with visible pores, no beauty-filter smoothing, lifelike flowing hair strands, ultra-fine fabric detail, HDR clarity",
+  "locationPrefix": "real-life location photography, cinematic film still, rich fine detail, soft natural lighting, realistic light and shadow, strong sense of depth, shot on ARRI Alexa 35 with Cooke S5/i prime lens, 24mm f/5.6, high resolution",
   "negativePrompt": "cartoon, illustration, 3d render, plastic skin, oversaturated, harsh flat lighting, blown highlights, extra fingers, deformed hands, text, watermark, logo",
   "bannedWords": ["film grain", "grain", "noise", "heavy vignette", "chromatic aberration"],
-  "notes": "寫實電影感。禁用詞以顆粒/噪點類為主——會在後續換臉與口型對位時放大瑕疵。兩種用法：鏡頭圖 prefix 作 style_suffix 接尾（image_prompt_shot）；資產圖用 assetPrefix 行先（教材三段式）——只帶身份層風格，場景 look（色調/景深/體積光）唔准 bake 入參考圖。"
+  "notes": "寫實電影感。禁用詞以顆粒/噪點類為主——會在後續換臉與口型對位時放大瑕疵。三種用法：鏡頭圖 prefix 作 style_suffix 接尾（image_prompt_shot）；人物資產用 assetPrefix 行先（教材三段式）——只帶身份層風格；場景資產用 locationPrefix 行先——帶環境層風格（ARRI/Cooke 鏡頭質感），無人物無文字。"
 }

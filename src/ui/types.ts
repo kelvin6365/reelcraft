@@ -1,12 +1,14 @@
-// UI-side mirrors of the API response shapes (GET /api/episodes/:id etc.).
-// Kept intentionally loose where the server sends Prisma JSON columns.
 
 export type StageKey = "input" | "assets" | "script" | "storyboard" | "images" | "videos" | "voice" | "export";
+
+export type StageStatus = "done" | "review" | "blocked" | "todo";
 
 export interface StageState {
   key: StageKey;
   done: boolean;
   count?: { done: number; total: number };
+  status: StageStatus;
+  blockedBy: string[];
 }
 
 export interface NextAction {
@@ -15,8 +17,6 @@ export interface NextAction {
   endpoint: string | null;
   blockedBy: string[];
   busy: boolean;
-  // Optional predicted spend for the next 一鍵執行 click, e.g. for the images/
-  // videos stages (see EpisodeView.cost.downstream). Absent = don't show a hint.
   estCostUsd?: number;
 }
 
@@ -35,13 +35,10 @@ export interface EpisodeListItem {
   episodeNumber: number;
   status: string;
   updatedAt?: string;
-  // Batch/season generation (GET /api/projects/:id): autorun flag + failed-task
-  // count for the season progress board.
   autorun?: boolean;
   failedTasks?: number;
 }
 
-// ---------- episode planning (docs/plans/2026-07-19-episode-planning-design.md) ----------
 export type RiskLevel = "ok" | "review" | "problem";
 export type RiskFlag =
   | "weak_hook"
@@ -83,7 +80,6 @@ export interface PlanRisk {
   ok: number;
 }
 
-// Per-project default model keys (provider::modelId). Prisma Json column.
 export interface ModelDefaults {
   text?: string;
   image?: string;
@@ -91,7 +87,6 @@ export interface ModelDefaults {
   tts?: string;
 }
 
-// GET /api/projects/:id — extends ProjectSummary with the planning fields.
 export interface ProjectPlanView extends ProjectSummary {
   sourceText: string;
   modelDefaults: ModelDefaults | null;
@@ -102,7 +97,6 @@ export interface ProjectPlanView extends ProjectSummary {
   episodes: EpisodeListItem[];
 }
 
-// PATCH /api/projects/:id/plan → { episodes, risk }
 export interface PlanEditResult {
   episodes: PlannedEpisode[];
   risk: PlanRisk;
@@ -113,12 +107,12 @@ export interface CharacterView {
   name: string;
   profile: string;
   appearancePrompt: string;
-  candidates: string[]; // media ids
+  candidates: string[];
   lockedImageMediaId: string | null;
   lockedImageUrl: string | null;
-  faceImageUrl?: string | null; // 近臉特寫 — auto-generated after lock
+  faceImageUrl?: string | null;
   locked: boolean;
-  activeTask?: ActiveTaskView | null; // in-flight IMAGE_CHARACTER (reload survival)
+  activeTask?: ActiveTaskView | null;
 }
 
 export interface LocationView {
@@ -130,7 +124,7 @@ export interface LocationView {
   lockedImageMediaId: string | null;
   lockedImageUrl: string | null;
   locked: boolean;
-  activeTask?: ActiveTaskView | null; // in-flight IMAGE_LOCATION (reload survival)
+  activeTask?: ActiveTaskView | null;
 }
 
 export interface StoryboardJson {
@@ -152,19 +146,16 @@ export interface ShotView {
   videoUrl: string | null;
   status: string;
   durationMs: number;
-  // in-flight task on this shot at view-build time (null when idle) — the live
-  // SSE stream takes over for updates after initial load
   activeImageTask: ActiveTaskView | null;
   activeVideoTask: ActiveTaskView | null;
 }
 
 export interface ActiveTaskView {
   taskId: string;
-  status: string; // queued | processing
+  status: string;
   progress: number;
 }
 
-// 劇本體檢 (S3) — Episode.scriptReview JSON shape
 export interface ScriptRiskView {
   level: "ok" | "review" | "problem";
   flags: string[];
@@ -180,12 +171,14 @@ export interface VoiceLineView {
   lineIndex: number;
   speaker: string;
   content: string;
-  lineType?: string; // 'dialogue' | 'vo' | 'os'
-  cue?: string; // 括號演技/語氣提示
+  characterId: string | null;
+  lineType?: string;
+  cue?: string;
   emotion: string;
   emotionStrength: number;
   audioMediaId: string | null;
   audioUrl: string | null;
+  activeTask?: ActiveTaskView | null;
 }
 
 export interface EpisodeView {
@@ -208,8 +201,10 @@ export interface EpisodeView {
   stages: StageState[];
   nextAction: NextAction;
   failedTasks: number;
+  failedByStage: Partial<Record<StageKey, number>>;
   cost?: {
     projectSpendUsd: number;
+    episodeSpendUsd: number;
     downstream: {
       pendingImages: number;
       pendingVideos: number;
@@ -218,10 +213,6 @@ export interface EpisodeView {
       totalUsd: number;
       videoUnitUsd: number | null;
     } | null;
-    // The model each of the two generation stations will actually use right
-    // now (resolved system/user/project defaults) + its per-unit price, for
-    // the station header chips. null when the downstream estimate itself
-    // failed (e.g. episode not found — should not normally happen here).
     activeModels?: {
       image: { modelKey: string; unitUsd: number | null };
       video: { modelKey: string; unitUsd: number | null; perSecond: number | null };
@@ -241,14 +232,11 @@ export interface FailedTask {
   targetId: string | null;
 }
 
-// GET /api/projects/:id/failed-tasks — project-wide failure overview, one row
-// per failed task, with the owning episode's number attached for grouping.
 export interface ProjectFailedTask extends FailedTask {
   episodeId: string | null;
   episodeNumber: number | null;
 }
 
-// POST /api/tasks/retry-bulk
 export interface BulkRetryResult {
   id: string;
   ok: boolean;
@@ -262,21 +250,18 @@ export interface BulkRetryResponse {
   results: BulkRetryResult[];
 }
 
-// SSE event payload (see /api/sse route).
 export interface SseEvent {
   taskId: string;
   taskType: string;
-  eventType: string; // CREATED | PROCESSING | PROGRESS | COMPLETED | FAILED | RETRYING | ...
+  eventType: string;
   targetType?: string;
   targetId?: string;
   progress?: number;
   errorCode?: string | null;
 }
 
-// live per-target task state derived from SSE, keyed `${taskType}:${targetId}`
 export type LiveTaskMap = Record<string, { progress?: number }>;
 
-// ---------- usage dashboard (GET /api/usage) ----------
 export interface UsageRowView {
   key: string;
   label: string;
@@ -316,7 +301,6 @@ export interface UsageResponse {
   range: { from: string; to: string; groupBy: string };
 }
 
-// ---------- settings: BYO provider keys (GET /api/user/provider-keys) ----------
 export interface ProviderKeyView {
   provider: string;
   last4: string;
@@ -327,12 +311,9 @@ export interface ProviderKeysResponse {
   keys: ProviderKeyView[];
 }
 
-// ---------- settings: model defaults + catalog (GET /api/user/model-defaults, /api/models) ----------
 export type ApiTypeKey = "text" | "image" | "video" | "tts";
 export type DefaultsSource = "system" | "user" | "project";
 
-// GET /api/user/model-defaults: the caller's stored slots, the fully-resolved
-// effective models (+ which layer won each), and the system floor.
 export interface UserModelDefaultsResponse {
   defaults: ModelDefaults;
   resolved: {
@@ -366,22 +347,18 @@ export interface ModelCatalogItem {
     resolutions?: string[];
     aspectRatios?: string[];
     modes?: string[];
+    supportsReferenceImages?: boolean;
   };
   unitPrice: ModelUnitPrice;
-  recommend?: number; // 3 = top pick, 2 = solid, 1 = legacy
+  recommend?: number;
 }
 
-// GET /api/models — provider connection status + model catalog. generatedImageCount
-// only present when ?projectId= was passed.
 export interface ModelsResponse {
   providers: ProviderView[];
   models: ModelCatalogItem[];
   generatedImageCount?: number;
 }
 
-// GET /api/user/provider-readiness — onboarding guardrail (ProviderReadinessBanner).
-// One entry per apiType slot in the caller's current resolved model defaults.
-// PRESENCE only — never key material.
 export interface ProviderReadinessItem {
   apiType: ApiTypeKey;
   apiTypeLabel: string;
@@ -397,15 +374,12 @@ export interface ProviderReadinessResponse {
   allReady: boolean;
 }
 
-// ---------- 進階模式 (advanced prompt mode) ----------
 export type PromptSource = "system" | "user" | "project" | "oneoff";
 
-// GET /api/user/preferences
 export interface UserPreferences {
   advancedMode: boolean;
 }
 
-// GET /api/prompts?projectId= — one row per catalog prompt.
 export interface PromptStatusView {
   promptId: string;
   description: string;
@@ -418,7 +392,6 @@ export interface PromptStatusView {
   drifted: boolean;
 }
 
-// GET /api/prompts/:promptId?projectId= — full editor payload.
 export interface PromptOverrideView {
   content: string;
   baseVersion: string;
@@ -433,7 +406,6 @@ export interface PromptDetailView extends PromptStatusView {
   effective: { content: string; source: PromptSource };
 }
 
-// GET /api/episodes/:id/last-prompt?promptId=
 export interface LastPromptLog {
   at: string;
   modelKey: string;
@@ -449,7 +421,6 @@ export interface LastPromptLog {
 
 export interface LastPromptResponse {
   log: LastPromptLog | null;
-  // Always UNRENDERED — {變數} placeholders are literal, never fabricate a render.
   template: {
     content: string;
     source: PromptSource;
@@ -459,7 +430,6 @@ export interface LastPromptResponse {
   };
 }
 
-// POST /api/episodes/:id/prompt-rerun
 export interface PromptRerunResponse {
   taskId: string;
 }

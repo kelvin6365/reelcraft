@@ -44,7 +44,7 @@ describe("computeNextAction", () => {
     const withCandidates = { ...extracted, characters: { total: 2, locked: 0, withCandidates: 2 }, locations: { total: 1, locked: 0, withCandidates: 1 } };
     const lockAction = computeNextAction(withCandidates, "e1");
     expect(lockAction.stage).toBe("assets");
-    expect(lockAction.endpoint).toBeNull(); // human review gate
+    expect(lockAction.endpoint).toBeNull();
   });
 
   it("requires storyboard confirm gate before images", () => {
@@ -59,7 +59,7 @@ describe("computeNextAction", () => {
     };
     const a = computeNextAction(s, "e1");
     expect(a.stage).toBe("storyboard");
-    expect(a.endpoint).toBeNull(); // review gate
+    expect(a.endpoint).toBeNull();
   });
 
   it("progresses images → videos → voice → compose → done", () => {
@@ -94,7 +94,6 @@ describe("computeNextAction — SRT mode", () => {
   const srtBase: EpisodeSnapshot = { ...base, isSrtMode: true };
 
   it("skips the script stage and goes straight to assets", () => {
-    // hasScript is false in SRT mode (no rewrite step), but we must not ask for a script
     const a = computeNextAction(srtBase, "e1");
     expect(a.stage).toBe("assets");
     expect(a.endpoint).toContain("extract-assets");
@@ -124,7 +123,7 @@ describe("computeNextAction — SRT mode", () => {
     };
     const a = computeNextAction(built, "e1");
     expect(a.stage).toBe("storyboard");
-    expect(a.endpoint).toBeNull(); // review gate unchanged
+    expect(a.endpoint).toBeNull();
   });
 
   it("submits TTS via tts-all (no VOICE_ANALYZE) once shots have video", () => {
@@ -134,7 +133,7 @@ describe("computeNextAction — SRT mode", () => {
       scenes: 1,
       shots: { total: 3, withImage: 3, withVideo: 3 },
       storyboardConfirmed: true,
-      voiceLines: { total: 3, withAudio: 0 }, // created by SRT_BUILD already
+      voiceLines: { total: 3, withAudio: 0 },
     };
     const a = computeNextAction(readyForVoice, "e1");
     expect(a.stage).toBe("voice");
@@ -154,5 +153,64 @@ describe("computeStages", () => {
     expect(assets?.count).toEqual({ done: 2, total: 3 });
     const images = stages.find((s) => s.key === "images");
     expect(images?.count).toEqual({ done: 2, total: 4 });
+  });
+});
+
+describe("computeStages status + blockedBy", () => {
+  const find = (s: EpisodeSnapshot, key: string) => computeStages(s).find((x) => x.key === key)!;
+
+  it("locks a station whose prerequisite is missing and says what is missing", () => {
+    const assets = find(base, "assets");
+    expect(assets.status).toBe("blocked");
+    expect(assets.blockedBy).toEqual(["第 3 站：先生成劇本"]);
+  });
+
+  it("marks the two human gates as review, not blocked", () => {
+    const withCandidates = find(
+      { ...base, hasScript: true, characters: { total: 2, locked: 0, withCandidates: 2 } },
+      "assets",
+    );
+    expect(withCandidates.status).toBe("review");
+    expect(withCandidates.blockedBy).toEqual([]);
+
+    const unconfirmed = find(
+      {
+        ...base,
+        hasScript: true,
+        characters: { total: 1, locked: 1, withCandidates: 1 },
+        shots: { total: 4, withImage: 0, withVideo: 0 },
+        storyboardConfirmed: false,
+      },
+      "storyboard",
+    );
+    expect(unconfirmed.status).toBe("review");
+  });
+
+  it("reports done once the gate is passed", () => {
+    const assets = find(
+      { ...base, hasScript: true, characters: { total: 2, locked: 2, withCandidates: 2 } },
+      "assets",
+    );
+    expect(assets.status).toBe("done");
+    expect(assets.blockedBy).toEqual([]);
+  });
+
+  it("does not block on a script the SRT pipeline never produces", () => {
+    const assets = find({ ...base, isSrtMode: true }, "assets");
+    expect(assets.status).not.toBe("blocked");
+    expect(find({ ...base, isSrtMode: true }, "script").status).toBe("done");
+  });
+
+  it("unlocks videos only once at least one image exists", () => {
+    expect(find(base, "videos").status).toBe("blocked");
+    const withOneImage = find({ ...base, shots: { total: 4, withImage: 1, withVideo: 0 } }, "videos");
+    expect(withOneImage.status).toBe("todo");
+    expect(withOneImage.blockedBy).toEqual([]);
+  });
+
+  it("never reports blockedBy on a finished station", () => {
+    for (const s of computeStages({ ...base, hasExport: true, hasScript: true })) {
+      if (s.done) expect(s.blockedBy).toEqual([]);
+    }
   });
 });

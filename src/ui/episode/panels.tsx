@@ -1,13 +1,32 @@
 "use client";
 import { useEffect, useState, type ReactNode } from "react";
-import { Code2, Loader2, Pencil, RefreshCw } from "lucide-react";
+import {
+  Check,
+  Clapperboard,
+  Code2,
+  FileText,
+  Film,
+  Image as ImageIcon,
+  LayoutGrid,
+  Loader2,
+  Mic,
+  MoreHorizontal,
+  Pencil,
+  RefreshCw,
+  Trash2,
+  Users,
+  type LucideIcon,
+} from "lucide-react";
 import { api } from "@/ui/api";
 import { useAction } from "@/ui/planning/useAction";
 import { qk } from "@/ui/query-keys";
 import { useAdvancedMode } from "@/ui/prompts/useAdvancedMode";
 import { StationPromptSheet } from "@/ui/prompts/StationPromptSheet";
-import type { EpisodeView, LiveTaskMap, StageKey, ShotView, ScriptReviewView } from "@/ui/types";
+import type { EpisodeView, LiveTaskMap, StageKey, ShotView, ScriptReviewView, VoiceLineView } from "@/ui/types";
 import { STATION_BY_KEY } from "./stations";
+import { useStationNav } from "./station-nav";
+import { SavedHint, useAutosaveField, useSavedFlash } from "./SavedHint";
+import { ShotWorkbench } from "./ShotWorkbench";
 import { shortModelName, isFakeModel } from "@/ui/model-format";
 import { cn } from "@/lib/utils";
 import { ConfirmDialog } from "@/components/confirm-dialog";
@@ -15,6 +34,19 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import {
   Table,
   TableBody,
@@ -27,10 +59,9 @@ import {
 interface PanelProps {
   view: EpisodeView;
   progress: Partial<Record<StageKey, number>>;
-  live?: LiveTaskMap; // per-target SSE state — used by the media-grid stations
+  live?: LiveTaskMap;
 }
 
-// ---------- shared shell ----------
 function Station({
   stage,
   progress,
@@ -43,8 +74,6 @@ function Station({
   progress?: Partial<Record<StageKey, number>>;
   action?: ReactNode;
   children: ReactNode;
-  // When set AND 進階模式 is on, a ghost <> button appears to open the
-  // "實際送出" prompt sheet for this station (docs/plans/2026-07-21-advanced-prompt-mode-design.md).
   episodeId?: string;
   promptIds?: string[];
 }) {
@@ -56,8 +85,12 @@ function Station({
   return (
     <Card id={meta.dom} className="scroll-mt-20">
       <CardHeader className="flex-row items-center gap-3 [&>div]:min-w-0">
-        <CardTitle className="text-base">
-          第 {meta.index} 站 · {meta.name}
+        {/* Real heading, not a styled div — the station title is the h2 under the
+            page's h1, so screen-reader users can navigate the pipeline by heading. */}
+        <CardTitle asChild className="text-base">
+          <h2>
+            第 {meta.index} 站 · {meta.name}
+          </h2>
         </CardTitle>
         {typeof pct === "number" && (
           <Badge variant="secondary" className="text-primary">
@@ -91,11 +124,55 @@ function Station({
   );
 }
 
-function EmptyState({ children }: { children: ReactNode }) {
-  return <p className="rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground">{children}</p>;
+const EMPTY_ICON: Record<StageKey, LucideIcon> = {
+  input: FileText,
+  assets: Users,
+  script: FileText,
+  storyboard: LayoutGrid,
+  images: ImageIcon,
+  videos: Clapperboard,
+  voice: Mic,
+  export: Film,
+};
+
+function EmptyState({ view, stage, children }: { view: EpisodeView; stage: StageKey; children: ReactNode }) {
+  const goToStation = useStationNav();
+  const { busy, err, run } = useAction(qk.episode(view.episode.id));
+  const next = view.nextAction;
+  const isMine = next.stage === stage && !!next.endpoint;
+  const target = STATION_BY_KEY[next.stage];
+  const running = busy || next.busy;
+  const Icon = EMPTY_ICON[stage];
+
+  return (
+    <div className="rounded-lg border border-dashed p-6 text-center">
+      <Icon className="mx-auto mb-2 size-8 text-muted-foreground/40" aria-hidden />
+      <p className="text-sm text-muted-foreground">{children}</p>
+      {isMine ? (
+        <Button
+          className="mt-3"
+          disabled={running}
+          aria-busy={running}
+          onClick={() => run(() => api.post(next.endpoint!))}
+        >
+          {running ? (
+            <>
+              <Loader2 className="animate-spin" /> 進行中…
+            </>
+          ) : (
+            next.label
+          )}
+        </Button>
+      ) : (
+        <Button variant="link" size="sm" className="mt-1" onClick={() => goToStation(next.stage)}>
+          先去第 {target.index} 站 · {target.name} →
+        </Button>
+      )}
+      {err && <p className="mt-2 text-sm text-destructive">{err}</p>}
+    </div>
+  );
 }
 
-// ---------- ① 原文 ----------
 export function InputPanel({ view }: PanelProps) {
   return (
     <Station stage="input">
@@ -107,7 +184,6 @@ export function InputPanel({ view }: PanelProps) {
   );
 }
 
-// ---------- ② 資產站 ----------
 export function AssetsPanel({ view, progress, live }: PanelProps) {
   const { characters, locations, candidateUrlById } = view;
   const episodeId = view.episode.id;
@@ -115,7 +191,7 @@ export function AssetsPanel({ view, progress, live }: PanelProps) {
   return (
     <Station stage="assets" progress={progress} episodeId={episodeId} promptIds={["extract_assets"]}>
       {empty ? (
-        <EmptyState>仲未抽到角色／場景。用右下角「下一步」抽取資產。</EmptyState>
+        <EmptyState view={view} stage="assets">仲未抽到角色／場景，系統會由劇本讀出人物同地點。</EmptyState>
       ) : (
         <div className="flex flex-col gap-4">
           {characters.map((c) => (
@@ -185,6 +261,7 @@ function AssetCard(props: {
   episodeId: string;
 }) {
   const { busy, err, run } = useAction(qk.episode(props.episodeId));
+  const { saved, flash } = useSavedFlash();
   const [editing, setEditing] = useState(false);
   const [promptDraft, setPromptDraft] = useState(props.prompt);
   useEffect(() => {
@@ -197,7 +274,7 @@ function AssetCard(props: {
 
   async function savePrompt() {
     if (promptDraft === props.prompt) return;
-    await run(() => api.patch(`${props.lockPath}/${props.id}`, { [props.promptField]: promptDraft }));
+    if (await run(() => api.patch(`${props.lockPath}/${props.id}`, { [props.promptField]: promptDraft }))) flash();
   }
 
   return (
@@ -276,7 +353,10 @@ function AssetCard(props: {
             rows={3}
             placeholder="生成提示詞（外貌／環境描述）"
           />
-          <p className="text-xs text-muted-foreground">離開輸入框自動儲存；儲存後撳「重生」先會用新提示詞出圖。</p>
+          <div className="flex items-center gap-2">
+            <p className="text-xs text-muted-foreground">離開輸入框自動儲存；儲存後撳「重生」先會用新提示詞出圖。</p>
+            <SavedHint saved={saved} />
+          </div>
         </div>
       )}
 
@@ -301,7 +381,7 @@ function AssetCard(props: {
           ) : null}
         </div>
       ) : props.candidates.length === 0 ? (
-        <p className="text-sm text-muted-foreground">未有候選圖。用右下角「下一步」生成資產圖。</p>
+        <p className="text-sm text-muted-foreground">未有候選圖。撳上面「重生」生成 3 張候選，或喺「下一步」一次過生成全部資產圖。</p>
       ) : (
         <div className="grid grid-cols-3 gap-3 sm:grid-cols-4">
           {props.candidates.map((mediaId) => {
@@ -312,10 +392,12 @@ function AssetCard(props: {
                 key={mediaId}
                 type="button"
                 disabled={busy}
+                aria-pressed={chosen}
                 onClick={() => run(() => api.post(`${props.lockPath}/${props.id}/lock`, { mediaId }))}
-                title="揀呢張鎖定"
+                title={chosen ? "已揀呢張" : "揀呢張鎖定"}
+                aria-label={chosen ? `${props.name} 已揀呢張候選圖` : `揀 ${props.name} 呢張候選圖`}
                 className={cn(
-                  "aspect-[3/4] overflow-hidden rounded-md border-2 transition-colors",
+                  "relative aspect-[3/4] overflow-hidden rounded-md border-2 transition-colors",
                   chosen ? "border-primary ring-2 ring-primary" : "border-transparent hover:border-border",
                 )}
               >
@@ -324,6 +406,13 @@ function AssetCard(props: {
                 ) : (
                   <span className="flex size-full items-center justify-center text-xs text-muted-foreground">
                     無圖
+                  </span>
+                )}
+                {/* Non-colour indicator too (WCAG 1.4.1): the ring alone is a
+                    colour-only signal for which candidate is locked. */}
+                {chosen && (
+                  <span className="absolute top-1 right-1 flex size-5 items-center justify-center rounded-full bg-primary text-primary-foreground">
+                    <Check className="size-3" />
                   </span>
                 )}
               </button>
@@ -336,7 +425,6 @@ function AssetCard(props: {
   );
 }
 
-// ---------- ③ 劇本站 ----------
 const SCRIPT_FLAG_LABEL: Record<string, string> = {
   no_purpose: "冇戲劇目的",
   unnatural_dialogue: "對白唔似人話",
@@ -346,7 +434,6 @@ const SCRIPT_FLAG_LABEL: Record<string, string> = {
 };
 const LEVEL_EMOJI: Record<string, string> = { ok: "🟢", review: "🟡", problem: "🔴" };
 
-// 劇本體檢燈 — review-by-exception：只展開 🟡🔴 場，🟢 收埋一行。純資訊，唔閘流程。
 function ScriptReviewLights({ review }: { review: ScriptReviewView }) {
   const flagged = review.scenes.filter((s) => s.risk.level !== "ok");
   const okCount = review.scenes.length - flagged.length;
@@ -382,9 +469,6 @@ function ScriptReviewLights({ review }: { review: ScriptReviewView }) {
 export function ScriptPanel({ view, progress }: PanelProps) {
   const [text, setText] = useState(view.episode.scriptText);
   const [dirty, setDirty] = useState(false);
-  // REWRITE_SCRIPT finishing invalidates the episode query — sync the textarea
-  // unless the user has local edits (found in browser QA: script stayed blank
-  // until reload).
   useEffect(() => {
     if (!dirty) setText(view.episode.scriptText);
   }, [view.episode.scriptText, dirty]);
@@ -394,8 +478,6 @@ export function ScriptPanel({ view, progress }: PanelProps) {
   const checkup = useAction(qk.episode(epId));
   const review = view.episode.scriptReview;
   const hasReview = !!review && Array.isArray((review as { scenes?: unknown[] }).scenes);
-  // Any one of the three actions overwrites `scriptText` server-side — gate all
-  // three while any is pending so a concurrent click can't race an overwrite.
   const anyBusy = save.busy || regen.busy || checkup.busy;
 
   return (
@@ -443,7 +525,7 @@ export function ScriptPanel({ view, progress }: PanelProps) {
     >
       <div className="space-y-2">
         {view.episode.scriptText.length === 0 && !dirty ? (
-          <EmptyState>仲未有劇本。用右下角「下一步」或上面「重新生成」生成劇本。</EmptyState>
+          <EmptyState view={view} stage="script">仲未有劇本。可以由原文改寫生成，生成之後隨時可以手動編輯。</EmptyState>
         ) : (
           <Textarea
             value={text}
@@ -463,7 +545,6 @@ export function ScriptPanel({ view, progress }: PanelProps) {
   );
 }
 
-// ---------- ④ 分鏡站 ----------
 export function StoryboardPanel({ view, progress }: PanelProps) {
   const { shots } = view;
   const epId = view.episode.id;
@@ -480,16 +561,19 @@ export function StoryboardPanel({ view, progress }: PanelProps) {
       action={
         shots.length > 0 && (
           <>
-            <Button
-              size="sm"
-              variant="outline"
-              disabled={regen.busy || confirm.busy}
-              aria-busy={regen.busy}
-              title="重新規劃分鏡（會重簽空間契約）。已生成嘅鏡頭圖／視頻會被清走，要重新生成。"
-              onClick={() => setRegenConfirmOpen(true)}
-            >
-              {regen.busy ? <Loader2 className="animate-spin" /> : "🔄 重新生成分鏡"}
-            </Button>
+            {}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="ghost" size="icon" disabled={regen.busy || confirm.busy} aria-label="更多分鏡操作">
+                  {regen.busy ? <Loader2 className="animate-spin" /> : <MoreHorizontal />}
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem variant="destructive" onSelect={() => setRegenConfirmOpen(true)}>
+                  <RefreshCw /> 重新生成分鏡（會清走現有鏡頭）
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
             <ConfirmDialog
               open={regenConfirmOpen}
               onOpenChange={setRegenConfirmOpen}
@@ -522,10 +606,10 @@ export function StoryboardPanel({ view, progress }: PanelProps) {
       }
     >
       {shots.length === 0 ? (
-        <EmptyState>仲未有分鏡。用右下角「下一步」生成分鏡。</EmptyState>
+        <EmptyState view={view} stage="storyboard">仲未有分鏡。導演組會分四階段規劃鏡頭：規劃 → 攝影 → 表演 → 細節。</EmptyState>
       ) : (
         <>
-          {/* 成本預覽（M3 預算護欄）：確認前俾用戶睇清楚下游會使幾多錢 */}
+          {}
           {view.cost?.downstream && view.cost.downstream.totalUsd > 0 && (
             <div className="mb-3 rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-sm">
               ⚠️ 確認後下游生成預估成本：<b>~US${view.cost.downstream.totalUsd.toFixed(2)}</b>
@@ -544,6 +628,7 @@ export function StoryboardPanel({ view, progress }: PanelProps) {
                   <TableHead className="w-[120px]">運鏡</TableHead>
                   <TableHead className="min-w-[200px]">原文片段</TableHead>
                   <TableHead className="min-w-[260px]">圖像 Prompt</TableHead>
+                  <TableHead className="w-11" />
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -555,6 +640,9 @@ export function StoryboardPanel({ view, progress }: PanelProps) {
                     <TableCell className="text-muted-foreground">{sh.storyboardJson.plan?.source_text ?? "—"}</TableCell>
                     <TableCell>
                       <ShotPromptCell shot={sh} episodeId={epId} />
+                    </TableCell>
+                    <TableCell>
+                      <DeleteShotButton shot={sh} episodeId={epId} />
                     </TableCell>
                   </TableRow>
                 ))}
@@ -568,159 +656,77 @@ export function StoryboardPanel({ view, progress }: PanelProps) {
   );
 }
 
-function ShotPromptCell({ shot, episodeId }: { shot: ShotView; episodeId: string }) {
-  const [val, setVal] = useState(shot.imagePrompt);
-  const [videoVal, setVideoVal] = useState(shot.videoPrompt);
+// Delete a single shot (火豹 #19「鏡頭唔支援刪除」). The server closes the index
+// gap so the remaining shots stay 1..N — no manual renumbering.
+function DeleteShotButton({ shot, episodeId }: { shot: ShotView; episodeId: string }) {
   const { busy, run } = useAction(qk.episode(episodeId));
+  const [open, setOpen] = useState(false);
+  const hasMedia = Boolean(shot.imageMediaId || shot.videoMediaId);
+  return (
+    <>
+      <Button
+        variant="ghost"
+        size="icon"
+        disabled={busy}
+        aria-busy={busy}
+        aria-label={`刪除鏡 ${shot.shotIndex}`}
+        title="刪除呢個鏡頭"
+        onClick={() => setOpen(true)}
+      >
+        {busy ? <Loader2 className="animate-spin" /> : <Trash2 />}
+      </Button>
+      <ConfirmDialog
+        open={open}
+        onOpenChange={setOpen}
+        title={`刪除鏡 ${shot.shotIndex}？`}
+        description={
+          hasMedia
+            ? "呢個鏡頭已生成嘅圖像／視頻會一併刪走，之後嘅鏡頭會自動重新編號。已花費嘅成本唔會退返。"
+            : "之後嘅鏡頭會自動重新編號。"
+        }
+        destructive
+        confirmLabel="確定刪除"
+        onConfirm={() => run(() => api.del(`/api/shots/${shot.id}`))}
+      />
+    </>
+  );
+}
+
+function ShotPromptCell({ shot, episodeId }: { shot: ShotView; episodeId: string }) {
+  const { busy, run } = useAction(qk.episode(episodeId));
+  // Each field gets its own autosave state (independent dirty ref), so saving the
+  // image prompt can't wipe the video prompt's in-progress edit. refetch:false —
+  // useAutosaveField advances its baseline on save so the field never reverts.
+  const image = useAutosaveField(shot.imagePrompt, (v) =>
+    run(() => api.patch(`/api/shots/${shot.id}`, { imagePrompt: v }), { refetch: false }),
+  );
+  const video = useAutosaveField(shot.videoPrompt, (v) =>
+    run(() => api.patch(`/api/shots/${shot.id}`, { videoPrompt: v }), { refetch: false }),
+  );
   return (
     <div className="flex flex-col gap-1">
       <Textarea
-        value={val}
+        value={image.text}
         disabled={busy}
-        onChange={(e) => setVal(e.target.value)}
-        onBlur={() => {
-          if (val !== shot.imagePrompt) run(() => api.patch(`/api/shots/${shot.id}`, { imagePrompt: val }), { refetch: false });
-        }}
+        onChange={(e) => image.onChange(e.target.value)}
+        onBlur={image.onBlur}
         placeholder="圖像 prompt…"
         className="min-h-16"
       />
       <Textarea
-        value={videoVal}
+        value={video.text}
         disabled={busy}
-        onChange={(e) => setVideoVal(e.target.value)}
-        onBlur={() => {
-          if (videoVal !== shot.videoPrompt) run(() => api.patch(`/api/shots/${shot.id}`, { videoPrompt: videoVal }), { refetch: false });
-        }}
+        onChange={(e) => video.onChange(e.target.value)}
+        onBlur={video.onBlur}
         placeholder="視頻 prompt（動作/運鏡；留空則用分鏡自動生成嗰版）…"
         title="重生視頻前可以喺度改動作與運鏡描述"
         className="min-h-16"
       />
+      <SavedHint saved={image.saved || video.saved} />
     </div>
   );
 }
 
-// ---------- ⑤ 圖像站 / ⑥ 視頻站 ----------
-function ShotMediaGrid({
-  shots,
-  media,
-  episodeId,
-  live,
-  unitUsd,
-}: {
-  shots: ShotView[];
-  media: "image" | "video";
-  episodeId: string;
-  live?: LiveTaskMap;
-  unitUsd?: number | null;
-}) {
-  return (
-    <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
-      {shots.map((sh) => (
-        <ShotMediaCell key={sh.id} shot={sh} media={media} episodeId={episodeId} live={live} unitUsd={unitUsd} />
-      ))}
-    </div>
-  );
-}
-
-function ShotMediaCell({
-  shot,
-  media,
-  episodeId,
-  live,
-  unitUsd,
-}: {
-  shot: ShotView;
-  media: "image" | "video";
-  episodeId: string;
-  live?: LiveTaskMap;
-  unitUsd?: number | null;
-}) {
-  const { busy, err, run } = useAction(qk.episode(episodeId));
-  const [regenConfirmOpen, setRegenConfirmOpen] = useState(false);
-  const url = media === "image" ? shot.imageUrl : shot.videoUrl;
-  const endpoint = media === "image" ? "generate-image" : "generate-video";
-  const mediaLabel = media === "image" ? "圖像" : "視頻";
-
-  // In-flight = server said so at view load (survives reloads) OR the live SSE
-  // stream says so now. Locks the button — the server-side dedupeActive guard is
-  // the backstop, this is the UX. Live progress (if any) wins over the snapshot's.
-  const taskType = media === "image" ? "IMAGE_SHOT" : "VIDEO_SHOT";
-  const liveState = live?.[`${taskType}:${shot.id}`];
-  const serverTask = media === "image" ? shot.activeImageTask : shot.activeVideoTask;
-  const inFlight = Boolean(liveState) || Boolean(serverTask);
-  const pct = liveState?.progress ?? serverTask?.progress;
-
-  const priceSuffix = typeof unitUsd === "number" ? ` ~$${unitUsd.toFixed(2)}` : "";
-  const generate = () => run(() => api.post(`/api/shots/${shot.id}/${endpoint}`));
-
-  return (
-    <div className="overflow-hidden rounded-lg border">
-      <div className="relative aspect-video bg-muted">
-        {url ? (
-          media === "image" ? (
-            <img className="size-full object-cover" src={url} alt={`鏡 ${shot.shotIndex}`} />
-          ) : (
-            <video className="size-full object-cover" src={url} controls preload="metadata" />
-          )
-        ) : (
-          <div className="flex size-full items-center justify-center">
-            <span className="text-xs text-muted-foreground">
-              {inFlight ? (
-                <span className="inline-flex items-center gap-1">
-                  <Loader2 className="size-3 animate-spin" /> 生成中{pct ? ` ${pct}%` : "…"}
-                </span>
-              ) : (
-                "未生成"
-              )}
-            </span>
-          </div>
-        )}
-      </div>
-      <div className="flex items-center justify-between gap-2 p-2">
-        <span className="text-xs text-muted-foreground">鏡 {shot.shotIndex}</span>
-        <Button
-          size="sm"
-          variant="outline"
-          disabled={busy || inFlight}
-          aria-busy={busy || inFlight}
-          title={url ? `重生會產生新一次生成費用${priceSuffix}，舊有媒體會被取代` : `生成${mediaLabel}${priceSuffix}`}
-          onClick={() => {
-            if (url) {
-              setRegenConfirmOpen(true);
-              return;
-            }
-            generate();
-          }}
-        >
-          {busy || inFlight ? (
-            <>
-              <Loader2 className="animate-spin" /> {inFlight ? `生成中${pct ? ` ${pct}%` : ""}` : ""}
-            </>
-          ) : url ? (
-            `重生${priceSuffix}`
-          ) : (
-            `生成${priceSuffix}`
-          )}
-        </Button>
-      </div>
-      {err && <p className="px-2 pb-2 text-xs text-destructive">{err}</p>}
-      <ConfirmDialog
-        open={regenConfirmOpen}
-        onOpenChange={setRegenConfirmOpen}
-        title={`重生${mediaLabel}？`}
-        description={`重生會產生新一次生成費用${priceSuffix ? `（${priceSuffix.trim()}）` : ""}，舊有媒體會被取代，已花費嘅成本唔會退返。`}
-        destructive
-        confirmLabel="確定重生"
-        onConfirm={generate}
-      />
-    </div>
-  );
-}
-
-// Station header chip: which model this station will actually generate with
-// right now (resolved system/user/project default) + its per-unit price.
-// fake::* gets a distinct warning tint — the original fix for the "project
-// silently used fake::video and shipped an empty clip" incident.
 function ModelChip({
   icon,
   unit,
@@ -748,15 +754,9 @@ export function ImagesPanel({ view, progress, live }: PanelProps) {
       action={<ModelChip icon="🖼️" unit="張" model={view.cost?.activeModels?.image} />}
     >
       {view.shots.length === 0 ? (
-        <EmptyState>先完成分鏡站。</EmptyState>
+        <EmptyState view={view} stage="images">先完成分鏡站，確認分鏡表之後先可以逐鏡出圖。</EmptyState>
       ) : (
-        <ShotMediaGrid
-          shots={view.shots}
-          media="image"
-          episodeId={view.episode.id}
-          live={live}
-          unitUsd={view.cost?.activeModels?.image.unitUsd}
-        />
+        <ShotWorkbench view={view} media="image" live={live} unitUsd={view.cost?.activeModels?.image.unitUsd} />
       )}
     </Station>
   );
@@ -770,61 +770,30 @@ export function VideosPanel({ view, progress, live }: PanelProps) {
       action={<ModelChip icon="🎬" unit="鏡" model={view.cost?.activeModels?.video} />}
     >
       {view.shots.length === 0 ? (
-        <EmptyState>先完成分鏡站。</EmptyState>
+        <EmptyState view={view} stage="videos">先完成分鏡站；每個鏡頭要有圖先可以生成視頻。</EmptyState>
       ) : (
-        <ShotMediaGrid
-          shots={view.shots}
-          media="video"
-          episodeId={view.episode.id}
-          live={live}
-          unitUsd={view.cost?.activeModels?.video.unitUsd}
-        />
+        <ShotWorkbench view={view} media="video" live={live} unitUsd={view.cost?.activeModels?.video.unitUsd} />
       )}
     </Station>
   );
 }
 
-// ---------- ⑦ 配音站 ----------
-export function VoicePanel({ view, progress }: PanelProps) {
-  const { voiceLines } = view;
+export function VoicePanel({ view, progress, live }: PanelProps) {
+  const { voiceLines, characters } = view;
   return (
     <Station stage="voice" progress={progress} episodeId={view.episode.id} promptIds={["voice_analyze"]}>
       {voiceLines.length === 0 ? (
-        <EmptyState>仲未有台詞。用右下角「下一步」分析台詞並配音。</EmptyState>
+        <EmptyState view={view} stage="voice">仲未有台詞。系統會由劇本分出對白同旁白，再逐句配音。</EmptyState>
       ) : (
         <div className="flex flex-col gap-3">
           {voiceLines.map((v) => (
-            <div key={v.id} className="flex items-start gap-3 rounded-lg border p-3">
-              <Badge variant="outline" className="shrink-0">
-                {v.speaker || "旁白"}
-              </Badge>
-              {v.lineType === "vo" && (
-                <Badge variant="secondary" className="shrink-0 text-violet-400" title="Voice Over：旁白/內心獨白，場內人聽不到">
-                  VO
-                </Badge>
-              )}
-              {v.lineType === "os" && (
-                <Badge variant="secondary" className="shrink-0 text-sky-400" title="Off-Screen：人在場景內但不在畫面">
-                  OS
-                </Badge>
-              )}
-              <div className="min-w-0 flex-1">
-                <div className="text-sm">
-                  {v.cue ? <span className="text-muted-foreground">（{v.cue}）</span> : null}
-                  {v.content}
-                </div>
-                {v.emotion && (
-                  <div className="text-xs text-muted-foreground">
-                    情緒：{v.emotion}（{v.emotionStrength.toFixed(2)}）
-                  </div>
-                )}
-              </div>
-              {v.audioUrl ? (
-                <audio src={v.audioUrl} controls preload="none" className="h-8 shrink-0" />
-              ) : (
-                <span className="shrink-0 text-xs text-muted-foreground">待配音</span>
-              )}
-            </div>
+            <VoiceLineRow
+              key={v.id}
+              line={v}
+              episodeId={view.episode.id}
+              characterNames={characters.map((c) => c.name)}
+              liveState={live?.[`TTS_LINE:${v.id}`] ?? v.activeTask ?? null}
+            />
           ))}
         </div>
       )}
@@ -832,7 +801,106 @@ export function VoicePanel({ view, progress }: PanelProps) {
   );
 }
 
-// ---------- ⑧ 成片站 ----------
+// One editable dialogue line. Speaker is a dropdown of the project's characters
+// (plus 旁白) so a mis-attributed line can be re-pointed at the right voice —
+// the server re-binds characterId by name. Content autosaves on blur; 重配
+// re-synthesizes just this line.
+function VoiceLineRow({
+  line,
+  episodeId,
+  characterNames,
+  liveState,
+}: {
+  line: VoiceLineView;
+  episodeId: string;
+  characterNames: string[];
+  liveState: { progress?: number } | null;
+}) {
+  const edit = useAction(qk.episode(episodeId));
+  const regen = useAction(qk.episode(episodeId));
+  const { flash } = useSavedFlash();
+  const content = useAutosaveField(line.content, (v) =>
+    edit.run(() => api.patch(`/api/voice-lines/${line.id}`, { content: v }), { refetch: false }),
+  );
+
+  const inFlight = liveState !== null;
+  const pct = liveState?.progress;
+  // 旁白 is always available; include the current speaker even if it is not a
+  // known character so switching away and back does not lose it.
+  const speakerOptions = [...new Set(["旁白", ...characterNames, line.speaker].filter(Boolean))];
+
+  async function changeSpeaker(speaker: string) {
+    if (speaker === line.speaker) return;
+    if (await edit.run(() => api.patch(`/api/voice-lines/${line.id}`, { speaker }))) flash();
+  }
+
+  return (
+    <div className="flex flex-col gap-2 rounded-lg border p-3">
+      <div className="flex flex-wrap items-center gap-2">
+        <Select value={line.speaker || "旁白"} onValueChange={changeSpeaker} disabled={edit.busy}>
+          <SelectTrigger size="sm" className="w-32">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {speakerOptions.map((name) => (
+              <SelectItem key={name} value={name}>
+                {name}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        {line.lineType === "vo" && (
+          <Badge variant="secondary" className="text-violet-400" title="Voice Over：旁白/內心獨白，場內人聽不到">
+            VO
+          </Badge>
+        )}
+        {line.lineType === "os" && (
+          <Badge variant="secondary" className="text-sky-400" title="Off-Screen：人在場景內但不在畫面">
+            OS
+          </Badge>
+        )}
+        {line.emotion && (
+          <span className="text-xs text-muted-foreground">
+            情緒：{line.emotion}（{line.emotionStrength.toFixed(2)}）
+          </span>
+        )}
+        <div className="ml-auto flex items-center gap-2">
+          <SavedHint saved={content.saved} />
+          {line.audioUrl && !inFlight ? (
+            <audio src={line.audioUrl} controls preload="none" className="h-8" />
+          ) : inFlight ? (
+            <span className="inline-flex items-center gap-1 text-xs text-primary">
+              <Loader2 className="size-3 animate-spin" /> 配音中{typeof pct === "number" ? ` ${pct}%` : "…"}
+            </span>
+          ) : (
+            <span className="text-xs text-muted-foreground">待配音</span>
+          )}
+          <Button
+            variant="ghost"
+            size="sm"
+            disabled={regen.busy || inFlight}
+            aria-busy={regen.busy || inFlight}
+            title={line.audioUrl ? "改完內容後重新配音（會取代舊音檔）" : "生成呢句配音"}
+            onClick={() => regen.run(() => api.post(`/api/voice-lines/${line.id}/regenerate`))}
+          >
+            <RefreshCw /> {line.audioUrl ? "重配" : "配音"}
+          </Button>
+        </div>
+      </div>
+      {line.cue ? <p className="text-xs text-muted-foreground">（{line.cue}）</p> : null}
+      <Textarea
+        value={content.text}
+        disabled={edit.busy}
+        onChange={(e) => content.onChange(e.target.value)}
+        onBlur={content.onBlur}
+        rows={2}
+        className="text-sm"
+      />
+      {(edit.err || regen.err) && <p className="text-sm text-destructive">{edit.err ?? regen.err}</p>}
+    </div>
+  );
+}
+
 export function ExportPanel({ view, progress }: PanelProps) {
   const url = view.episode.exportUrl;
   return (
@@ -847,7 +915,7 @@ export function ExportPanel({ view, progress }: PanelProps) {
           </Button>
         </div>
       ) : (
-        <EmptyState>仲未合成。完成前面各站後，用右下角「下一步」合成整集並導出。</EmptyState>
+        <EmptyState view={view} stage="export">仲未合成。完成前面各站之後，會把鏡頭、配音同字幕拼成一條 MP4。</EmptyState>
       )}
     </Station>
   );

@@ -16,9 +16,23 @@
 - 契約列出的關鍵道具（keyProps）要出現，**狀態必須照契約**：開／合、持有方式、擺放位置逐鏡一致（契約話雨遮收攏，就唔准畫撐開），除非本鏡 subject 明示狀態改變。
 - 站位／坐位（placement）不得同契約矛盾：契約話坐低，唔准企；話喺窗邊，唔准調去門口。
 
+分鏡欄位對照（shot_json 結構，逐個欄位都要用到，唔准淨係讀 plan.subject）：
+- plan.subject / plan.beat：畫面主體與敘事重點——prompt 的骨幹，用 @图N 指代角色。
+- plan.dialogue：只作表演語境參考，**嚴禁**寫入畫面（詳下）。
+- detail.shotSize（景別）→ 英文景別詞：遠景=extreme wide / establishing shot、全景=wide / full shot、中景=medium shot、近景=close-up、特寫=tight close-up、大特寫=extreme close-up。**必須出現**。
+- detail.angle（視角）→ 英文機位詞：平視=eye-level、俯視=high angle、仰視=low angle、過肩=over-the-shoulder、主觀=POV shot。**必須出現**。
+- detail.camera（運鏡）：屬動態運鏡，出單幀圖時**忽略**（留畀 i2v）。
+- acting.expression → 具體英文面部表情詞（唔准淨係 happy／sad，要落地成 furrowed brow、clenched jaw 等可見表現）。
+- acting.bodyAction → 身體與手部動作的英文描述。
+- acting.eyeline → 視線方向，須與 scene_blocking 的面向一致。
+- photography.dof → 景深詞：shallow=「shallow depth of field, subject in sharp focus, background softly blurred / bokeh」；deep=「deep focus, everything sharp」；medium=「moderate depth of field」。**必須出現**。
+- photography.focusFace：dof=shallow 時，把呢個角色對應嘅 @图N 明確標為 in sharp focus，畫面內其餘人臉一律 out-of-focus / softly blurred（單一清晰主體人臉，利後續口型對位與換臉）。
+- photography.lighting → 翻成明確英文布光片語（方向＋硬柔＋冷暖），例如 cool blue backlight from the window with warm tungsten fill。**必須出現**。
+- photography.tone → 翻成英文色調／飽和度片語（例如 desaturated warm-cool contrast）。**必須出現**。
+
 生圖 prompt 撰寫規則：
-- 內容元素行先、風格詞行後：先寫畫面主體（用 @图N 指代）、動作、表情、景別、視角、構圖，最後才接風格後綴。
-- 光影／色調交由場景參考圖決定，角色參考圖只提供身份，不要為角色另寫燈光。
+- 內容元素行先、風格詞行後：先寫畫面主體（用 @图N 指代）、動作、表情、**景別（shotSize）、視角（angle）、景深（dof）、布光（lighting）、色調（tone）**、構圖，最後才接風格後綴。
+- 燈光：**每一條 prompt 都必須帶一個由 photography.lighting／tone 譯出的明確英文布光片語**（方向＋硬柔＋冷暖），令每格光影服務當下情緒、唔好每格都平光一個樣——嚴禁略去布光交由參考圖決定。角色參考圖只提供身份（臉／髮／服飾），唔好為角色的「外貌」另設燈光，但鏡頭的整體布光一定要照 photography 寫出嚟。
 - prompt 全部英文、逗號分隔短語式；把中文分鏡資訊翻成準確的英文攝影／表演詞彙。
 - 對白（dialogue）只係表演語境，**嚴禁**把對白文字、字幕或任何文字寫入畫面。
 - 把 style_suffix 原樣接在最尾。

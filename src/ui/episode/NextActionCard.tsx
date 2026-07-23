@@ -7,21 +7,47 @@ import { qk } from "@/ui/query-keys";
 import type { NextAction } from "@/ui/types";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { scrollToStation } from "./stations";
+import { ConfirmDialog } from "@/components/confirm-dialog";
+import { useStationNav } from "./station-nav";
+import { formatUsd, needsCostConfirm } from "./cost-confirm";
 
-export function NextActionCard({ nextAction, episodeId }: { nextAction: NextAction; episodeId: string }) {
+export function NextActionCard({
+  nextAction,
+  episodeId,
+  pendingUnits,
+}: {
+  nextAction: NextAction;
+  episodeId: string;
+  pendingUnits?: number;
+}) {
+  const goToStation = useStationNav();
   const { busy, err, run } = useAction(qk.episode(episodeId));
   const [queued, setQueued] = useState(false);
+  const [confirmOpen, setConfirmOpen] = useState(false);
   const running = busy || nextAction.busy;
+
+  const estCostUsd = nextAction.estCostUsd;
+  const confirmFirst = needsCostConfirm({ usd: estCostUsd, units: pendingUnits });
+
+  function fire() {
+    if (!nextAction.endpoint) return;
+    const endpoint = nextAction.endpoint;
+    setQueued(false);
+    // Only claim it queued if it actually did — otherwise the success line
+    // rendered right under the error message.
+    void run(() => api.post(endpoint)).then((okd) => setQueued(okd));
+  }
 
   function handleClick() {
     if (!nextAction.endpoint) {
-      scrollToStation(nextAction.stage);
+      goToStation(nextAction.stage);
       return;
     }
-    const endpoint = nextAction.endpoint;
-    setQueued(false);
-    void run(() => api.post(endpoint)).then(() => setQueued(true));
+    if (confirmFirst) {
+      setConfirmOpen(true);
+      return;
+    }
+    fire();
   }
 
   return (
@@ -33,8 +59,8 @@ export function NextActionCard({ nextAction, episodeId }: { nextAction: NextActi
         <p className="text-sm font-medium">{nextAction.label}</p>
         {nextAction.endpoint ? (
           <>
-            {typeof nextAction.estCostUsd === "number" && (
-              <p className="text-xs text-muted-foreground">預估成本 ~US${nextAction.estCostUsd.toFixed(2)}</p>
+            {typeof estCostUsd === "number" && (
+              <p className="text-xs text-muted-foreground">預估成本 {formatUsd(estCostUsd)}</p>
             )}
             <Button className="w-full" onClick={handleClick} disabled={running}>
               {running ? (
@@ -45,6 +71,26 @@ export function NextActionCard({ nextAction, episodeId }: { nextAction: NextActi
                 "一鍵執行"
               )}
             </Button>
+            <ConfirmDialog
+              open={confirmOpen}
+              onOpenChange={setConfirmOpen}
+              title="開始生成？"
+              description={
+                <>
+                  {nextAction.label}
+                  {typeof estCostUsd === "number" ? (
+                    <>
+                      ，預估花費 <b>{formatUsd(estCostUsd)}</b>
+                    </>
+                  ) : pendingUnits ? (
+                    <>，共 {pendingUnits} 項</>
+                  ) : null}
+                  。生成後已花費嘅成本唔會退返。
+                </>
+              }
+              confirmLabel="確定生成"
+              onConfirm={fire}
+            />
             {queued && !running && !err && (
               <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
                 <CheckCircle2 className="size-3.5 text-green-600 dark:text-green-400" /> 已排入生成隊列，可留意上方進度條。
@@ -54,7 +100,7 @@ export function NextActionCard({ nextAction, episodeId }: { nextAction: NextActi
         ) : (
           <>
             <p className="text-xs text-muted-foreground">呢步需要你喺對應嘅站入面操作。</p>
-            <Button variant="outline" className="w-full" onClick={() => scrollToStation(nextAction.stage)}>
+            <Button variant="outline" className="w-full" onClick={() => goToStation(nextAction.stage)}>
               去該站
             </Button>
           </>

@@ -15,38 +15,17 @@ import {
 } from "@/components/ui/alert-dialog"
 
 export type ConfirmDialogProps = {
-  /** 控制 dialog 開關（受控） */
   open: boolean
   onOpenChange: (open: boolean) => void
   title: React.ReactNode
   description?: React.ReactNode
-  /** 確認按鈕文字，預設「確認」 */
   confirmLabel?: string
-  /** 取消按鈕文字，預設「取消」 */
   cancelLabel?: string
-  /** 危險操作（例如會產生費用/不可逆）時用 destructive 樣式 */
   destructive?: boolean
-  /** 可以係 async — dialog 會喺 resolve 之後自動關閉並顯示 loading 狀態 */
-  onConfirm: () => void | Promise<void>
+  /** 回傳值會被忽略；用 unknown 係為咗方便直接傳一個有回傳值嘅 action。 */
+  onConfirm: () => unknown | Promise<unknown>
 }
 
-/**
- * 通用確認對話框，基於 shadcn AlertDialog。
- *
- * 用法：
- * ```tsx
- * const [open, setOpen] = useState(false)
- * <ConfirmDialog
- *   open={open}
- *   onOpenChange={setOpen}
- *   title="重新生成分鏡？"
- *   description="已生成嘅圖像/視頻會被捨棄，已花費嘅成本唔會退返。"
- *   destructive
- *   confirmLabel="重新生成"
- *   onConfirm={async () => { await regenerate() }}
- * />
- * ```
- */
 export function ConfirmDialog({
   open,
   onOpenChange,

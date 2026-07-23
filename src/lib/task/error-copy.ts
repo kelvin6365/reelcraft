@@ -1,6 +1,3 @@
-// 錯誤代碼 → 用戶可讀繁中文案。配合 classifyError() 嘅 retryable 判斷，
-// 呢度另外標明邊啲錯誤係「終局」(terminal) —— 重試冇用，要指引用戶去做啲嘢先（例如去設定加金鑰）。
-// 冇喺映射入面嘅 code 會 fallback 用返原始 message，保持除錯可見性。
 
 export interface ErrorAction {
   href: string;
@@ -22,6 +19,11 @@ const ERROR_COPY: Record<string, ErrorCopyEntry> = {
   PROVIDER_UNKNOWN: {
     message: "唔支援嘅 AI 供應商，請聯絡管理員",
     terminal: true,
+  },
+  MODEL_NO_REFERENCE_SUPPORT: {
+    message: "揀咗嘅圖像模型唔支援參考圖，角色一致性會失效 — 請換一個支援參考圖嘅模型",
+    terminal: true,
+    action: { href: "/settings", label: "去改模型" },
   },
   PROVIDER_NOT_ALLOWED: {
     message: "呢個供應商喺目前環境唔可用",
@@ -80,7 +82,6 @@ const ERROR_COPY: Record<string, ErrorCopyEntry> = {
   },
 };
 
-// 訊息前綴比對，用嚟兜 HTTP_xxx / TEMPLATE_HTTP_xxx / FAL_TIMEOUT 等有動態後綴嘅 code。
 const PATTERN_COPY: { test: RegExp; entry: ErrorCopyEntry }[] = [
   {
     test: /^(HTTP_429|.*_RATE_LIMIT)/,
@@ -104,12 +105,9 @@ export interface HumanizedError {
   message: string;
   terminal: boolean;
   action?: ErrorAction;
-  /** true 代表用返 fallback（原始 message），冇對應嘅可讀文案 */
   isFallback: boolean;
 }
 
-// 將 errorCode 轉做用戶可讀文案。搵唔到對應映射時 fallback 用原始 message，
-// 並將 terminal 判做 false（等用戶可以照樣試重試）。
 export function humanizeTaskError(errorCode: string | null | undefined, rawMessage: string | null | undefined): HumanizedError {
   const fallbackMessage = rawMessage || "未知錯誤";
 

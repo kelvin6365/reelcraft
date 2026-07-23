@@ -1,6 +1,3 @@
-// Next Best Action — the server-computed "one thing to do now" that powers the
-// always-visible card and stage unlocking (docs/tech/05-api-routes.md).
-// Pure function over an episode snapshot; fully unit-tested.
 
 export type StageKey = "input" | "assets" | "script" | "storyboard" | "images" | "videos" | "voice" | "export";
 
@@ -12,39 +9,79 @@ export interface EpisodeSnapshot {
   scenes: number;
   shots: { total: number; withImage: number; withVideo: number };
   storyboardConfirmed: boolean;
-  isSrtMode: boolean; // project.inputType === 'srt' — deterministic subtitle pipeline
+  isSrtMode: boolean;
   voiceLines: { total: number; withAudio: number };
   hasExport: boolean;
-  runningTaskTypes: string[]; // active tasks for this episode
+  runningTaskTypes: string[];
   failedTasks: number;
 }
 
 export interface NextAction {
   stage: StageKey;
-  label: string; // 繁中, shown on the card
-  endpoint: string | null; // POST target; null = user action in UI (e.g. review/lock)
-  blockedBy: string[]; // human-readable missing prerequisites
-  busy: boolean; // a related task is already running
+  label: string;
+  endpoint: string | null;
+  blockedBy: string[];
+  busy: boolean;
 }
+
+export type StageStatus =
+  | "done"
+  | "review"
+  | "blocked"
+  | "todo";
 
 export interface StageState {
   key: StageKey;
   done: boolean;
   count?: { done: number; total: number };
+  status: StageStatus;
+  blockedBy: string[];
 }
 
 export function computeStages(s: EpisodeSnapshot): StageState[] {
   const assetsTotal = s.characters.total + s.locations.total;
   const assetsLocked = s.characters.locked + s.locations.locked;
+  const assetsReady = assetsTotal > 0 && assetsLocked === assetsTotal;
+  const scriptReady = s.isSrtMode ? s.hasRawText : s.hasScript;
+
+  const stage = (
+    key: StageKey,
+    done: boolean,
+    opts: { count?: { done: number; total: number }; blockedBy?: string[]; review?: boolean } = {},
+  ): StageState => {
+    const blockedBy = done ? [] : (opts.blockedBy ?? []);
+    const status: StageStatus = done ? "done" : blockedBy.length > 0 ? "blocked" : opts.review ? "review" : "todo";
+    return { key, done, count: opts.count, status, blockedBy };
+  };
+
   return [
-    { key: "input", done: s.hasRawText },
-    { key: "assets", done: assetsTotal > 0 && assetsLocked === assetsTotal, count: { done: assetsLocked, total: assetsTotal } },
-    { key: "script", done: s.hasScript },
-    { key: "storyboard", done: s.shots.total > 0 && s.storyboardConfirmed, count: { done: s.shots.total > 0 ? 1 : 0, total: 1 } },
-    { key: "images", done: s.shots.total > 0 && s.shots.withImage === s.shots.total, count: { done: s.shots.withImage, total: s.shots.total } },
-    { key: "videos", done: s.shots.total > 0 && s.shots.withVideo === s.shots.total, count: { done: s.shots.withVideo, total: s.shots.total } },
-    { key: "voice", done: s.voiceLines.total > 0 && s.voiceLines.withAudio === s.voiceLines.total, count: { done: s.voiceLines.withAudio, total: s.voiceLines.total } },
-    { key: "export", done: s.hasExport },
+    stage("input", s.hasRawText, { blockedBy: s.hasRawText ? [] : ["貼上小說原文"] }),
+    stage("script", scriptReady, { blockedBy: s.hasRawText ? [] : ["第 1 站：貼上小說原文"] }),
+    stage("assets", assetsReady, {
+      count: { done: assetsLocked, total: assetsTotal },
+      blockedBy: scriptReady ? [] : ["第 3 站：先生成劇本"],
+      review: assetsTotal > 0 && assetsLocked < assetsTotal,
+    }),
+    stage("storyboard", s.shots.total > 0 && s.storyboardConfirmed, {
+      count: { done: s.shots.total > 0 ? 1 : 0, total: 1 },
+      blockedBy: assetsReady ? [] : ["第 2 站：鎖定所有角色與場景"],
+      review: s.shots.total > 0 && !s.storyboardConfirmed,
+    }),
+    stage("images", s.shots.total > 0 && s.shots.withImage === s.shots.total, {
+      count: { done: s.shots.withImage, total: s.shots.total },
+      blockedBy: s.storyboardConfirmed && s.shots.total > 0 ? [] : ["第 4 站：確認分鏡表"],
+    }),
+    stage("videos", s.shots.total > 0 && s.shots.withVideo === s.shots.total, {
+      count: { done: s.shots.withVideo, total: s.shots.total },
+      blockedBy: s.shots.withImage > 0 ? [] : ["第 5 站：至少生成一張分鏡圖"],
+    }),
+    stage("voice", s.voiceLines.total > 0 && s.voiceLines.withAudio === s.voiceLines.total, {
+      count: { done: s.voiceLines.withAudio, total: s.voiceLines.total },
+      blockedBy: s.shots.total > 0 ? [] : ["第 4 站：先生成分鏡"],
+    }),
+    stage("export", s.hasExport, {
+      blockedBy: s.shots.withVideo > 0 ? [] : ["第 6 站：至少生成一段鏡頭視頻"],
+    }),
   ];
 }
 
@@ -56,8 +93,6 @@ export function computeNextAction(s: EpisodeSnapshot, episodeId: string): NextAc
   if (!s.hasRawText) {
     return { stage: "input", label: "貼上小說原文", endpoint: null, blockedBy: [], busy: false };
   }
-  // SRT mode has no script/storyboard-generation stages: subtitle cues build the
-  // structure deterministically (see the storyboard branch below). Skip the script gate.
   if (!s.isSrtMode && !s.hasScript) {
     return { stage: "script", label: "生成劇本", endpoint: ep("rewrite-script"), blockedBy: [], busy: running(s, "REWRITE_SCRIPT") };
   }
@@ -110,8 +145,6 @@ export function computeNextAction(s: EpisodeSnapshot, episodeId: string): NextAc
     return { stage: "voice", label: "分析台詞並配音", endpoint: ep("voice"), blockedBy: [], busy: running(s, "VOICE_ANALYZE") };
   }
   if (s.voiceLines.withAudio < s.voiceLines.total) {
-    // SRT mode creates the voice lines up front (SRT_BUILD), so there is no
-    // VOICE_ANALYZE step that fans out TTS — the user triggers it via tts-all.
     if (s.isSrtMode) {
       return {
         stage: "voice",
