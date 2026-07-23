@@ -124,7 +124,8 @@ function formatBlocking(raw: unknown): string {
 
 export const imageShotHandler: TaskHandler = async ({ task, reportProgress }) => {
   const shot = await prisma.shot.findFirst({ where: { id: task.targetId, userId: task.userId } });
-  if (!shot) throw new TaskError("NOT_FOUND", `shot ${task.targetId} not found`, false);
+  // Deleted before we could start (cancel raced the delete) — moot, not a failure.
+  if (!shot) return { skipped: "shot-deleted" };
   const scene = await prisma.scene.findUnique({
     where: { id: shot.sceneId },
     select: { blocking: true, summary: true, content: true },
@@ -184,16 +185,20 @@ export const imageShotHandler: TaskHandler = async ({ task, reportProgress }) =>
     },
   );
 
-  await prisma.shot.update({
+  // updateMany, not update: the shot can be deleted (蒙太奇刪鏡 / storyboard regen)
+  // during the generation window. A vanished shot is not a failure — the user
+  // removed it — so complete quietly rather than crashing on "record not found".
+  const saved = await prisma.shot.updateMany({
     where: { id: shot.id },
     data: { imagePrompt: out.prompt, imageMediaId: media.id, status: "ready" },
   });
+  if (saved.count === 0) return { skipped: "shot-deleted" };
   return { mediaId: media.id };
 };
 
 export const videoShotHandler: TaskHandler = async ({ task, reportProgress }) => {
   const shot = await prisma.shot.findFirst({ where: { id: task.targetId, userId: task.userId } });
-  if (!shot) throw new TaskError("NOT_FOUND", `shot ${task.targetId} not found`, false);
+  if (!shot) return { skipped: "shot-deleted" };
   if (!shot.imageMediaId) throw new TaskError("NO_IMAGE", "generate the shot image first", false);
   const { episode, project } = await loadEpisodeWithProject({ ...task, episodeId: shot.episodeId });
   const models = await resolveTaskModels(task, project);
@@ -215,7 +220,8 @@ export const videoShotHandler: TaskHandler = async ({ task, reportProgress }) =>
     },
   );
 
-  await prisma.shot.update({ where: { id: shot.id }, data: { videoMediaId: media.id } });
+  const saved = await prisma.shot.updateMany({ where: { id: shot.id }, data: { videoMediaId: media.id } });
+  if (saved.count === 0) return { skipped: "shot-deleted" }; // deleted mid-generation, not a failure
   return { mediaId: media.id };
 };
 

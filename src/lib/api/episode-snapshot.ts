@@ -11,7 +11,7 @@ const CONFIRMED_STATUSES = ["images", "videos", "export", "done"];
 export async function buildEpisodeSnapshot(
   episode: { id: string; projectId: string; rawText: string; scriptText: string; status: string; exportMediaId: string | null },
   inputType: string,
-): Promise<{ snapshot: EpisodeSnapshot; characters: Awaited<ReturnType<typeof prisma.character.findMany>>; locations: Awaited<ReturnType<typeof prisma.location.findMany>>; shots: Awaited<ReturnType<typeof prisma.shot.findMany>>; voiceLines: Awaited<ReturnType<typeof prisma.voiceLine.findMany>>; activeTasks: { id: string; type: string; targetId: string; status: string; progress: number }[]; failedTaskTypes: string[] }> {
+): Promise<{ snapshot: EpisodeSnapshot; characters: Awaited<ReturnType<typeof prisma.character.findMany>>; locations: Awaited<ReturnType<typeof prisma.location.findMany>>; shots: Awaited<ReturnType<typeof prisma.shot.findMany>>; voiceLines: Awaited<ReturnType<typeof prisma.voiceLine.findMany>>; activeTasks: { id: string; type: string; targetId: string; status: string; progress: number; queuedAt: Date; heartbeatAt: Date | null }[]; failedTaskTypes: string[] }> {
   const episodeId = episode.id;
   const [characters, locations, scenes, shots, voiceLines, activeTasks, terminalTasks] = await Promise.all([
     prisma.character.findMany({ where: { projectId: episode.projectId } }),
@@ -19,7 +19,7 @@ export async function buildEpisodeSnapshot(
     prisma.scene.count({ where: { episodeId } }),
     prisma.shot.findMany({ where: { episodeId }, orderBy: { shotIndex: "asc" } }),
     prisma.voiceLine.findMany({ where: { episodeId }, orderBy: { lineIndex: "asc" } }),
-    prisma.task.findMany({ where: { episodeId, status: { in: ACTIVE_STATUSES } }, select: { id: true, type: true, targetId: true, status: true, progress: true } }),
+    prisma.task.findMany({ where: { episodeId, status: { in: ACTIVE_STATUSES } }, select: { id: true, type: true, targetId: true, status: true, progress: true, queuedAt: true, heartbeatAt: true } }),
     prisma.task.findMany({
       where: { episodeId, status: { in: ["failed", "completed"] } },
       select: { type: true, targetId: true, status: true, queuedAt: true, finishedAt: true },
@@ -80,6 +80,15 @@ export async function buildEpisodeView(userId: string, episodeId: string) {
     if (t.targetId) activeByKey.set(`${t.type}:${t.targetId}`, { taskId: t.id, status: t.status, progress: t.progress });
   }
 
+  // "Stuck" = an active task sitting past this age without a heartbeat, i.e.
+  // queued but nobody is consuming it (worker down / dev reload dropped the
+  // consumer). Drives the workspace's 重新排隊 recovery affordance.
+  const STUCK_MS = 60_000;
+  const now = Date.now();
+  const stuckTasks = activeTasks.filter(
+    (t) => !t.heartbeatAt && now - new Date(t.queuedAt).getTime() > STUCK_MS,
+  ).length;
+
   const [charactersWithUrls, locationsWithUrls, shotsWithUrls, voiceLinesWithUrls, episodeWithUrl] = await Promise.all([
     attachMediaUrls(characters, ["lockedImageMediaId", "faceImageMediaId"]),
     attachMediaUrls(locations, ["lockedImageMediaId"]),
@@ -139,5 +148,6 @@ export async function buildEpisodeView(userId: string, episodeId: string) {
     nextAction: computeNextAction(snapshot, episodeId),
     failedTasks,
     failedByStage: countByStage(failedTaskTypes),
+    stuckTasks,
   };
 }

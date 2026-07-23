@@ -2,6 +2,7 @@ import { prisma } from "@/lib/db";
 import { withAuth } from "@/lib/api/with-auth";
 import { ApiError, ok } from "@/lib/api/errors";
 import { planReindex } from "@/lib/storyboard/reindex";
+import { cancelActiveShotTasks } from "@/lib/task/cancel-shot-tasks";
 
 export const PATCH = withAuth(
   async ({ userId, params, req }) => {
@@ -31,6 +32,10 @@ export const DELETE = withAuth(
   async ({ userId, params }) => {
     const shot = await prisma.shot.findFirst({ where: { id: params.id, userId }, select: { id: true, episodeId: true } });
     if (!shot) throw new ApiError("NOT_FOUND", 404);
+
+    // Stop any in-flight image/video generation for this shot before it vanishes,
+    // so the handler doesn't spend then crash writing to a deleted row.
+    await cancelActiveShotTasks(shot.episodeId, [shot.id]);
 
     const result = await prisma.$transaction(async (tx) => {
       await tx.shot.delete({ where: { id: shot.id } });

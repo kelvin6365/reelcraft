@@ -1,6 +1,6 @@
 "use client";
 import { use, useCallback, useEffect, useState } from "react";
-import { AlertTriangle, ChevronLeft, ChevronRight } from "lucide-react";
+import { AlertTriangle, ChevronLeft, ChevronRight, Loader2 } from "lucide-react";
 import { AppShell } from "@/components/app-shell";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -11,6 +11,9 @@ import { PipelineBar } from "@/ui/episode/PipelineBar";
 import { NextActionCard } from "@/ui/episode/NextActionCard";
 import { FailureDrawer } from "@/ui/episode/FailureDrawer";
 import { STATIONS, STATION_BY_KEY } from "@/ui/episode/stations";
+import { api } from "@/ui/api";
+import { useAction } from "@/ui/planning/useAction";
+import { qk } from "@/ui/query-keys";
 import { statusLabel, statusVariant } from "@/ui/episode/status";
 import { StationNavProvider } from "@/ui/episode/station-nav";
 import type { EpisodeView, StageKey } from "@/ui/types";
@@ -128,7 +131,6 @@ export default function EpisodeWorkspacePage({
           }
         />
 
-        {}
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1fr)_360px]">
           <div className="order-last min-w-0 space-y-6 lg:order-none">
             <Panel view={view} progress={progress} live={live} />
@@ -158,6 +160,7 @@ export default function EpisodeWorkspacePage({
               pendingUnits={stagePendingUnits(view)}
             />
             <CostCard view={view} />
+            {view.stuckTasks > 0 && <StuckTasksCard episodeId={episodeId} count={view.stuckTasks} />}
             {view.failedTasks > 0 && (
               <Card className="border-destructive/40">
                 <CardHeader>
@@ -196,6 +199,46 @@ function stagePendingUnits(view: EpisodeView): number | undefined {
   if (view.nextAction.stage === "images") return downstream.pendingImages;
   if (view.nextAction.stage === "videos") return downstream.pendingVideos;
   return undefined;
+}
+
+// Shown when tasks have sat queued past ~60s with no worker consuming them —
+// the "stuck on 生成中 forever" case. One click re-enqueues the orphaned jobs.
+function StuckTasksCard({ episodeId, count }: { episodeId: string; count: number }) {
+  const { busy, err, run } = useAction(qk.episode(episodeId));
+  const [done, setDone] = useState(false);
+  return (
+    <Card className="border-amber-500/40">
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2 text-base text-amber-600 dark:text-amber-400">
+          <AlertTriangle className="size-4" /> {count} 個任務卡住
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-2">
+        <p className="text-xs text-muted-foreground">
+          任務排咗隊但冇喺處理 —— 通常係 worker 未運行（dev 要開 <code>npm run worker</code>）。重新排隊會叫返佢哋跑。
+        </p>
+        <Button
+          variant="outline"
+          className="w-full"
+          disabled={busy}
+          aria-busy={busy}
+          onClick={() =>
+            void run(() => api.post(`/api/episodes/${episodeId}/recover-stuck`)).then((ok) => setDone(ok))
+          }
+        >
+          {busy ? (
+            <>
+              <Loader2 className="animate-spin" /> 重新排隊中…
+            </>
+          ) : (
+            "重新排隊卡住任務"
+          )}
+        </Button>
+        {done && !busy && !err && <p className="text-xs text-muted-foreground">已重新排隊，留意上方進度。</p>}
+        {err && <p className="text-sm text-destructive">{err}</p>}
+      </CardContent>
+    </Card>
+  );
 }
 
 function CostRow({ label, value, strong }: { label: string; value: string; strong?: boolean }) {

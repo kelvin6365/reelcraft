@@ -202,6 +202,9 @@ export interface EpisodeView {
   nextAction: NextAction;
   failedTasks: number;
   failedByStage: Partial<Record<StageKey, number>>;
+  // Active tasks stuck past ~60s with no heartbeat — worker down / queue consumer
+  // dropped. Non-zero → offer the 重新排隊 recovery action.
+  stuckTasks: number;
   cost?: {
     projectSpendUsd: number;
     episodeSpendUsd: number;

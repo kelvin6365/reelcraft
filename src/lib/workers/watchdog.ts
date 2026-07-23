@@ -3,19 +3,10 @@
 // 2) zombie cleanup: processing tasks with stale heartbeat → requeue or fail
 import { prisma } from "@/lib/db";
 import { env } from "@/lib/env";
-import { addTaskJob, isJobAlive } from "@/lib/task/queues";
+import { addTaskJob } from "@/lib/task/queues";
 import { publishTaskEvent } from "@/lib/task/events";
 import { getQueueForTaskType, type TaskType } from "@/lib/task/types";
-
-async function recoverOrphanedQueued(): Promise<void> {
-  const tasks = await prisma.task.findMany({ where: { status: "queued" }, take: 200 });
-  for (const t of tasks) {
-    const queue = getQueueForTaskType(t.type as TaskType);
-    if (await isJobAlive(queue, t.id)) continue;
-    console.log(`[watchdog] re-enqueue orphaned queued task ${t.id} (${t.type})`);
-    await addTaskJob(queue, t.id, 1);
-  }
-}
+import { recoverOrphanedQueued } from "@/lib/task/recover";
 
 async function cleanupZombies(): Promise<void> {
   const cutoff = new Date(Date.now() - env.TASK_HEARTBEAT_TIMEOUT_MS);
@@ -45,7 +36,8 @@ async function cleanupZombies(): Promise<void> {
 
 async function tick(): Promise<void> {
   try {
-    await recoverOrphanedQueued();
+    const { recovered } = await recoverOrphanedQueued();
+    if (recovered > 0) console.log(`[watchdog] re-enqueued ${recovered} orphaned queued task(s)`);
     await cleanupZombies();
   } catch (err) {
     console.error("[watchdog] tick error", err);

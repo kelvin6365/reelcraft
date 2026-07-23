@@ -55,3 +55,13 @@ export async function acquireSlot(
 export async function releaseSlot(userId: string, scope: GateScope, token: string): Promise<void> {
   await redis.zrem(gateKey(scope, userId), token);
 }
+
+// Force-reap slots older than `olderThanMs`. The Lua only reaps on the next
+// acquire (bounded by the 15-min gate TTL), so a worker killed mid-job leaks its
+// slots and starves that user's queue for up to 15 minutes — the "17 shots stuck
+// 生成中 forever" symptom. The 重新排隊 recovery calls this with a threshold well
+// below any real generation time, so it frees leaked slots without touching a
+// genuinely-running job. Returns how many were reaped.
+export async function reapStaleSlots(userId: string, scope: GateScope, olderThanMs: number): Promise<number> {
+  return redis.zremrangebyscore(gateKey(scope, userId), 0, Date.now() - olderThanMs);
+}

@@ -245,6 +245,11 @@ function ShotRow({
   const serverTask = media === "image" ? shot.activeImageTask : shot.activeVideoTask;
   const inFlight = Boolean(liveState) || Boolean(serverTask);
   const pct = liveState?.progress ?? serverTask?.progress;
+  // Honest labels: a task the worker hasn't picked up yet is 排隊中 (queued), not
+  // 生成中 — otherwise a stuck queue reads as "generating forever". Live SSE
+  // progress means it's actually running.
+  const queuedOnly = inFlight && !liveState && serverTask?.status === "queued";
+  const inFlightLabel = queuedOnly ? "排隊中" : `生成中${pct ? ` ${pct}%` : ""}`;
 
   const priceSuffix = typeof unitUsd === "number" ? ` ~$${unitUsd.toFixed(2)}` : "";
   const generate = () => run(() => api.post(`/api/shots/${shot.id}/${endpoint}`));
@@ -260,7 +265,6 @@ function ShotRow({
         />
       </td>
       <td className="p-2 align-top tabular-nums">{shot.shotIndex}</td>
-      {}
       <td className="p-2 align-top">
         <div className={cn("aspect-video w-36 overflow-hidden rounded bg-muted", media === "image" && "ring-1 ring-primary/40")}>
           {shot.imageUrl ? (
@@ -304,7 +308,7 @@ function ShotRow({
         >
           {busy || inFlight ? (
             <>
-              <Loader2 className="animate-spin" /> {inFlight ? `生成中${pct ? ` ${pct}%` : ""}` : ""}
+              <Loader2 className="animate-spin" /> {inFlight ? inFlightLabel : ""}
             </>
           ) : url ? (
             `重生${priceSuffix}`
