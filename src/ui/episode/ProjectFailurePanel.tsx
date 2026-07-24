@@ -70,7 +70,10 @@ export function ProjectFailurePanel({ projectId }: { projectId: string }) {
   }
 
   function isRetryable(t: ProjectFailedTask) {
-    return !humanizeTaskError(t.errorCode, t.errorMessage).terminal;
+    // Recoverable-terminal (key missing / wrong model) counts as retryable — the
+    // user fixes the config, then retries; otherwise it stays stuck forever.
+    const h = humanizeTaskError(t.errorCode, t.errorMessage);
+    return !h.terminal || h.recoverable;
   }
 
   const retryableAll = tasks.filter(isRetryable);
@@ -160,22 +163,30 @@ export function ProjectFailurePanel({ projectId }: { projectId: string }) {
                             </p>
                           )}
                         </div>
-                        {humanized.terminal ? (
-                          <Button asChild size="sm" variant="outline">
-                            <Link href={humanized.action?.href ?? "/settings"}>
-                              {humanized.action?.label ?? "去設定"}
-                            </Link>
-                          </Button>
-                        ) : (
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() => retryOne(t.id)}
-                            disabled={retrying === t.id}
-                          >
-                            {retrying === t.id ? <Loader2 className="animate-spin" /> : "重試"}
-                          </Button>
-                        )}
+                        {/* Recoverable-terminal shows BOTH fix-config link and
+                            retry; truly-terminal only the link; else retry. */}
+                        <div className="flex shrink-0 items-center gap-2">
+                          {humanized.terminal && humanized.action && (
+                            <Button asChild size="sm" variant="outline">
+                              <Link href={humanized.action.href}>{humanized.action.label}</Link>
+                            </Button>
+                          )}
+                          {(!humanized.terminal || humanized.recoverable) && (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => retryOne(t.id)}
+                              disabled={retrying === t.id}
+                            >
+                              {retrying === t.id ? <Loader2 className="animate-spin" /> : "重試"}
+                            </Button>
+                          )}
+                          {humanized.terminal && !humanized.action && !humanized.recoverable && (
+                            <Button asChild size="sm" variant="outline">
+                              <Link href="/settings">去設定</Link>
+                            </Button>
+                          )}
+                        </div>
                       </div>
                     );
                   })}

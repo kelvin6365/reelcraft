@@ -103,8 +103,12 @@ const PATTERN_COPY: { test: RegExp; entry: ErrorCopyEntry }[] = [
     entry: { message: "請求逾時，請稍後再試", terminal: false },
   },
   {
+    // 4xx spans key/billing (401/402/403 — fix account or key), bad request
+    // (400) and content moderation (422 — edit the prompt). We don't auto-retry
+    // (looping won't help) but mark it recoverable so the user can fix the cause
+    // and retry, rather than the failure staying stuck with no action.
     test: /^HTTP_4\d{2}$|^TEMPLATE_HTTP_4\d{2}$/,
-    entry: { message: "請求被 AI 供應商拒絕，請檢查設定或聯絡支援", terminal: true },
+    entry: { message: "請求被 AI 供應商拒絕（金鑰／額度／內容），修正後可重試", terminal: true, recoverable: true },
   },
 ];
 
