@@ -233,6 +233,8 @@ export interface FailedTask {
   errorMessage: string | null;
   targetType: string | null;
   targetId: string | null;
+  queuedAt: string;
+  finishedAt: string | null;
 }
 
 export interface ProjectFailedTask extends FailedTask {

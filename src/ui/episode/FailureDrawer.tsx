@@ -6,6 +6,7 @@ import { AlertTriangle, Loader2 } from "lucide-react";
 import { api, ApiClientError } from "@/ui/api";
 import { failedTasksQuery, qk } from "@/ui/query-keys";
 import { humanizeTaskError } from "@/lib/task/error-copy";
+import { absoluteTime, relativeTime } from "@/ui/format-when";
 import type { BulkRetryResponse } from "@/ui/types";
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/confirm-dialog";
@@ -134,6 +135,14 @@ export function FailureDrawer({
                     <p className="mt-0.5 text-xs break-words text-muted-foreground">
                       {t.errorCode ? `[${t.errorCode}] ` : ""}
                       {t.errorMessage ?? "未知錯誤"} · 第 {t.attempt} 次
+                      {relativeTime(t.finishedAt ?? t.queuedAt) && (
+                        <>
+                          {" · "}
+                          <time title={absoluteTime(t.finishedAt ?? t.queuedAt)}>
+                            {relativeTime(t.finishedAt ?? t.queuedAt)}
+                          </time>
+                        </>
+                      )}
                     </p>
                   </div>
                   {/* Recoverable-terminal: BOTH fix-the-config link AND retry

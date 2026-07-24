@@ -16,6 +16,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ConfirmDialog } from "@/components/confirm-dialog";
+import { absoluteTime, relativeTime } from "@/ui/format-when";
 
 export function ProjectFailurePanel({ projectId }: { projectId: string }) {
   const [open, setOpen] = useState(true);
@@ -166,6 +167,14 @@ export function ProjectFailurePanel({ projectId }: { projectId: string }) {
                         <div className="min-w-0">
                           <p className="text-sm font-medium">{t.type}</p>
                           <p className="text-sm text-destructive">{humanized.message}</p>
+                          {relativeTime(t.finishedAt ?? t.queuedAt) && (
+                            <p className="text-xs text-muted-foreground">
+                              第 {t.attempt} 次 ·{" "}
+                              <time title={absoluteTime(t.finishedAt ?? t.queuedAt)}>
+                                {relativeTime(t.finishedAt ?? t.queuedAt)}
+                              </time>
+                            </p>
+                          )}
                           {rowError?.id === t.id && (
                             <p className="text-xs text-destructive" aria-live="polite">
                               重試失敗：{rowError.message}
