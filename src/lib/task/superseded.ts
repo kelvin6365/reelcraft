@@ -16,9 +16,14 @@ export interface TaskTiming {
   targetId: string;
   queuedAt: Date | string;
   finishedAt: Date | string | null;
+  // Distinguishes episode-level tasks (targetId "") across episodes in the
+  // project-wide list. Per-shot ids are already globally unique, so this only
+  // matters there; single-episode callers can omit it.
+  episodeId?: string | null;
 }
 
-const key = (t: { type: string; targetId: string }) => `${t.type}:${t.targetId}`;
+const key = (t: { type: string; targetId: string; episodeId?: string | null }) =>
+  `${t.type}:${t.targetId}:${t.episodeId ?? ""}`;
 const ms = (v: Date | string) => (v instanceof Date ? v.getTime() : new Date(v).getTime());
 // finishedAt is null for a row the watchdog failed without a worker completing
 // it; queuedAt always exists and orders correctly against later completions.
@@ -41,4 +46,24 @@ export function filterUnresolvedFailures<T extends TaskTiming>(failed: T[], comp
     const success = latest.get(key(f));
     return success === undefined || success <= at(f);
   });
+}
+
+// Collapse repeated failures on the same (type, targetId[, episodeId]) to just
+// the latest attempt. Re-running a shot that keeps failing (out of balance, no
+// key) adds a fresh failed row each time; without this the drawer shows the same
+// shot ten times and 全部重試 re-runs every stale attempt. Keep only the newest.
+export function latestFailurePerTarget<T extends TaskTiming>(failed: T[]): T[] {
+  const latest = new Map<string, T>();
+  for (const f of failed) {
+    const k = key(f);
+    const cur = latest.get(k);
+    if (!cur || at(f) > at(cur)) latest.set(k, f);
+  }
+  return [...latest.values()];
+}
+
+// The failure set to show and act on: drop failures a later success already
+// fixed, then dedupe the rest to the latest attempt per target.
+export function activeFailures<T extends TaskTiming>(failed: T[], completed: TaskTiming[]): T[] {
+  return latestFailurePerTarget(filterUnresolvedFailures(failed, completed));
 }

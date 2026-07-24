@@ -1,7 +1,7 @@
 import { prisma } from "@/lib/db";
 import { withAuth } from "@/lib/api/with-auth";
 import { ApiError, ok } from "@/lib/api/errors";
-import { filterUnresolvedFailures } from "@/lib/task/superseded";
+import { activeFailures } from "@/lib/task/superseded";
 
 async function getOwned(userId: string, id: string) {
   const project = await prisma.project.findFirst({ where: { id, userId } });
@@ -36,9 +36,9 @@ export const GET = withAuth(async ({ userId, params }) => {
   // resurrect failures a later regeneration already fixed.
   const completed = await prisma.task.findMany({
     where: { userId, projectId: project.id, status: "completed" },
-    select: { type: true, targetId: true, queuedAt: true, finishedAt: true },
+    select: { type: true, targetId: true, queuedAt: true, finishedAt: true, episodeId: true },
   });
-  const unresolved = filterUnresolvedFailures(tasks, completed);
+  const unresolved = activeFailures(tasks, completed);
 
   const episodeIds = [...new Set(unresolved.map((t) => t.episodeId).filter((id): id is string => !!id))];
   const episodes = await prisma.episode.findMany({

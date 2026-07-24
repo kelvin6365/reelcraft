@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { filterUnresolvedFailures } from "@/lib/task/superseded";
+import { activeFailures, filterUnresolvedFailures, latestFailurePerTarget } from "@/lib/task/superseded";
 
 const t = (type: string, targetId: string, finished: string | null, queued = "2026-07-22T00:00:00Z") => ({
   type,
@@ -69,3 +69,42 @@ describe("filterUnresolvedFailures", () => {
     expect(filterUnresolvedFailures(failed, completed)).toEqual([]);
   });
 });
+
+describe("latestFailurePerTarget + activeFailures", () => {
+  it("collapses repeated failures on the same target to the latest", () => {
+    const failed = [
+      t("VIDEO_SHOT", "s1", "2026-07-24T10:00:00Z"),
+      t("VIDEO_SHOT", "s1", "2026-07-24T11:00:00Z"),
+      t("VIDEO_SHOT", "s1", "2026-07-24T12:00:00Z"),
+    ];
+    const out = latestFailurePerTarget(failed);
+    expect(out).toHaveLength(1);
+    expect(out[0].finishedAt).toBe("2026-07-24T12:00:00Z");
+  });
+
+  it("keeps distinct targets separate", () => {
+    const failed = [t("VIDEO_SHOT", "s1", "2026-07-24T10:00:00Z"), t("VIDEO_SHOT", "s2", "2026-07-24T10:00:00Z")];
+    expect(latestFailurePerTarget(failed)).toHaveLength(2);
+  });
+
+  it("distinguishes episode-level tasks (empty targetId) across episodes", () => {
+    const failed = [
+      { type: "STORYBOARD_RUN", targetId: "", episodeId: "epA", queuedAt: "2026-07-24T10:00:00Z", finishedAt: "2026-07-24T10:00:00Z" },
+      { type: "STORYBOARD_RUN", targetId: "", episodeId: "epB", queuedAt: "2026-07-24T10:00:00Z", finishedAt: "2026-07-24T10:00:00Z" },
+    ];
+    expect(latestFailurePerTarget(failed)).toHaveLength(2); // not collapsed — different episodes
+  });
+
+  // The reported bug: 9 identical VIDEO_SHOT failures on 3 shots → show 3.
+  it("activeFailures drops superseded then dedupes to one row per broken target", () => {
+    const failed = [
+      t("VIDEO_SHOT", "s1", "2026-07-24T10:00:00Z"),
+      t("VIDEO_SHOT", "s1", "2026-07-24T11:00:00Z"),
+      t("VIDEO_SHOT", "s2", "2026-07-24T10:00:00Z"),
+      t("VIDEO_SHOT", "s3", "2026-07-24T10:00:00Z"),
+    ];
+    const completed = [t("VIDEO_SHOT", "s3", "2026-07-24T12:00:00Z")]; // s3 later succeeded
+    const out = activeFailures(failed, completed);
+    expect(out.map((x) => x.targetId).sort()).toEqual(["s1", "s2"]); // s3 gone, s1 collapsed
+  });
+})

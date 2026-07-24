@@ -8,6 +8,7 @@ import { failedTasksQuery, qk } from "@/ui/query-keys";
 import { humanizeTaskError } from "@/lib/task/error-copy";
 import type { BulkRetryResponse } from "@/ui/types";
 import { Button } from "@/components/ui/button";
+import { ConfirmDialog } from "@/components/confirm-dialog";
 import {
   Sheet,
   SheetContent,
@@ -80,6 +81,7 @@ export function FailureDrawer({
       setBulkError((e as ApiClientError).message);
     }
   }
+  const [confirmAllOpen, setConfirmAllOpen] = useState(false);
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
@@ -93,7 +95,7 @@ export function FailureDrawer({
               <Button
                 size="sm"
                 variant="outline"
-                onClick={retryAll}
+                onClick={() => setConfirmAllOpen(true)}
                 disabled={bulkRetryMutation.isPending}
               >
                 {bulkRetryMutation.isPending ? <Loader2 className="animate-spin" /> : null}
@@ -101,6 +103,14 @@ export function FailureDrawer({
               </Button>
             )}
           </SheetTitle>
+          <ConfirmDialog
+            open={confirmAllOpen}
+            onOpenChange={setConfirmAllOpen}
+            title={`重試 ${retryableTasks.length} 個任務？`}
+            description="會重新排隊生成，可能產生費用。如果失敗原因（例如額度不足、未加金鑰）仲未修好，會再次失敗——請先確認已修正。"
+            confirmLabel="確定重試"
+            onConfirm={retryAll}
+          />
           {bulkError && (
             <p className="text-xs text-destructive" aria-live="polite">
               批量重試失敗：{bulkError}

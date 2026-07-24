@@ -1,7 +1,7 @@
 import { prisma } from "@/lib/db";
 import { withAuth } from "@/lib/api/with-auth";
 import { ok } from "@/lib/api/errors";
-import { filterUnresolvedFailures } from "@/lib/task/superseded";
+import { activeFailures } from "@/lib/task/superseded";
 
 export const GET = withAuth(async ({ userId, req }) => {
   const episodeId = req.nextUrl.searchParams.get("episodeId") ?? undefined;
@@ -23,5 +23,5 @@ export const GET = withAuth(async ({ userId, req }) => {
     where: { userId, episodeId, projectId, status: "completed" },
     select: { type: true, targetId: true, queuedAt: true, finishedAt: true },
   });
-  return ok(filterUnresolvedFailures(tasks, completed));
+  return ok(activeFailures(tasks, completed));
 });

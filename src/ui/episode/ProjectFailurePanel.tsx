@@ -15,6 +15,7 @@ import type { BulkRetryResponse, ProjectFailedTask } from "@/ui/types";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { ConfirmDialog } from "@/components/confirm-dialog";
 
 export function ProjectFailurePanel({ projectId }: { projectId: string }) {
   const [open, setOpen] = useState(true);
@@ -22,6 +23,7 @@ export function ProjectFailurePanel({ projectId }: { projectId: string }) {
   const [rowError, setRowError] = useState<{ id: string; message: string } | null>(null);
   const [bulkError, setBulkError] = useState<string | null>(null);
   const [bulkBusyKey, setBulkBusyKey] = useState<string | null>(null); // "all" | episodeId
+  const [pendingBulk, setPendingBulk] = useState<{ key: string; taskIds: string[] } | null>(null);
   const queryClient = useQueryClient();
 
   const query = useQuery(projectFailedTasksQuery(projectId));
@@ -57,7 +59,14 @@ export function ProjectFailurePanel({ projectId }: { projectId: string }) {
     }
   }
 
+  // Bulk retry re-runs every task, which re-spends generation cost (and just
+  // re-fails if the cause — insufficient balance, missing key — isn't fixed
+  // yet). Gate it behind a confirm so 全部重試 isn't a one-tap money burn.
   async function retryMany(key: string, taskIds: string[]) {
+    setPendingBulk({ key, taskIds });
+  }
+
+  async function doRetryMany(key: string, taskIds: string[]) {
     setBulkBusyKey(key);
     setBulkError(null);
     try {
@@ -200,6 +209,16 @@ export function ProjectFailurePanel({ projectId }: { projectId: string }) {
           </div>
         </CardContent>
       )}
+      <ConfirmDialog
+        open={!!pendingBulk}
+        onOpenChange={(o) => !o && setPendingBulk(null)}
+        title={`重試 ${pendingBulk?.taskIds.length ?? 0} 個任務？`}
+        description="會重新排隊生成，可能產生費用。如果失敗原因（例如額度不足、未加金鑰）仲未修好，會再次失敗——請先確認已修正。"
+        confirmLabel="確定重試"
+        onConfirm={() => {
+          if (pendingBulk) void doRetryMany(pendingBulk.key, pendingBulk.taskIds);
+        }}
+      />
     </Card>
   );
 }

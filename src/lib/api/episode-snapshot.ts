@@ -4,7 +4,7 @@ import { computeNextAction, computeStages, type EpisodeSnapshot } from "@/lib/ne
 import { attachMediaUrls } from "@/lib/media/service";
 import { ACTIVE_STATUSES } from "@/lib/task/types";
 import { countByStage } from "@/lib/task/stage-map";
-import { filterUnresolvedFailures } from "@/lib/task/superseded";
+import { activeFailures } from "@/lib/task/superseded";
 
 const CONFIRMED_STATUSES = ["images", "videos", "export", "done"];
 
@@ -26,9 +26,9 @@ export async function buildEpisodeSnapshot(
     }),
   ]);
 
-  // Only failures that are still outstanding — a later success on the same
-  // (type, targetId) retires the old red mark. See lib/task/superseded.ts.
-  const unresolvedFailures = filterUnresolvedFailures(
+  // Outstanding failures, one per target: drop those a later success fixed, then
+  // collapse repeated failures on the same shot to the latest. See superseded.ts.
+  const unresolvedFailures = activeFailures(
     terminalTasks.filter((t) => t.status === "failed"),
     terminalTasks.filter((t) => t.status === "completed"),
   );
