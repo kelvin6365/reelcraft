@@ -43,10 +43,12 @@ export const POST = withAuth(
         results.push({ id, ok: false, skipped: true, error: "任務並非終局狀態" });
         continue;
       }
-      // Terminal errors (e.g. PROVIDER_KEY_MISSING) need a user action first —
-      // retrying them is pointless, so skip rather than burn a retry attempt.
+      // Truly-terminal errors (nothing the user can do) are skipped. But
+      // recoverable ones (PROVIDER_KEY_MISSING, wrong model) ARE retried — the
+      // user has presumably just fixed the config; otherwise they'd stay stuck
+      // in the drawer forever.
       const humanized = humanizeTaskError(task.errorCode, task.errorMessage);
-      if (humanized.terminal) {
+      if (humanized.terminal && !humanized.recoverable) {
         results.push({ id, ok: false, skipped: true, error: humanized.message });
         continue;
       }

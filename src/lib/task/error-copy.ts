@@ -8,12 +8,18 @@ export interface ErrorCopyEntry {
   message: string;
   terminal: boolean;
   action?: ErrorAction;
+  // Terminal (never auto-retried — looping on a missing key/wrong model is
+  // pointless), but the user CAN fix the cause via `action` and then retry. The
+  // failure drawer shows a retry button and bulk-retry includes these, so a
+  // key-missing pile doesn't stay stuck forever after the key is added.
+  recoverable?: boolean;
 }
 
 const ERROR_COPY: Record<string, ErrorCopyEntry> = {
   PROVIDER_KEY_MISSING: {
-    message: "未連接 AI 供應商金鑰，請先喺設定頁新增對應金鑰",
+    message: "未連接 AI 供應商金鑰，請先喺設定頁新增對應金鑰，加咗之後可以喺度重試",
     terminal: true,
+    recoverable: true,
     action: { href: "/settings", label: "去設定" },
   },
   PROVIDER_UNKNOWN: {
@@ -21,8 +27,9 @@ const ERROR_COPY: Record<string, ErrorCopyEntry> = {
     terminal: true,
   },
   MODEL_NO_REFERENCE_SUPPORT: {
-    message: "揀咗嘅圖像模型唔支援參考圖，角色一致性會失效 — 請換一個支援參考圖嘅模型",
+    message: "揀咗嘅圖像模型唔支援參考圖，角色一致性會失效 — 請換一個支援參考圖嘅模型，改咗之後可以重試",
     terminal: true,
+    recoverable: true,
     action: { href: "/settings", label: "去改模型" },
   },
   PROVIDER_NOT_ALLOWED: {
@@ -105,6 +112,7 @@ export interface HumanizedError {
   message: string;
   terminal: boolean;
   action?: ErrorAction;
+  recoverable: boolean;
   isFallback: boolean;
 }
 
@@ -112,19 +120,19 @@ export function humanizeTaskError(errorCode: string | null | undefined, rawMessa
   const fallbackMessage = rawMessage || "未知錯誤";
 
   if (!errorCode) {
-    return { message: fallbackMessage, terminal: false, isFallback: true };
+    return { message: fallbackMessage, terminal: false, recoverable: false, isFallback: true };
   }
 
   const exact = ERROR_COPY[errorCode];
   if (exact) {
-    return { message: exact.message, terminal: exact.terminal, action: exact.action, isFallback: false };
+    return { message: exact.message, terminal: exact.terminal, action: exact.action, recoverable: exact.recoverable ?? false, isFallback: false };
   }
 
   for (const { test, entry } of PATTERN_COPY) {
     if (test.test(errorCode)) {
-      return { message: entry.message, terminal: entry.terminal, action: entry.action, isFallback: false };
+      return { message: entry.message, terminal: entry.terminal, action: entry.action, recoverable: entry.recoverable ?? false, isFallback: false };
     }
   }
 
-  return { message: fallbackMessage, terminal: false, isFallback: true };
+  return { message: fallbackMessage, terminal: false, recoverable: false, isFallback: true };
 }

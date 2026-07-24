@@ -64,7 +64,13 @@ export function FailureDrawer({
     }
   }
 
-  const retryableTasks = (tasks ?? []).filter((t) => !humanizeTaskError(t.errorCode, t.errorMessage).terminal);
+  // Recoverable-terminal (key missing / wrong model) IS retryable — after the
+  // user fixes the config. So 全部重試 includes them; only truly-terminal
+  // failures (nothing the user can do) are excluded.
+  const retryableTasks = (tasks ?? []).filter((t) => {
+    const h = humanizeTaskError(t.errorCode, t.errorMessage);
+    return !h.terminal || h.recoverable;
+  });
 
   async function retryAll() {
     setBulkError(null);
@@ -120,15 +126,26 @@ export function FailureDrawer({
                       {t.errorMessage ?? "未知錯誤"} · 第 {t.attempt} 次
                     </p>
                   </div>
-                  {humanized.terminal ? (
-                    <Button asChild size="sm" variant="outline">
-                      <Link href={humanized.action?.href ?? "/settings"}>{humanized.action?.label ?? "去設定"}</Link>
-                    </Button>
-                  ) : (
-                    <Button size="sm" variant="outline" onClick={() => retry(t.id)} disabled={retrying === t.id}>
-                      {retrying === t.id ? <Loader2 className="animate-spin" /> : "一鍵重試"}
-                    </Button>
-                  )}
+                  {/* Recoverable-terminal: BOTH fix-the-config link AND retry
+                      (the user fixes the cause, then retries). Truly-terminal:
+                      only the action. Non-terminal: retry. */}
+                  <div className="flex shrink-0 items-center gap-2">
+                    {humanized.terminal && humanized.action && (
+                      <Button asChild size="sm" variant="outline">
+                        <Link href={humanized.action.href}>{humanized.action.label}</Link>
+                      </Button>
+                    )}
+                    {(!humanized.terminal || humanized.recoverable) && (
+                      <Button size="sm" variant="outline" onClick={() => retry(t.id)} disabled={retrying === t.id}>
+                        {retrying === t.id ? <Loader2 className="animate-spin" /> : "重試"}
+                      </Button>
+                    )}
+                    {humanized.terminal && !humanized.action && !humanized.recoverable && (
+                      <Button asChild size="sm" variant="outline">
+                        <Link href="/settings">去設定</Link>
+                      </Button>
+                    )}
+                  </div>
                 </div>
                 {retryError?.id === t.id && (
                   <p className="text-xs text-destructive" aria-live="polite">

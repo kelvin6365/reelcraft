@@ -49,12 +49,27 @@ describe("statusLabel", () => {
   });
 });
 
-describe("MODEL_NO_REFERENCE_SUPPORT copy", () => {
-  it("is terminal so the failure drawer hides retry", async () => {
+describe("humanizeTaskError recoverable-terminal", () => {
+  it("MODEL_NO_REFERENCE_SUPPORT is terminal but recoverable (fix model → retry)", async () => {
     const { humanizeTaskError } = await import("@/lib/task/error-copy");
     const h = humanizeTaskError("MODEL_NO_REFERENCE_SUPPORT", "raw provider text");
     expect(h.terminal).toBe(true);
+    expect(h.recoverable).toBe(true);
+    expect(h.action?.href).toBe("/settings");
     expect(h.message).not.toBe("raw provider text");
+  });
+
+  it("PROVIDER_KEY_MISSING is terminal but recoverable, so it can be retried after adding the key", async () => {
+    const { humanizeTaskError } = await import("@/lib/task/error-copy");
+    const h = humanizeTaskError("PROVIDER_KEY_MISSING", "no key for provider: atlascloud");
+    expect(h.terminal).toBe(true);
+    expect(h.recoverable).toBe(true);
+  });
+
+  it("a truly-terminal error (no user fix) is not recoverable", async () => {
+    const { humanizeTaskError } = await import("@/lib/task/error-copy");
+    expect(humanizeTaskError("PROVIDER_UNKNOWN", "x").recoverable).toBe(false);
+    expect(humanizeTaskError(null, "x").recoverable).toBe(false);
   });
 });
 
