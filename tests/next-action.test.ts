@@ -162,7 +162,7 @@ describe("computeStages status + blockedBy", () => {
   it("locks a station whose prerequisite is missing and says what is missing", () => {
     const assets = find(base, "assets");
     expect(assets.status).toBe("blocked");
-    expect(assets.blockedBy).toEqual(["第 3 站：先生成劇本"]);
+    expect(assets.blockedBy).toEqual(["第 2 站：先生成劇本"]);
   });
 
   it("marks the two human gates as review, not blocked", () => {

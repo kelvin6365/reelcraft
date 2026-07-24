@@ -59,12 +59,12 @@ export function computeStages(s: EpisodeSnapshot): StageState[] {
     stage("script", scriptReady, { blockedBy: s.hasRawText ? [] : ["第 1 站：貼上小說原文"] }),
     stage("assets", assetsReady, {
       count: { done: assetsLocked, total: assetsTotal },
-      blockedBy: scriptReady ? [] : ["第 3 站：先生成劇本"],
+      blockedBy: scriptReady ? [] : ["第 2 站：先生成劇本"],
       review: assetsTotal > 0 && assetsLocked < assetsTotal,
     }),
     stage("storyboard", s.shots.total > 0 && s.storyboardConfirmed, {
       count: { done: s.shots.total > 0 ? 1 : 0, total: 1 },
-      blockedBy: assetsReady ? [] : ["第 2 站：鎖定所有角色與場景"],
+      blockedBy: assetsReady ? [] : ["第 3 站：鎖定所有角色與場景"],
       review: s.shots.total > 0 && !s.storyboardConfirmed,
     }),
     stage("images", s.shots.total > 0 && s.shots.withImage === s.shots.total, {
