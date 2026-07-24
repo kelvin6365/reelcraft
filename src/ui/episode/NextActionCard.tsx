@@ -33,6 +33,9 @@ export function NextActionCard({
     if (!nextAction.endpoint) return;
     const endpoint = nextAction.endpoint;
     setQueued(false);
+    // Take the user to the station the action runs on, so they watch it happen
+    // instead of staying on whatever station they were viewing.
+    goToStation(nextAction.stage);
     // Only claim it queued if it actually did — otherwise the success line
     // rendered right under the error message.
     void run(() => api.post(endpoint)).then((okd) => setQueued(okd));

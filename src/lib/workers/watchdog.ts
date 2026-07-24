@@ -7,6 +7,7 @@ import { addTaskJob } from "@/lib/task/queues";
 import { publishTaskEvent } from "@/lib/task/events";
 import { getQueueForTaskType, type TaskType } from "@/lib/task/types";
 import { recoverOrphanedQueued } from "@/lib/task/recover";
+import { reapLeakedSlots } from "@/lib/quota/reap-leaked";
 
 async function cleanupZombies(): Promise<void> {
   const cutoff = new Date(Date.now() - env.TASK_HEARTBEAT_TIMEOUT_MS);
@@ -14,6 +15,11 @@ async function cleanupZombies(): Promise<void> {
     where: { status: "processing", OR: [{ heartbeatAt: { lt: cutoff } }, { heartbeatAt: null }] },
     take: 200,
   });
+  // A zombie's worker died mid-job, so it also leaked its gate slot. Requeuing
+  // the task isn't enough — the leaked slot would bounce it in the gate-requeue
+  // loop until the 15-min TTL. Free those slots for the affected users once all
+  // their zombies are requeued.
+  const affectedUsers = new Set<string>();
   for (const t of zombies) {
     if (t.attempt >= t.maxAttempts) {
       await prisma.task.update({
@@ -29,8 +35,16 @@ async function cleanupZombies(): Promise<void> {
       });
       publishTaskEvent(t.projectId, { taskId: t.id, taskType: t.type, eventType: "RETRYING", errorCode: "WATCHDOG_REQUEUE" });
       await addTaskJob(getQueueForTaskType(t.type as TaskType), t.id, 1);
+      affectedUsers.add(t.userId);
       console.log(`[watchdog] requeued zombie ${t.id} (${t.type}, attempt ${t.attempt}/${t.maxAttempts})`);
     }
+  }
+  // Now that the zombies are back to queued (no longer counted as processing),
+  // reapLeakedSlots frees the dead worker's slots for any user with zero
+  // remaining processing tasks in the scope.
+  for (const userId of affectedUsers) {
+    const { image, video } = await reapLeakedSlots(userId);
+    if (image + video > 0) console.log(`[watchdog] reaped ${image + video} leaked slot(s) for ${userId}`);
   }
 }
 

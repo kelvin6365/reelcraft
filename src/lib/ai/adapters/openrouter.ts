@@ -35,6 +35,9 @@ export const openrouterAdapter: TextAdapter = {
         messages: req.messages,
         temperature: req.temperature,
         max_tokens: req.maxTokens,
+        // Constrain to a JSON object so the model can't wrap it in prose/markdown
+        // or emit trailing garbage — the top cause of "output is not valid JSON".
+        ...(req.jsonMode ? { response_format: { type: "json_object" } } : {}),
         usage: { include: true }, // ask for real billed cost + token detail
       }),
     });

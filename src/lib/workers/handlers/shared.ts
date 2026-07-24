@@ -58,7 +58,7 @@ export async function textCallJson<Id extends OutputSchemaId>(
     const content = attempt === 1 ? p.text : `${p.text}\n\n【上次輸出無效，錯誤：${lastError.slice(0, 300)}。請只輸出合法 JSON。】`;
     const result = await callModel(
       { ...ctx, promptId, promptVersion: p.version, promptSource: p.source, renderedPrompt: content },
-      { modelKey: modelKey as `${string}::${string}`, messages: [{ role: "user", content }] },
+      { modelKey: modelKey as `${string}::${string}`, messages: [{ role: "user", content }], jsonMode: true },
     );
     try {
       const parsed = schema.safeParse(safeParseJson(result.text));

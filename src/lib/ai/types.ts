@@ -26,6 +26,11 @@ export interface TextRequest {
   messages: TextMessage[];
   temperature?: number;
   maxTokens?: number;
+  // Ask the provider to constrain output to a JSON object (OpenAI-compatible
+  // `response_format: {type:"json_object"}`). Set by the JSON-parsing call path
+  // (textCallJson) so the model can't emit prose/markdown/trailing garbage that
+  // breaks JSON.parse. The prompt must mention "json" for the provider to honour it.
+  jsonMode?: boolean;
 }
 
 export interface TextUsage {

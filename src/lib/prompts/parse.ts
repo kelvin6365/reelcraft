@@ -28,12 +28,50 @@ export function safeParseJson(raw: string): unknown {
     // Deterministic repair for the most common LLM breakage: raw control
     // characters (newline/tab) inside string values — JSON.parse reports
     // "Unterminated string". Escape them only INSIDE strings, then re-parse.
+    const escaped = escapeControlCharsInStrings(body);
     try {
-      return JSON.parse(escapeControlCharsInStrings(body));
-    } catch (err) {
-      throw new JsonParseError(`output is not valid JSON: ${String(err)}`, raw);
+      return JSON.parse(escaped);
+    } catch {
+      // Last resort (the experimental_repairText idea): strip trailing commas and
+      // close a truncated tail (the model hit max_tokens mid-array/object). Better
+      // a slightly-shorter valid structure than failing the whole storyboard.
+      try {
+        return JSON.parse(repairTruncatedJson(escaped));
+      } catch (err) {
+        throw new JsonParseError(`output is not valid JSON: ${String(err)}`, raw);
+      }
     }
   }
+}
+
+// Strip trailing commas, then balance any brackets/quote left open by a
+// truncated response — walking the text in string-context so brackets inside
+// strings aren't counted. Returns text JSON.parse can accept when the only
+// breakage is a missing tail.
+function repairTruncatedJson(s: string): string {
+  let out = "";
+  let inString = false;
+  let escaped = false;
+  const stack: string[] = [];
+  for (const ch of s) {
+    if (inString) {
+      out += ch;
+      if (escaped) escaped = false;
+      else if (ch === "\\") escaped = true;
+      else if (ch === '"') inString = false;
+      continue;
+    }
+    if (ch === '"') inString = true;
+    else if (ch === "{" || ch === "[") stack.push(ch);
+    else if (ch === "}" || ch === "]") stack.pop();
+    out += ch;
+  }
+  if (inString) out += '"'; // close a truncated string
+  // Drop a dangling trailing comma before we append closers.
+  out = out.replace(/,\s*$/, "");
+  for (let i = stack.length - 1; i >= 0; i--) out += stack[i] === "{" ? "}" : "]";
+  // Also remove trailing commas that sit right before a closer anywhere.
+  return out.replace(/,(\s*[}\]])/g, "$1");
 }
 
 // Walk the JSON text tracking string context; replace literal control chars
