@@ -35,6 +35,8 @@ vi.mock("@/lib/db", () => ({
   },
 }));
 vi.mock("@/lib/task/events", () => ({ publishTaskEvent: vi.fn() }));
+const rollback = vi.hoisted(() => ({ calls: [] as string[] }));
+vi.mock("@/lib/billing/ledger", () => ({ rollbackTaskFreeze: vi.fn(async (id: string) => void rollback.calls.push(id)) }));
 
 type Mod = typeof import("@/lib/task/cancel-shot-tasks");
 let M: Mod;
@@ -66,5 +68,15 @@ describe("cancelActiveShotTasks", () => {
       { id: "t2", type: "VIDEO_SHOT", projectId: "p1" },
     ];
     expect(await M.cancelActiveShotTasks("ep1", ["s1"])).toBe(2);
+  });
+
+  it("releases each canceled task's billing reservation", async () => {
+    rollback.calls = [];
+    state.found = [
+      { id: "t1", type: "IMAGE_SHOT", projectId: "p1" },
+      { id: "t2", type: "VIDEO_SHOT", projectId: "p1" },
+    ];
+    await M.cancelActiveShotTasks("ep1", ["s1"]);
+    expect(rollback.calls.sort()).toEqual(["t1", "t2"]);
   });
 });

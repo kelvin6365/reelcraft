@@ -4,13 +4,18 @@
 // rebuilds every shot) leaves its queued/processing IMAGE_SHOT / VIDEO_SHOT tasks
 // running against a row that no longer exists. The handler then spends the
 // generation, tries to write the result back, and crashes on a "record not
-// found" — a scary red failure for a shot the user deliberately removed, plus
-// wasted spend. Marking the tasks canceled is enough: the worker claims tasks
-// with a `status: 'queued'` guard, so a canceled task is never picked up, and a
-// canceled task's completion write (guarded by `status: 'processing'`) is
-// discarded.
+// found". Marking the tasks canceled is enough to stop them: the worker claims
+// tasks with a `status: 'queued'` guard, so a canceled task is never picked up,
+// and a canceled task's completion write (guarded by `status: 'processing'`) is
+// discarded. For a QUEUED task this also avoids the wasted spend entirely; a task
+// already mid-generation has spent — the cancel just prevents the crash.
+//
+// Because neither settle nor rollback runs on a canceled task, we release its
+// billing reservation here — otherwise a canceled task's freeze stays pending
+// forever and leaks the user's spendable balance under ENFORCE.
 import { prisma } from "@/lib/db";
 import { publishTaskEvent } from "@/lib/task/events";
+import { rollbackTaskFreeze } from "@/lib/billing/ledger";
 import { TASK_TYPE } from "@/lib/task/types";
 
 export async function cancelActiveShotTasks(episodeId: string, shotIds: string[]): Promise<number> {
@@ -30,6 +35,7 @@ export async function cancelActiveShotTasks(episodeId: string, shotIds: string[]
     data: { status: "canceled", finishedAt: new Date() },
   });
   for (const t of active) {
+    await rollbackTaskFreeze(t.id); // release the reservation — no settle/rollback will run otherwise
     publishTaskEvent(t.projectId, { taskId: t.id, taskType: t.type, eventType: "CANCELED" });
   }
   return active.length;

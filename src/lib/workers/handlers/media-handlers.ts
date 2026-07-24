@@ -125,7 +125,10 @@ function formatBlocking(raw: unknown): string {
 export const imageShotHandler: TaskHandler = async ({ task, reportProgress }) => {
   const shot = await prisma.shot.findFirst({ where: { id: task.targetId, userId: task.userId } });
   // Deleted before we could start (cancel raced the delete) — moot, not a failure.
-  if (!shot) return { skipped: "shot-deleted" };
+  if (!shot) {
+    console.warn(`[IMAGE_SHOT] shot ${task.targetId} gone before start — skipping`);
+    return { skipped: "shot-deleted" };
+  }
   const scene = await prisma.scene.findUnique({
     where: { id: shot.sceneId },
     select: { blocking: true, summary: true, content: true },
@@ -192,13 +195,19 @@ export const imageShotHandler: TaskHandler = async ({ task, reportProgress }) =>
     where: { id: shot.id },
     data: { imagePrompt: out.prompt, imageMediaId: media.id, status: "ready" },
   });
-  if (saved.count === 0) return { skipped: "shot-deleted" };
+  if (saved.count === 0) {
+    console.warn(`[IMAGE_SHOT] shot ${shot.id} deleted mid-generation — media ${media.id} orphaned`);
+    return { skipped: "shot-deleted" };
+  }
   return { mediaId: media.id };
 };
 
 export const videoShotHandler: TaskHandler = async ({ task, reportProgress }) => {
   const shot = await prisma.shot.findFirst({ where: { id: task.targetId, userId: task.userId } });
-  if (!shot) return { skipped: "shot-deleted" };
+  if (!shot) {
+    console.warn(`[VIDEO_SHOT] shot ${task.targetId} gone before start — skipping`);
+    return { skipped: "shot-deleted" };
+  }
   if (!shot.imageMediaId) throw new TaskError("NO_IMAGE", "generate the shot image first", false);
   const { episode, project } = await loadEpisodeWithProject({ ...task, episodeId: shot.episodeId });
   const models = await resolveTaskModels(task, project);
@@ -221,7 +230,10 @@ export const videoShotHandler: TaskHandler = async ({ task, reportProgress }) =>
   );
 
   const saved = await prisma.shot.updateMany({ where: { id: shot.id }, data: { videoMediaId: media.id } });
-  if (saved.count === 0) return { skipped: "shot-deleted" }; // deleted mid-generation, not a failure
+  if (saved.count === 0) {
+    console.warn(`[VIDEO_SHOT] shot ${shot.id} deleted mid-generation — media ${media.id} orphaned`);
+    return { skipped: "shot-deleted" };
+  }
   return { mediaId: media.id };
 };
 

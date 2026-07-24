@@ -80,14 +80,18 @@ export async function buildEpisodeView(userId: string, episodeId: string) {
     if (t.targetId) activeByKey.set(`${t.type}:${t.targetId}`, { taskId: t.id, status: t.status, progress: t.progress });
   }
 
-  // "Stuck" = an active task sitting past this age without a heartbeat, i.e.
-  // queued but nobody is consuming it (worker down / dev reload dropped the
-  // consumer). Drives the workspace's 重新排隊 recovery affordance.
+  // "Stuck" = queued tasks that nobody is consuming (worker down / dev reload
+  // dropped the consumer / leaked gate slots). The tell is that NOTHING is
+  // processing — if any task is processing, the queue is moving and old-queued
+  // tasks are just waiting behind a busy concurrency cap or a retry backoff, not
+  // stuck. Gating on zero-processing avoids the false "N 個任務卡住" alarm a busy
+  // batch would otherwise trip. Drives the workspace's 重新排隊 affordance.
   const STUCK_MS = 60_000;
   const now = Date.now();
-  const stuckTasks = activeTasks.filter(
-    (t) => !t.heartbeatAt && now - new Date(t.queuedAt).getTime() > STUCK_MS,
-  ).length;
+  const anyProcessing = activeTasks.some((t) => t.status === "processing");
+  const stuckTasks = anyProcessing
+    ? 0
+    : activeTasks.filter((t) => !t.heartbeatAt && now - new Date(t.queuedAt).getTime() > STUCK_MS).length;
 
   const [charactersWithUrls, locationsWithUrls, shotsWithUrls, voiceLinesWithUrls, episodeWithUrl] = await Promise.all([
     attachMediaUrls(characters, ["lockedImageMediaId", "faceImageMediaId"]),

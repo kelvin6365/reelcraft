@@ -59,9 +59,9 @@ export async function releaseSlot(userId: string, scope: GateScope, token: strin
 // Force-reap slots older than `olderThanMs`. The Lua only reaps on the next
 // acquire (bounded by the 15-min gate TTL), so a worker killed mid-job leaks its
 // slots and starves that user's queue for up to 15 minutes — the "17 shots stuck
-// 生成中 forever" symptom. The 重新排隊 recovery calls this with a threshold well
-// below any real generation time, so it frees leaked slots without touching a
-// genuinely-running job. Returns how many were reaped.
+// 生成中 forever" symptom. The 重新排隊 recovery calls this with olderThanMs=0
+// (reap all) ONLY after confirming the user has no processing task in the scope,
+// so no genuinely-running job's slot is touched. Returns how many were reaped.
 export async function reapStaleSlots(userId: string, scope: GateScope, olderThanMs: number): Promise<number> {
   return redis.zremrangebyscore(gateKey(scope, userId), 0, Date.now() - olderThanMs);
 }
