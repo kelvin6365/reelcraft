@@ -21,18 +21,26 @@ export function getQueue(name: QueueName): Queue<TaskJobData> {
   return q;
 }
 
+// A task's BullMQ job id ≠ its taskId once it has been re-enqueued (see below),
+// so we record the CURRENT job id in Redis. isJobAlive reads it to look up the
+// right job; without this it checked the bare taskId, always missed the suffixed
+// re-enqueue, and the watchdog/recover kept re-adding "orphaned" jobs that were
+// actually alive — piling up thousands of delayed duplicates. Advisory + TTL'd:
+// a stale entry just makes isJobAlive fall back to a re-enqueue, which is safe.
+const jobMapKey = (taskId: string) => `rc:jobmap:${taskId}`;
+const JOBMAP_TTL_SEC = 3600;
+
 export async function addTaskJob(queueName: QueueName, taskId: string, delayMs = 0): Promise<void> {
-  // jobId = taskId → DB task id and BullMQ job id are the same (reconciliation basis).
-  // Re-enqueues get a unique suffix (BullMQ won't re-add a finished jobId; no colons allowed).
-  await getQueue(queueName).add(
-    "task",
-    { taskId },
-    { jobId: delayMs > 0 ? `${taskId}-r${Date.now()}` : taskId, delay: delayMs },
-  );
+  // Initial enqueue uses jobId = taskId. Re-enqueues (delay > 0) get a unique
+  // suffix because BullMQ won't re-add a jobId that already completed/failed.
+  const jobId = delayMs > 0 ? `${taskId}-r${Date.now()}` : taskId;
+  await getQueue(queueName).add("task", { taskId }, { jobId, delay: delayMs });
+  await queueRedis.set(jobMapKey(taskId), jobId, "EX", JOBMAP_TTL_SEC);
 }
 
 export async function isJobAlive(queueName: QueueName, taskId: string): Promise<boolean> {
-  const job = await getQueue(queueName).getJob(taskId);
+  const jobId = (await queueRedis.get(jobMapKey(taskId))) ?? taskId; // fallback: legacy jobs keyed by taskId
+  const job = await getQueue(queueName).getJob(jobId);
   if (!job) return false;
   const state = await job.getState();
   return state === "waiting" || state === "active" || state === "delayed" || state === "prioritized";
