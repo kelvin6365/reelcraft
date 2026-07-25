@@ -1,6 +1,6 @@
 # 04 · Audit 層（硬性要求）
 
-兩張表 + 一個唯一入口 + 一個 guard。目標：**任何動作、任何 AI 呼叫，事後都查到邊個/幾時/用咗乜/使咗幾多**。
+兩張表 + 一個唯一入口 + 一個 guard。目標：**任何動作、任何 AI 呼叫，事後都能查到是誰／何時／用了什麼／花了多少**。
 
 ## 表
 
@@ -9,7 +9,7 @@ audit_logs      id bigserial, userId, at timestamptz default now(),
                 action,                  // 'asset.lock' | 'shot.regenerate' | 'episode.export'
                                          // 'settings.change' | 'task.submit' | 'watchdog.recover' …
                 targetType, targetId,
-                source,                  // 'ui' | 'system' | 'watchdog' | 'agent'(將來)
+                source,                  // 'ui' | 'system' | 'watchdog' | 'agent'(未來)
                 metadata jsonb           // before/after 摘要、ip 等
                 INDEX(userId, at), INDEX(targetType, targetId)
 
@@ -26,20 +26,20 @@ ai_call_logs    id bigserial, userId, at,
                 INDEX(userId, at), INDEX(taskId), INDEX(modelKey, at)
 ```
 
-`usage_costs` 係 `ai_call_logs` 嘅日級聚合（cron 每晚跑，或者查詢時 on-the-fly——MVP 直接查 ai_call_logs，量大先物化）。
+`usage_costs` 是 `ai_call_logs` 的日級聚合（由 cron 每晚執行，或於查詢時 on-the-fly 計算——MVP 階段直接查 ai_call_logs，量大後再物化）。
 
 ## 唯一入口
 
 ```ts
-// src/lib/ai/call-model.ts —— 全 repo 唯一可以掂 adapter 嘅地方
+// src/lib/ai/call-model.ts —— 全 repo 中唯一可以接觸 adapter 的地方
 callModel(ctx: {userId, taskId?, promptId?, promptVersion?}, req: TextRequest): Promise<TextResult>
 generateMedia(ctx, req: ImageRequest | VideoRequest | TTSRequest): Promise<MediaResult>
 
 // 兩個函數負責：resolve modelKey → 校驗能力目錄 → getProviderKey → 計時
-// → 呼叫 adapter → 寫 ai_call_logs（成功失敗都寫）→ 回傳
+// → 呼叫 adapter → 寫入 ai_call_logs（成功失敗皆寫）→ 回傳
 ```
 
-寫 log 失敗**唔可以**令主流程 fail（log 用 fire-and-forget + 本地 console fallback），但要有 metric 知道 log 掉咗。
+寫 log 失敗**不可以**導致主流程失敗（log 使用 fire-and-forget + 本地 console fallback），但要有 metric 得知 log 遺失的情況。
 
 ## audit() helper
 
@@ -47,14 +47,14 @@ generateMedia(ctx, req: ImageRequest | VideoRequest | TTSRequest): Promise<Media
 audit(userId, action, {targetType, targetId, source='ui', metadata})
 ```
 
-必 audit 動作清單（M1）：`project.create/delete`、`episode.create/export`、`asset.lock/unlock`、
+必須 audit 的動作清單（M1）：`project.create/delete`、`episode.create/export`、`asset.lock/unlock`、
 `script.edit`、`storyboard.confirm`、`shot.regenerate`、`task.submit/cancel/retry`、
-`settings.change`、`watchdog.*`。API route 層做，唔靠 handler 自律——route wrapper 自動帶 userId。
+`settings.change`、`watchdog.*`。由 API route 層執行，不依賴 handler 自律——route wrapper 自動帶入 userId。
 
 ## Guard（08-guards.md 之 `no-ai-bypass`）
 
-靜態掃描：`src/lib/ai/adapters/**` 以外唔准 import adapter 檔、唔准出現 `queue.fal.run` / `openrouter.ai` / AtlasCloud endpoint 字串、唔准 adapter 以外讀 `FAL_KEY` 等 env。CI fail = 有人（多數係 AI agent）繞過咗入口。
+靜態掃描：`src/lib/ai/adapters/**` 以外不准 import adapter 檔、不准出現 `queue.fal.run` / `openrouter.ai` / AtlasCloud endpoint 字串、不准在 adapter 以外讀取 `FAL_KEY` 等 env。CI fail 代表有人（多數是 AI agent）繞過了入口。
 
 ## 用量 UI（M2）
 
-Profile「用量」tab：按日/專案/模型成本圖、**每集實際使費**、prompt 排行（邊支食 token 最多）、廠商 latency 對比。全部由 `ai_call_logs` 一張表出。
+Profile「用量」tab：按日/專案/模型的成本圖、**每集實際花費**、prompt 排行（哪支最耗費 token）、廠商 latency 對比。全部由 `ai_call_logs` 一張表輸出。

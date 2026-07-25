@@ -1,18 +1,18 @@
 # 01 · 資料模型（PostgreSQL + Prisma）
 
-鐵律：**每張業務表都有 `userId`**（referencing `users.id`, cascade delete）。全部主鍵 UUID v7（時序友善）。時間戳用 `timestamptz`。狀態欄一律 `text` + TS union（唔用 DB enum，改起上嚟煩）。
+鐵律：**每張業務表都有 `userId`**（referencing `users.id`, cascade delete）。全部主鍵為 UUID v7（時序友善）。時間戳使用 `timestamptz`。狀態欄一律使用 `text` + TS union（不使用 DB enum，修改起來較為麻煩）。
 
 ## 表清單（15 張）
 
 ### Auth 群（Better-Auth 管理）
-`users` / `sessions` / `accounts` / `verifications` — 照 Better-Auth Prisma adapter 預設 schema，唔自己作。
+`users` / `sessions` / `accounts` / `verifications` — 依照 Better-Auth Prisma adapter 的預設 schema，不自行更動。
 
 ### 核心域
 
 ```ts
 projects        id, userId, name, stylePackId, videoRatio('9:16'), videoResolution('720p'),
                 modelDefaults jsonb,        // project 層覆寫 { text, image, video, tts }；三層解析見 03-provider-layer.md
-                                            // （system 預設 → user_model_defaults 表 → 呢度；缺項落上層，唔會落 fake）
+                                            // （system 預設 → user_model_defaults 表 → 此處；缺項則落回上層，不會落到 fake）
                 inputType,                  // 'novel' | 'script' | 'srt'
                 createdAt, updatedAt, lastAccessedAt
 
@@ -23,7 +23,7 @@ episodes        id, userId, projectId, episodeNumber, rawText,           // 原�
                 UNIQUE(projectId, episodeNumber)
 
 scenes          id, userId, episodeId, sceneIndex, summary, content,     // 切塊產物
-                anchorStart, anchorEnd,     // 原文錨點（學 waoowaoo：切塊唔改寫）
+                anchorStart, anchorEnd,     // 原文錨點（借鑒 waoowaoo：切塊不改寫）
                 UNIQUE(episodeId, sceneIndex)
 
 shots           id, userId, episodeId, sceneId, shotIndex,
@@ -36,7 +36,7 @@ shots           id, userId, episodeId, sceneId, shotIndex,
 
 characters      id, userId, projectId, name, aliases jsonb, profile text,
                 appearancePrompt,           // 出圖用外貌描述
-                lockedImageMediaId,         // ✋鎖定後先可以入分鏡
+                lockedImageMediaId,         // ✋鎖定後才可以放入分鏡
                 candidates jsonb, voiceId, locked bool default false
 
 locations       id, userId, projectId, name, summary, prompt,
@@ -53,7 +53,7 @@ voice_lines     id, userId, episodeId, lineIndex, speaker, content,
 ```ts
 media_objects   id, userId, publicId UNIQUE, storageKey UNIQUE, sha256,
                 mimeType, sizeBytes, width, height, durationMs, createdAt
-                // DB 其他表只存 mediaId FK；URL 讀取時經簽名水合
+                // DB 其他表只存 mediaId FK；URL 於讀取時經簽名水合
 
 tasks           id, userId, projectId, episodeId, type, targetType, targetId,
                 status,                     // 'queued'|'processing'|'completed'|'failed'|'canceled'
@@ -63,7 +63,7 @@ tasks           id, userId, projectId, episodeId, type, targetType, targetId,
                 INDEX(status), INDEX(userId, createdAt), INDEX(heartbeatAt)
 
 task_events     id bigserial, taskId, eventType, payload jsonb, createdAt
-                INDEX(taskId, id)           // SSE replay 用
+                INDEX(taskId, id)           // 供 SSE replay 使用
 
 audit_logs      → 見 04-audit.md
 ai_call_logs    → 見 04-audit.md
@@ -77,21 +77,21 @@ usage_costs     id, userId, projectId, apiType, model, action, quantity, unit,
 draft → assets → script → storyboard → images → videos → export → done
 ```
 
-- 狀態只可以前進或者停留；「返轉頭改嘢」唔倒退狀態，改完由 UI 提示下游要唔要重生（下游資產標 `stale` flag 喺 shots.status metadata 度）。
-- 站點解鎖條件（Next Best Action 卡同進度條都由呢度計）：
+- 狀態只可以前進或停留；「返回修改內容」不會使狀態倒退，修改完成後由 UI 提示下游是否需要重新生成（下游資產以 `stale` flag 標示於 shots.status metadata 中）。
+- 站點解鎖條件（Next Best Action 卡與進度條皆由此處計算）：
   - `assets` 完成 = 所有 characters/locations `locked=true`
-  - `storyboard` 完成 = 所有 scenes 有對應 shots + 用戶撳咗「確認分鏡」
+  - `storyboard` 完成 = 所有 scenes 有對應 shots + 用戶按下「確認分鏡」
   - `images` 完成 = 所有 shots.imageMediaId 非空
   - `videos` 完成 = 所有 shots.videoMediaId 非空 + voice_lines 全部有 audioMediaId
 
 ## Prisma 慣例
 
-- 表名 `@@map` snake_case（`novel_promotion_*` 呢種長名唔要，直接 `projects`/`shots`）；欄位 camelCase。
-- 主鍵 `String @id`（UUID v7 由 app 層生成，時序友善）。
-- 狀態欄 `String` + TS union type（唔用 Prisma enum，改起上嚟要 migration）。
-- JSON 欄用 `Json`；媒體 FK 用 `mediaId String?` + relation 去 `MediaObject`。
-- 原子搶佔／CAS 用 `updateMany({where: {id, status:'queued'}, data:…})` 檢查 `count`（waoowaoo 示範嘅 pattern，Prisma 冇 row lock 都做到）。
+- 表名以 `@@map` 轉為 snake_case（不採用如 `novel_promotion_*` 這種長名，直接使用 `projects`/`shots`）；欄位為 camelCase。
+- 主鍵為 `String @id`（UUID v7 由 app 層生成，時序友善）。
+- 狀態欄為 `String` + TS union type（不使用 Prisma enum，修改時需要 migration）。
+- JSON 欄使用 `Json`；媒體 FK 使用 `mediaId String?` + relation 至 `MediaObject`。
+- 原子搶佔／CAS 使用 `updateMany({where: {id, status:'queued'}, data:…})` 並檢查 `count`（此為 waoowaoo 示範的 pattern，即使 Prisma 沒有 row lock 也能做到）。
 
 ## 遷移策略
 
-`prisma migrate dev` / `prisma migrate deploy` 正式 migration，唔學 huobao 手寫 CREATE TABLE、唔學 waoowaoo 生產環境 `db push`。migration 檔入 git。
+使用 `prisma migrate dev` / `prisma migrate deploy` 進行正式 migration，不採用 huobao 手寫 CREATE TABLE 的方式，也不採用 waoowaoo 在生產環境使用 `db push` 的做法。migration 檔案納入 git 版本控制。

@@ -8,13 +8,13 @@
 
 | 問題 | 決定 |
 |---|---|
-| 目標用戶 | **先內部（2rocks studio）後 SaaS**；架構預留多租戶；之後行**開源核心 + 託管收費**雙軌 |
-| 內容形態 | 真人感 + 動漫**兩樣都要**，畫風做成可插拔「畫風包」 |
+| 目標用戶 | **先內部（2rocks studio）後 SaaS**；架構預留多租戶；之後採用**開源核心 + 託管收費**雙軌 |
+| 內容形態 | 真人感 + 動漫**兩者皆需**，畫風做成可插拔「畫風包」 |
 | 資源 | **Kelvin 一人 + AI agents**（Claude Code 當工程團隊） |
-| 輸入起點 | 三種都要：小說文字（M1）→ 自寫劇本（M1，跳過改寫站）→ SRT/音頻（M2） |
+| 輸入起點 | 三種都需要：小說文字（M1）→ 自寫劇本（M1，跳過改寫站）→ SRT/音頻（M2） |
 | MVP 路線 | **A・薄片直通車**：一個月內「貼小說→出一集成片」；多租戶 schema、provider 契約、SHADOW 計費第一日落地，其餘 YAGNI |
 | MVP 廠商 | **OpenRouter**（text 全包）、**fal**（image/video/TTS/lip-sync 主力）、**AtlasCloud**（媒體副選 + A/B + fallback） |
-| 額外硬性要求 | **Audit 所有 action + 每次 AI 呼叫嘅 token usage / model / 成本** |
+| 額外硬性要求 | **Audit 所有 action + 每次 AI 呼叫的 token usage / model / 成本** |
 
 授權警示：三個參考項目（兩個 CC BY-NC-SA、一個 Apache+商業限制）**程式碼一行不能抄**，只用架構模式與 prompt 思想，全部從零實作；prompt 文本亦重寫。
 
@@ -22,7 +22,7 @@
 
 ## 1. 產品定義 + User Flow
 
-**一句話**：貼一段小說（或劇本/SRT），揀畫風同比例，系統引導行 8 個站，每站可人手改，最後出一集 9:16 短劇成片。
+**一句話**：貼一段小說（或劇本/SRT），選擇畫風與比例，系統引導執行 8 個站，每站可手動修改，最後產出一集 9:16 短劇成片。
 
 ### MVP User Flow（引導模式，MVP 唯一模式）
 
@@ -37,15 +37,15 @@
 ⑧ 成片站 ── 自動拼接 + 字幕 → 預覽 → 導出 MP4
 ```
 
-### 三件貫穿全程嘅 UX 固定件（解決 Toonflow 實測「唔知下一步」問題）
+### 三件貫穿全程的 UX 固定元件（解決 Toonflow 實測「不知道下一步」問題）
 
 1. **進度總覽條**（頂部常駐）：八站各顯示 `完成數/總數`（如「圖 12/18」），點擊跳站。
-2. **Next Best Action 卡**（右下角常駐）：根據管線狀態計算「而家最應該做嘅一件事」+ 一鍵執行。
+2. **Next Best Action 卡**（右下角常駐）：根據管線狀態計算「現在最應該做的一件事」+ 一鍵執行。
 3. **失敗抽屜**：所有失敗/卡死任務集中一處，逐項一鍵重試（只重跑失敗 step）。
 
-輔助：鎖住嘅站 hover 顯示「還差什麼」清單（可點擊直達）；空狀態 = CTA + 內建示範專案。
+輔助：鎖定的站 hover 顯示「還差什麼」清單（可點擊直達）；空狀態 = CTA + 內建示範專案。
 
-**審核點只設兩個**（③資產、⑤分鏡）：呢兩樣係下游一切嘅依賴，喺呢度把關重生成本最細；其他站行雲流水。
+**審核點只設兩個**（③資產、⑤分鏡）：這兩項是下游一切的依賴，在此處把關重新生成的成本最低；其他站則行雲流水。
 
 ---
 
@@ -63,10 +63,10 @@ Better-Auth             ─ 內部期 email+password；SaaS 期加 OAuth
 
 ### 部署
 
-一部 VPS 行 docker-compose 五個 container：`app / worker / postgres / redis / minio`。
-**app 同 worker 第一日就分開 container**（修正 waoowaoo 單容器綁定嘅缺陷），將來直接加 worker 副本。唔用 K8s。
+一部 VPS 運行 docker-compose 五個 container：`app / worker / postgres / redis / minio`。
+**app 與 worker 第一日就分開 container**（修正 waoowaoo 單容器綁定的缺陷），將來直接加 worker 副本。不使用 K8s。
 
-### 資料模型（~15 個 model，濃縮 waoowaoo 嘅 40 個）
+### 資料模型（~15 個 model，濃縮 waoowaoo 的 40 個）
 
 ```
 User → Project → Episode → Scene(切塊) → Shot(鏡頭)
@@ -84,11 +84,11 @@ AuditLog / AiCallLog（見 §3）
 - 全表 `userId`（多租戶 ready）
 - `provider::modelId` 嚴格契約（禁猜測/禁降級）
 - `MediaObject` 間接層
-- SHADOW 計費（只記帳唔扣錢）
+- SHADOW 計費（只記帳不扣錢）
 - Guard 腳本框架（見 §6）
 - `callModel()` / `generateMedia()` 唯一 AI 入口
 
-### 刻意唔做（YAGNI，全部「加得返」）
+### 刻意不做（YAGNI，全部「之後可以加回」）
 
 事件溯源 Graph run、無限畫布、Agent 對話層、多語 UI（先繁中）、計費 ENFORCE、團隊協作、K8s。
 
@@ -103,9 +103,9 @@ AiCallLog  ─ 每次 AI 呼叫一行：provider::modelId、apiType、tokens in/
              單價快照、估算成本、latency、成功/失敗+錯誤碼、prompt 模板 ID+版本、taskId
 ```
 
-**結構性保證**：所有 AI 呼叫必須經 `callModel()` / `generateMedia()` 唯一入口，入口自動寫 `AiCallLog`；guard 腳本掃描直連 provider SDK 嘅 code，CI fail（仿 waoowaoo `no-media-provider-bypass`）。
+**結構性保證**：所有 AI 呼叫必須經 `callModel()` / `generateMedia()` 唯一入口，入口自動寫 `AiCallLog`；guard 腳本掃描直連 provider SDK 的 code，CI fail（仿 waoowaoo `no-media-provider-bypass`）。
 
-**回報 UI**：Profile「用量」tab——按日/專案/模型嘅成本圖、**每集實際使費**（SaaS 定價依據）、邊支 prompt 食 token 最多、邊間廠商最慢最貴。`AiCallLog` 記 prompt 版本 → 將來 prompt A/B 有現成數據。
+**回報 UI**：Profile「用量」tab——按日/專案/模型的成本圖、**每集實際花費**（SaaS 定價依據）、哪個 prompt 消耗 token 最多、哪家廠商最慢最貴。`AiCallLog` 記錄 prompt 版本 → 將來 prompt A/B 有現成數據。
 
 ---
 
@@ -122,17 +122,17 @@ AiCallLog  ─ 每次 AI 呼叫一行：provider::modelId、apiType、tokens in/
 看門 ─ watchdog 每 30 秒：心跳斷 90 秒殭屍 → 重置 queued；超上限 → failed
 ```
 
-取態：**重試由 app 層話事，唔係 BullMQ 話事**（分開「值得重試」同「重試嘥氣」）。
+取態：**重試由 app 層決定，而非由 BullMQ 決定**（區分「值得重試」與「重試徒勞」）。
 
 ### Provider 層
 
 1. **契約**：`provider::modelId` + 統一入口 + 能力目錄 JSON（model 支援秒數/解像度/首尾幀）。
 2. **MVP 三個 adapter**：
-   - **OpenRouter** = text 全包（一把 key 試晒各家，用 AiCallLog 數據揀）
+   - **OpenRouter** = text 全包（一把 key 試遍各家，用 AiCallLog 數據選擇）
    - **fal** = 媒體主力（image nano-banana 系／video Kling/Wan/Veo/Sora／TTS IndexTTS-2／lip-sync）
-   - **AtlasCloud** = 媒體副選（國內模型聚合，價格向；同 fal A/B + fallback）
-   - fal 同 AtlasCloud 都係「提交→輪詢/webhook」形態，adapter 結構相同。
-3. **M2 上宣告式模板**（JSON template：create/status/content endpoint + JSONPath + 輪詢配置），之後加廠商唔使寫 code。
+   - **AtlasCloud** = 媒體副選（國內模型聚合，價格向；與 fal A/B + fallback）
+   - fal 與 AtlasCloud 都是「提交→輪詢/webhook」形態，adapter 結構相同。
+3. **M2 上宣告式模板**（JSON template：create/status/content endpoint + JSONPath + 輪詢配置），之後加廠商無需寫 code。
 4. **金鑰**：內部期 server env vars；SaaS 期換 per-user 信封加密 BYO-Key。`getProviderKey(userId)` 抽象第一日存在，到時只換實現。**API 永不回傳明文金鑰**（waoowaoo 教訓）。
 
 ---
@@ -157,22 +157,22 @@ prompts/
 
 ### 治理
 
-① 渲染時變數嚴格驗證（placeholder 唔對即拋錯）② canary 迴歸鎖結構 ③ AiCallLog 記模板版本，質素/成本有數睇。
+① 渲染時變數嚴格驗證（placeholder 不符即拋錯）② canary 迴歸鎖結構 ③ AiCallLog 記模板版本，質素/成本有據可查。
 
 ---
 
 ## 6. 里程碑 + Solo × AI Agents 工作法
 
-| 里程碑 | 範圍 | 收貨條件（以「出到乜」收貨） |
+| 里程碑 | 範圍 | 驗收條件（以「產出了什麼」驗收） |
 |---|---|---|
 | **M0 · 地基**（1 週） | repo + docker-compose + auth + schema + guard 框架 + callModel() | AiCallLog 有第一行記錄 |
 | **M1 · 直通車**（3-4 週） | 八站引導流程全通 | 自己 30 分鐘出一集；kill worker 任務自動恢復 |
-| **M2 · 內部生產**（4 週） | SRT 輸入、宣告式模板、失敗抽屜、用量儀表板、畫風包 ×3 | 工作室真實出片，每集成本有數 |
+| **M2 · 內部生產**（4 週） | SRT 輸入、宣告式模板、失敗抽屜、用量儀表板、畫風包 ×3 | 工作室真實出片，每集成本清楚可查 |
 | **M3 · 開源+SaaS 準備** | BYO-Key 加密、ENFORCE 計費、配額、開源倉整理 | 一個外人成功自 deploy + 一個付費用戶全程走通 |
 
 ### 工作法
 
-- **Guard 先於 code**：每個架構決策即寫 guard 腳本；你定不變式，agents 框內填肉。
-- **每個 PR 一條薄片**：每次交付駁通「貼文→出嘢」某一段，唔起大 framework。
-- **Prompt 迭代同 code 迭代分開**：canary 鎖結構，人專心調質素。
-- **AiCallLog 每週睇一次**：貴嘅 prompt、慢嘅廠商即刻換。
+- **Guard 先於 code**：每個架構決策即寫 guard 腳本；你訂定不變式，agents 在框架內填充細節。
+- **每個 PR 一條薄片**：每次交付打通「貼文→出片」某一段，不建大 framework。
+- **Prompt 迭代與 code 迭代分開**：canary 鎖結構，人專心調質素。
+- **AiCallLog 每週看一次**：貴的 prompt、慢的廠商立即更換。
