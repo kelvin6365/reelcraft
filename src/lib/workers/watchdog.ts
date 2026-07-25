@@ -58,6 +58,14 @@ async function tick(): Promise<void> {
   }
 }
 
-console.log(`[watchdog] started (interval ${env.WATCHDOG_INTERVAL_MS}ms, heartbeat timeout ${env.TASK_HEARTBEAT_TIMEOUT_MS}ms)`);
-void tick();
-setInterval(() => void tick(), env.WATCHDOG_INTERVAL_MS);
+// Extracted so this module can be imported for its side effect from both
+// `npm run watchdog` (below, unconditional — byte-identical to before) and the
+// local-mode embedded worker (src/instrumentation.ts), which has no separate
+// watchdog process to run instead.
+export function startWatchdog(): void {
+  console.log(`[watchdog] started (interval ${env.WATCHDOG_INTERVAL_MS}ms, heartbeat timeout ${env.TASK_HEARTBEAT_TIMEOUT_MS}ms)`);
+  void tick();
+  setInterval(() => void tick(), env.WATCHDOG_INTERVAL_MS);
+}
+
+startWatchdog();

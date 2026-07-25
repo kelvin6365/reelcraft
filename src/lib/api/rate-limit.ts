@@ -7,9 +7,13 @@
 // mutations get a tighter one. Both are env-configurable.
 //
 // Key: rc:ratelimit:{read|write}:{userId}   member = unique id   score = ts(ms)
+//
+// DEPLOY_MODE=local substitutes an in-process sliding window (single process,
+// so no distribution to worry about) — same admit/reject semantics, counters
+// reset on restart.
 import { randomUUID } from "node:crypto";
 import { redis } from "@/lib/redis";
-import { env } from "@/lib/env";
+import { env, isLocalMode } from "@/lib/env";
 
 export type RateBucket = "read" | "write";
 
@@ -35,8 +39,27 @@ export function bucketForMethod(method: string): RateBucket {
   return method === "GET" || method === "HEAD" ? "read" : "write";
 }
 
+const localWindows = new Map<string, number[]>(); // key -> ascending timestamps(ms)
+
+function checkRateLimitLocal(userId: string, bucket: RateBucket): boolean {
+  const key = `${bucket}:${userId}`;
+  const now = Date.now();
+  const windowStart = now - WINDOW_MS;
+  let hits = localWindows.get(key);
+  if (!hits) {
+    hits = [];
+    localWindows.set(key, hits);
+  }
+  while (hits.length && hits[0] <= windowStart) hits.shift();
+  if (hits.length >= MAX[bucket]) return false;
+  hits.push(now);
+  return true;
+}
+
 /** True when the request is allowed; false means the caller should return 429. */
 export async function checkRateLimit(userId: string, bucket: RateBucket = "read"): Promise<boolean> {
+  if (isLocalMode()) return checkRateLimitLocal(userId, bucket);
+
   const allowed = await redis.eval(
     RATE_LIMIT_LUA,
     1,

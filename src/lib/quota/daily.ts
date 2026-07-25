@@ -1,8 +1,13 @@
 // Per-user daily spend caps for the expensive API classes (image / video).
 // Counter: rc:daily:{yyyymmdd}:{userId}:{apiType}, INCR on submit, 48h TTL so
 // yesterday's key self-cleans without a cron. Enforced in submitTask before enqueue.
+//
+// DEPLOY_MODE=local substitutes an in-process Map counter, keyed the same way
+// (the day stamp is already baked into the key, so no TTL bookkeeping is
+// needed — a stale day's key is simply never incremented again). Resets on
+// process restart, same documented tradeoff as the other local-mode drivers.
 import { redis } from "@/lib/redis";
-import { env } from "@/lib/env";
+import { env, isLocalMode } from "@/lib/env";
 import { ApiError } from "@/lib/api/errors";
 import { TASK_TYPE, type TaskType } from "@/lib/task/types";
 
@@ -63,11 +68,20 @@ local v = redis.call('INCR', KEYS[1])
 if v == 1 then redis.call('EXPIRE', KEYS[1], ARGV[1]) end
 return v`;
 
+const localDaily = new Map<string, number>();
+
 export async function checkDailyQuota(userId: string, apiType: DailyApiType): Promise<void> {
   const key = dailyKey(userId, apiType);
-  const used = (await redis.eval(INCR_LUA, 1, key, String(TTL_SEC))) as number;
-
   const limit = limitFor(apiType);
+
+  if (isLocalMode()) {
+    const used = (localDaily.get(key) ?? 0) + 1;
+    localDaily.set(key, used);
+    if (used > limit) throw new QuotaExceededError(apiType, limit, used);
+    return;
+  }
+
+  const used = (await redis.eval(INCR_LUA, 1, key, String(TTL_SEC))) as number;
   if (used > limit) throw new QuotaExceededError(apiType, limit, used);
 }
 
@@ -78,6 +92,13 @@ export async function refundDailyQuota(userId: string, type: TaskType): Promise<
   const apiType = dailyApiTypeForTask(type);
   if (!apiType) return;
   const key = dailyKey(userId, apiType);
+
+  if (isLocalMode()) {
+    const v = Math.max(0, (localDaily.get(key) ?? 0) - 1);
+    localDaily.set(key, v);
+    return;
+  }
+
   const v = await redis.decr(key);
   if (v < 0) await redis.set(key, "0");
 }

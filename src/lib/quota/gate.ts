@@ -5,8 +5,13 @@
 // Key: rc:gate:{scope}:{userId}   member = opaque token   score = acquire time (ms)
 // A slot older than ttlSec is treated as stale (crashed worker) and reaped on the
 // next acquire — this is what keeps a dead worker from leaking a slot forever.
+//
+// DEPLOY_MODE=local runs a single process, so an in-process Map substitutes with
+// the same acquire/release/reap semantics (state resets on restart — the local
+// driver has no TTL persistence to lose, so that's expected, not a regression).
 import { randomUUID } from "node:crypto";
 import { redis } from "@/lib/redis";
+import { isLocalMode } from "@/lib/env";
 
 export type GateScope = "image" | "video";
 
@@ -27,6 +32,26 @@ end
 return nil
 `;
 
+// --- local-mode driver: same key shape, Map<token, acquireTimeMs> per (scope, userId) ---
+const localGates = new Map<string, Map<string, number>>();
+
+function localSlots(scope: GateScope, userId: string): Map<string, number> {
+  const key = gateKey(scope, userId);
+  let slots = localGates.get(key);
+  if (!slots) {
+    slots = new Map();
+    localGates.set(key, slots);
+  }
+  return slots;
+}
+
+function reapExpiredLocal(slots: Map<string, number>, ttlMs: number): void {
+  const cutoff = Date.now() - ttlMs;
+  for (const [token, acquiredAt] of slots) {
+    if (acquiredAt <= cutoff) slots.delete(token);
+  }
+}
+
 /**
  * Try to take one concurrency slot. Returns an opaque token to pass to
  * releaseSlot, or null when the user is already at `limit` for this scope.
@@ -38,6 +63,15 @@ export async function acquireSlot(
   ttlSec: number,
 ): Promise<string | null> {
   const token = randomUUID();
+
+  if (isLocalMode()) {
+    const slots = localSlots(scope, userId);
+    reapExpiredLocal(slots, ttlSec * 1000);
+    if (slots.size >= limit) return null;
+    slots.set(token, Date.now());
+    return token;
+  }
+
   const ttlMs = ttlSec * 1000;
   const result = await redis.eval(
     ACQUIRE_LUA,
@@ -53,6 +87,10 @@ export async function acquireSlot(
 
 /** Give back a slot taken by acquireSlot. Idempotent — a stale token is a no-op. */
 export async function releaseSlot(userId: string, scope: GateScope, token: string): Promise<void> {
+  if (isLocalMode()) {
+    localSlots(scope, userId).delete(token);
+    return;
+  }
   await redis.zrem(gateKey(scope, userId), token);
 }
 
@@ -63,5 +101,17 @@ export async function releaseSlot(userId: string, scope: GateScope, token: strin
 // (reap all) ONLY after confirming the user has no processing task in the scope,
 // so no genuinely-running job's slot is touched. Returns how many were reaped.
 export async function reapStaleSlots(userId: string, scope: GateScope, olderThanMs: number): Promise<number> {
+  if (isLocalMode()) {
+    const slots = localSlots(scope, userId);
+    const cutoff = Date.now() - olderThanMs;
+    let reaped = 0;
+    for (const [token, acquiredAt] of slots) {
+      if (acquiredAt <= cutoff) {
+        slots.delete(token);
+        reaped++;
+      }
+    }
+    return reaped;
+  }
   return redis.zremrangebyscore(gateKey(scope, userId), 0, Date.now() - olderThanMs);
 }

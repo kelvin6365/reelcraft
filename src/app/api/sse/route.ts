@@ -1,10 +1,11 @@
-// SSE progress stream per project. Live events via Redis pub/sub; missed events
-// replayed from task_events using Last-Event-ID (docs/tech/02-task-system.md).
+// SSE progress stream per project. Live events via Redis pub/sub (or the
+// in-process bus in DEPLOY_MODE=local); missed events replayed from task_events
+// using Last-Event-ID (docs/tech/02-task-system.md).
 import type { NextRequest } from "next/server";
 import { headers } from "next/headers";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/db";
-import { createSubscriber, projectChannel } from "@/lib/redis";
+import { subscribeProjectEvents, type ProjectEventSubscription } from "@/lib/task/events";
 
 export const dynamic = "force-dynamic";
 
@@ -20,7 +21,6 @@ export async function GET(req: NextRequest) {
 
   const lastEventId = req.headers.get("last-event-id");
   const encoder = new TextEncoder();
-  const subscriber = createSubscriber();
 
   const stream = new ReadableStream({
     async start(controller) {
@@ -33,14 +33,15 @@ export async function GET(req: NextRequest) {
       };
 
       // Register cleanup IMMEDIATELY — before any await — so a disconnect during
-      // replay or subscribe still quits the dedicated Redis connection (no leak).
+      // replay or subscribe still closes the live-event subscription (no leak).
       let keepalive: ReturnType<typeof setInterval> | undefined;
+      let subscription: ProjectEventSubscription | undefined;
       let closed = false;
       const cleanup = () => {
         if (closed) return;
         closed = true;
         if (keepalive) clearInterval(keepalive);
-        void subscriber.quit().catch(() => {});
+        subscription?.close();
         try {
           controller.close();
         } catch {
@@ -66,8 +67,7 @@ export async function GET(req: NextRequest) {
           }
         }
 
-        await subscriber.subscribe(projectChannel(projectId));
-        subscriber.on("message", (_ch, message) => {
+        subscription = await subscribeProjectEvents(projectId, (message) => {
           try {
             const parsed = JSON.parse(message) as { id?: string };
             send(parsed.id ?? "0", message);
@@ -75,6 +75,13 @@ export async function GET(req: NextRequest) {
             /* skip malformed */
           }
         });
+        // Disconnect can land while the subscribe above is in flight — cleanup
+        // already ran with `subscription` still undefined, so close it here or
+        // the dedicated connection leaks.
+        if (closed) {
+          subscription.close();
+          return;
+        }
 
         keepalive = setInterval(() => {
           try {
@@ -84,7 +91,7 @@ export async function GET(req: NextRequest) {
           }
         }, 25_000);
       } catch {
-        cleanup(); // Redis blip during setup — don't leak the connection
+        cleanup(); // subscribe blip during setup — don't leak the connection
       }
     },
   });

@@ -1,5 +1,7 @@
 import { Queue } from "bullmq";
 import { queueRedis } from "@/lib/redis";
+import { isLocalMode } from "@/lib/env";
+import { localDelays, localJobAlive } from "@/lib/task/local-queue";
 import type { QueueName, TaskJobData } from "@/lib/task/types";
 
 // attempts:1 — retries are decided by the app layer (withTaskLifecycle re-enqueues), not BullMQ.
@@ -31,6 +33,16 @@ const jobMapKey = (taskId: string) => `rc:jobmap:${taskId}`;
 const JOBMAP_TTL_SEC = 3600;
 
 export async function addTaskJob(queueName: QueueName, taskId: string, delayMs = 0): Promise<void> {
+  if (isLocalMode()) {
+    // The task row is already `queued` (submitTask/retryTask/watchdog set it
+    // before calling addTaskJob) — src/lib/task/local-queue.ts's DB poller
+    // picks it up on its own. A positive delay just needs bookkeeping so the
+    // poller skips it until then (retry backoff / gate requeue).
+    if (delayMs > 0) localDelays.set(taskId, Date.now() + delayMs);
+    else localDelays.delete(taskId);
+    return;
+  }
+
   // Initial enqueue uses jobId = taskId. Re-enqueues (delay > 0) get a unique
   // suffix because BullMQ won't re-add a jobId that already completed/failed.
   const jobId = delayMs > 0 ? `${taskId}-r${Date.now()}` : taskId;
@@ -39,6 +51,8 @@ export async function addTaskJob(queueName: QueueName, taskId: string, delayMs =
 }
 
 export async function isJobAlive(queueName: QueueName, taskId: string): Promise<boolean> {
+  if (isLocalMode()) return localJobAlive(taskId);
+
   const jobId = (await queueRedis.get(jobMapKey(taskId))) ?? taskId; // fallback: legacy jobs keyed by taskId
   const job = await getQueue(queueName).getJob(jobId);
   if (!job) return false;

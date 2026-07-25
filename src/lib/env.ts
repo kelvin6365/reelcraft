@@ -7,6 +7,12 @@ const schema = z.object({
   DATABASE_URL: z.string().url(),
   REDIS_URL: z.string().url(),
 
+  // "full" = Postgres+Redis+BullMQ (default, unchanged behavior). "local" = SQLite
+  // + in-process substitutes for every Redis dependency (docs/plans/2026-07-25-
+  // local-quickstart-design.md) — a single `npm run dev`, zero Docker. Every local
+  // branch is additive: this flag must never change full-mode behavior.
+  DEPLOY_MODE: z.enum(["full", "local"]).default("full"),
+
   STORAGE_TYPE: z.enum(["local", "s3"]).default("local"),
   STORAGE_ENDPOINT: z.string().url(),
   STORAGE_ACCESS_KEY: z.string().min(1),
@@ -89,3 +95,7 @@ if (parsed.data.NODE_ENV === "production" && !isBuildPhase) {
 
 export const env = parsed.data;
 export type Env = typeof env;
+
+export function isLocalMode(): boolean {
+  return env.DEPLOY_MODE === "local";
+}
