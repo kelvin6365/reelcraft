@@ -11,3 +11,8 @@ export function needsCostConfirm({ usd, units }: { usd?: number | null; units?: 
 export function formatUsd(usd: number): string {
   return `~US$${usd.toFixed(2)}`;
 }
+
+export function formatUsdDisplay(usd: number): string {
+  if (usd > 0 && usd < 0.01) return "<$0.01";
+  return `$${usd.toFixed(2)}`;
+}

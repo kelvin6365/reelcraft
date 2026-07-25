@@ -154,6 +154,25 @@ describe("computeStages", () => {
     const images = stages.find((s) => s.key === "images");
     expect(images?.count).toEqual({ done: 2, total: 4 });
   });
+
+  it("hides the storyboard count before any shots exist", () => {
+    const stages = computeStages(base);
+    const storyboard = stages.find((s) => s.key === "storyboard");
+    expect(storyboard?.count).toBeUndefined();
+  });
+
+  it("shows a 1/1 storyboard count once shots exist but await confirmation", () => {
+    const stages = computeStages({
+      ...base,
+      hasScript: true,
+      characters: { total: 1, locked: 1, withCandidates: 1 },
+      shots: { total: 4, withImage: 0, withVideo: 0 },
+      storyboardConfirmed: false,
+    });
+    const storyboard = stages.find((s) => s.key === "storyboard");
+    expect(storyboard?.count).toEqual({ done: 1, total: 1 });
+    expect(storyboard?.status).toBe("review");
+  });
 });
 
 describe("computeStages status + blockedBy", () => {

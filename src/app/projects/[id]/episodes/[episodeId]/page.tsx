@@ -1,5 +1,6 @@
 "use client";
 import { use, useCallback, useEffect, useState } from "react";
+import Link from "next/link";
 import { AlertTriangle, ChevronLeft, ChevronRight, Loader2 } from "lucide-react";
 import { AppShell } from "@/components/app-shell";
 import { Badge } from "@/components/ui/badge";
@@ -16,6 +17,8 @@ import { useAction } from "@/ui/planning/useAction";
 import { qk } from "@/ui/query-keys";
 import { statusLabel, statusVariant } from "@/ui/episode/status";
 import { StationNavProvider } from "@/ui/episode/station-nav";
+import { shortModelName } from "@/ui/model-format";
+import { formatUsdDisplay } from "@/ui/episode/cost-confirm";
 import type { EpisodeView, StageKey } from "@/ui/types";
 import {
   InputPanel,
@@ -93,7 +96,10 @@ export default function EpisodeWorkspacePage({
       active="projects"
       title={
         <span className="truncate">
-          {episode.project.name} · 第 {episode.episodeNumber} 集
+          <Link href={`/projects/${episode.projectId}`} className="hover:underline">
+            {episode.project.name}
+          </Link>{" "}
+          · 第 {episode.episodeNumber} 集
         </span>
       }
     >
@@ -103,7 +109,10 @@ export default function EpisodeWorkspacePage({
           <div>
             <div className="flex items-center gap-2">
               <h1 className="text-2xl font-semibold tracking-tight">
-                {episode.project.name} · 第 {episode.episodeNumber} 集
+                <Link href={`/projects/${episode.projectId}`} className="hover:underline">
+                  {episode.project.name}
+                </Link>{" "}
+                · 第 {episode.episodeNumber} 集
               </h1>
               <Badge variant={statusVariant(episode.status)}>{statusLabel(episode.status)}</Badge>
             </div>
@@ -158,6 +167,7 @@ export default function EpisodeWorkspacePage({
               nextAction={{ ...view.nextAction, estCostUsd: stageEstCostUsd(view) }}
               episodeId={episodeId}
               pendingUnits={stagePendingUnits(view)}
+              suppressButton={current === view.nextAction.stage && isStageEmpty(view, current)}
             />
             <CostCard view={view} />
             {view.stuckTasks > 0 && <StuckTasksCard episodeId={episodeId} count={view.stuckTasks} />}
@@ -185,19 +195,52 @@ export default function EpisodeWorkspacePage({
   );
 }
 
+// 3 mirrors ASSET_CANDIDATE_COUNT in src/lib/billing/quote.ts — each pending
+// character/location gets 3 candidate images generated in one batch.
+const ASSET_CANDIDATE_COUNT = 3;
+
+function isStageEmpty(view: EpisodeView, stage: StageKey): boolean {
+  switch (stage) {
+    case "script":
+      return view.episode.scriptText.length === 0;
+    case "assets":
+      return view.characters.length + view.locations.length === 0;
+    case "storyboard":
+    case "images":
+    case "videos":
+      return view.shots.length === 0;
+    case "voice":
+      return view.voiceLines.length === 0;
+    case "export":
+      return !view.episode.exportUrl;
+    default:
+      return false;
+  }
+}
+
 function stageEstCostUsd(view: EpisodeView): number | undefined {
   const downstream = view.cost?.downstream;
-  if (!downstream) return undefined;
-  if (view.nextAction.stage === "images" && downstream.estImageUsd > 0) return downstream.estImageUsd;
-  if (view.nextAction.stage === "videos" && downstream.estVideoUsd > 0) return downstream.estVideoUsd;
+  if (view.nextAction.stage === "images" && downstream && downstream.estImageUsd > 0) return downstream.estImageUsd;
+  if (view.nextAction.stage === "videos" && downstream && downstream.estVideoUsd > 0) return downstream.estVideoUsd;
+  if (view.nextAction.stage === "assets") {
+    const units = stagePendingUnits(view);
+    const unit = view.cost?.activeModels?.image.unitUsd;
+    if (!units || typeof unit !== "number") return undefined;
+    return units * ASSET_CANDIDATE_COUNT * unit;
+  }
   return undefined;
 }
 
 function stagePendingUnits(view: EpisodeView): number | undefined {
   const downstream = view.cost?.downstream;
-  if (!downstream) return undefined;
-  if (view.nextAction.stage === "images") return downstream.pendingImages;
-  if (view.nextAction.stage === "videos") return downstream.pendingVideos;
+  if (view.nextAction.stage === "images") return downstream?.pendingImages;
+  if (view.nextAction.stage === "videos") return downstream?.pendingVideos;
+  if (view.nextAction.stage === "assets") {
+    return (
+      view.characters.filter((c) => c.candidates.length === 0 && !c.locked).length +
+      view.locations.filter((l) => l.candidates.length === 0 && !l.locked).length
+    );
+  }
   return undefined;
 }
 
@@ -241,11 +284,23 @@ function StuckTasksCard({ episodeId, count }: { episodeId: string; count: number
   );
 }
 
-function CostRow({ label, value, strong }: { label: string; value: string; strong?: boolean }) {
+function CostRow({
+  label,
+  value,
+  strong,
+  title,
+}: {
+  label: string;
+  value: string;
+  strong?: boolean;
+  title?: string;
+}) {
   return (
     <div className="flex items-center justify-between text-sm">
       <span className={strong ? "font-medium" : "text-muted-foreground"}>{label}</span>
-      <span className={strong ? "font-medium tabular-nums" : "tabular-nums"}>{value}</span>
+      <span className={strong ? "font-medium tabular-nums" : "tabular-nums"} title={title}>
+        {value}
+      </span>
     </div>
   );
 }
@@ -261,23 +316,39 @@ function CostCard({ view }: { view: EpisodeView }) {
       </CardHeader>
       <CardContent className="space-y-3">
         {}
-        <CostRow label="本集已使" value={cost ? `$${cost.episodeSpendUsd.toFixed(2)}` : "—"} strong />
-        <CostRow label="本專案已使" value={cost ? `$${cost.projectSpendUsd.toFixed(2)}` : "—"} />
+        <CostRow label="本集已使" value={cost ? formatUsdDisplay(cost.episodeSpendUsd) : "—"} strong />
+        <CostRow label="本專案已使" value={cost ? formatUsdDisplay(cost.projectSpendUsd) : "—"} />
         {downstream && downstream.totalUsd > 0 && (
           <>
             <Separator />
-            <CostRow label={`待生成圖像 ${downstream.pendingImages} 張`} value={`~$${downstream.estImageUsd.toFixed(2)}`} />
-            <CostRow label={`待生成視頻 ${downstream.pendingVideos} 鏡`} value={`~$${downstream.estVideoUsd.toFixed(2)}`} />
-            {downstream.videoUnitUsd ? <CostRow label="每鏡視頻單價" value={`$${downstream.videoUnitUsd.toFixed(2)}`} /> : null}
+            <CostRow
+              label={`待生成圖像 ${downstream.pendingImages} 張`}
+              value={"~" + formatUsdDisplay(downstream.estImageUsd)}
+            />
+            <CostRow
+              label={`待生成視頻 ${downstream.pendingVideos} 鏡`}
+              value={"~" + formatUsdDisplay(downstream.estVideoUsd)}
+            />
+            {downstream.videoUnitUsd ? (
+              <CostRow label="每鏡視頻單價" value={formatUsdDisplay(downstream.videoUnitUsd)} />
+            ) : null}
             <Separator />
-            <CostRow label="下游預估小計" value={`~$${downstream.totalUsd.toFixed(2)}`} strong />
+            <CostRow label="下游預估小計" value={"~" + formatUsdDisplay(downstream.totalUsd)} strong />
           </>
         )}
         {cost?.activeModels && (
           <>
             <Separator />
-            <CostRow label="圖像模型" value={cost.activeModels.image.modelKey.split("::").pop() ?? "—"} />
-            <CostRow label="視頻模型" value={cost.activeModels.video.modelKey.split("::").pop() ?? "—"} />
+            <CostRow
+              label="圖像模型"
+              value={shortModelName(cost.activeModels.image.modelKey)}
+              title={cost.activeModels.image.modelKey}
+            />
+            <CostRow
+              label="視頻模型"
+              value={shortModelName(cost.activeModels.video.modelKey)}
+              title={cost.activeModels.video.modelKey}
+            />
           </>
         )}
       </CardContent>

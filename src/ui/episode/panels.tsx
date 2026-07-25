@@ -87,11 +87,14 @@ function Station({
       <CardHeader className="flex-row items-center gap-3 [&>div]:min-w-0">
         {/* Real heading, not a styled div — the station title is the h2 under the
             page's h1, so screen-reader users can navigate the pipeline by heading. */}
-        <CardTitle asChild className="text-base">
-          <h2>
-            第 {meta.index} 站 · {meta.name}
-          </h2>
-        </CardTitle>
+        <div className="min-w-0">
+          <CardTitle asChild className="text-base">
+            <h2>
+              第 {meta.index} 站 · {meta.name}
+            </h2>
+          </CardTitle>
+          {meta.hint && <p className="text-xs text-muted-foreground">{meta.hint}</p>}
+        </div>
         {typeof pct === "number" && (
           <Badge variant="secondary" className="text-primary">
             生成中 {pct}%
@@ -308,7 +311,13 @@ function AssetCard(props: {
             variant="ghost"
             size="sm"
             disabled={disabled}
-            title={props.locked && props.isCharacter ? "保留身份重生候選圖" : "重新生成候選圖"}
+            title={
+              props.candidates.length === 0 && !props.locked
+                ? "生成 3 張候選圖"
+                : props.locked && props.isCharacter
+                  ? "保留身份重生候選圖"
+                  : "重新生成候選圖"
+            }
             onClick={() =>
               run(() =>
                 api.post(
@@ -318,7 +327,7 @@ function AssetCard(props: {
               )
             }
           >
-            <RefreshCw /> 重生
+            <RefreshCw /> {props.candidates.length === 0 && !props.locked ? "生成" : "重生"}
           </Button>
           {props.isCharacter && props.locked && (
             <Button
@@ -381,7 +390,7 @@ function AssetCard(props: {
           ) : null}
         </div>
       ) : props.candidates.length === 0 ? (
-        <p className="text-sm text-muted-foreground">未有候選圖。撳上面「重生」生成 3 張候選，或喺「下一步」一次過生成全部資產圖。</p>
+        <p className="text-sm text-muted-foreground">未有候選圖。撳上面「生成」生成 3 張候選，或喺「下一步」一次過生成全部資產圖。</p>
       ) : (
         <div className="grid grid-cols-3 gap-3 sm:grid-cols-4">
           {props.candidates.map((mediaId) => {
@@ -479,6 +488,7 @@ export function ScriptPanel({ view, progress }: PanelProps) {
   const review = view.episode.scriptReview;
   const hasReview = !!review && Array.isArray((review as { scenes?: unknown[] }).scenes);
   const anyBusy = save.busy || regen.busy || checkup.busy;
+  const isEmpty = view.episode.scriptText.length === 0 && !dirty;
 
   return (
     <Station
@@ -487,44 +497,46 @@ export function ScriptPanel({ view, progress }: PanelProps) {
       episodeId={epId}
       promptIds={["rewrite_script", "script_review"]}
       action={
-        <>
-          <Button
-            size="sm"
-            disabled={anyBusy || !dirty}
-            aria-busy={save.busy}
-            onClick={() =>
-              save.run(async () => {
-                await api.patch(`/api/episodes/${epId}/script`, { scriptText: text });
-                setDirty(false);
-              })
-            }
-          >
-            {save.busy ? <Loader2 className="animate-spin" /> : dirty ? "儲存" : "已儲存"}
-          </Button>
-          <Button
-            size="sm"
-            variant="outline"
-            disabled={anyBusy}
-            aria-busy={regen.busy}
-            onClick={() => regen.run(() => api.post(`/api/episodes/${epId}/rewrite-script`))}
-          >
-            {regen.busy ? <Loader2 className="animate-spin" /> : "重新生成"}
-          </Button>
-          <Button
-            size="sm"
-            variant="outline"
-            disabled={anyBusy || view.episode.scriptText.length === 0}
-            aria-busy={checkup.busy}
-            title="按檢查清單逐場標風險燈：戲劇目的/對白/節奏/鉤子/展示不明說"
-            onClick={() => checkup.run(() => api.post(`/api/episodes/${epId}/script-review`))}
-          >
-            {checkup.busy ? <Loader2 className="animate-spin" /> : "🩺 劇本體檢"}
-          </Button>
-        </>
+        isEmpty ? null : (
+          <>
+            <Button
+              size="sm"
+              disabled={anyBusy || !dirty}
+              aria-busy={save.busy}
+              onClick={() =>
+                save.run(async () => {
+                  await api.patch(`/api/episodes/${epId}/script`, { scriptText: text });
+                  setDirty(false);
+                })
+              }
+            >
+              {save.busy ? <Loader2 className="animate-spin" /> : dirty ? "儲存" : "已儲存"}
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={anyBusy}
+              aria-busy={regen.busy}
+              onClick={() => regen.run(() => api.post(`/api/episodes/${epId}/rewrite-script`))}
+            >
+              {regen.busy ? <Loader2 className="animate-spin" /> : "重新生成"}
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={anyBusy || view.episode.scriptText.length === 0}
+              aria-busy={checkup.busy}
+              title="按檢查清單逐場標風險燈：戲劇目的/對白/節奏/鉤子/展示不明說"
+              onClick={() => checkup.run(() => api.post(`/api/episodes/${epId}/script-review`))}
+            >
+              {checkup.busy ? <Loader2 className="animate-spin" /> : "🩺 劇本體檢"}
+            </Button>
+          </>
+        )
       }
     >
       <div className="space-y-2">
-        {view.episode.scriptText.length === 0 && !dirty ? (
+        {isEmpty ? (
           <EmptyState view={view} stage="script">仲未有劇本。可以由原文改寫生成，生成之後隨時可以手動編輯。</EmptyState>
         ) : (
           <Textarea

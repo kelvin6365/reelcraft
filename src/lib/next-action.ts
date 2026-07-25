@@ -63,7 +63,7 @@ export function computeStages(s: EpisodeSnapshot): StageState[] {
       review: assetsTotal > 0 && assetsLocked < assetsTotal,
     }),
     stage("storyboard", s.shots.total > 0 && s.storyboardConfirmed, {
-      count: { done: s.shots.total > 0 ? 1 : 0, total: 1 },
+      count: s.shots.total > 0 ? { done: 1, total: 1 } : undefined,
       blockedBy: assetsReady ? [] : ["第 3 站：鎖定所有角色與場景"],
       review: s.shots.total > 0 && !s.storyboardConfirmed,
     }),

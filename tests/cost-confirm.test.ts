@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { COST_CONFIRM_UNITS, COST_CONFIRM_USD, formatUsd, needsCostConfirm } from "@/ui/episode/cost-confirm";
+import { COST_CONFIRM_UNITS, COST_CONFIRM_USD, formatUsd, formatUsdDisplay, needsCostConfirm } from "@/ui/episode/cost-confirm";
 import { statusLabel, statusVariant } from "@/ui/episode/status";
 
 describe("needsCostConfirm", () => {
@@ -29,6 +29,16 @@ describe("formatUsd", () => {
   it("renders two decimals with the approximate marker", () => {
     expect(formatUsd(1.2)).toBe("~US$1.20");
     expect(formatUsd(0)).toBe("~US$0.00");
+  });
+});
+
+describe("formatUsdDisplay", () => {
+  it("shows a sub-cent marker instead of rounding tiny costs to zero", () => {
+    expect(formatUsdDisplay(0)).toBe("$0.00");
+    expect(formatUsdDisplay(0.004)).toBe("<$0.01");
+    expect(formatUsdDisplay(0.009)).toBe("<$0.01");
+    expect(formatUsdDisplay(0.01)).toBe("$0.01");
+    expect(formatUsdDisplay(2.5)).toBe("$2.50");
   });
 });
 
