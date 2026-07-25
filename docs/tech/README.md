@@ -1,6 +1,6 @@
 # ReelCraft 技術文檔
 
-實作級 spec，配合 `docs/plans/2026-07-18-reelcraft-mvp-design.md`（產品設計）同根目錄 `CLAUDE.md`（鐵律）使用。衝突時以 plans 文檔決策為準，實作細節以本目錄為準。
+實作級 spec，配合 `docs/plans/2026-07-18-reelcraft-mvp-design.md`（產品設計）與根目錄 `CLAUDE.md`（鐵律）使用。衝突時以 plans 文檔決策為準，實作細節以本目錄為準。
 
 | 文檔 | 內容 | 對應里程碑 |
 |---|---|---|
@@ -11,4 +11,4 @@
 | [05-api-routes.md](05-api-routes.md) | API 路由表 + auth 規則 | M1 |
 | [06-prompts.md](06-prompts.md) | prompt 目錄、變數驗證、canary、畫風包格式 | M1 |
 | [07-deployment.md](07-deployment.md) | docker-compose、env vars、啟動順序 | M0 |
-| [08-guards.md](08-guards.md) | guard 腳本清單 + 各自檢查乜 | M0 起持續 |
+| [08-guards.md](08-guards.md) | guard 腳本清單 + 各自檢查內容 | M0 起持續 |
