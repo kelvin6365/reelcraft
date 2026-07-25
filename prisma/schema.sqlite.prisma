@@ -1,0 +1,524 @@
+// AUTO-GENERATED from schema.prisma by scripts/gen-sqlite-schema.mjs — DO NOT EDIT.
+// Regenerate: node scripts/gen-sqlite-schema.mjs
+
+// ReelCraft schema — spec: docs/tech/01-data-model.md
+// Invariants: every business table has userId; media stored as *MediaId FK (never *Url);
+// status columns are String + TS union (no DB enums); PKs are UUIDv7 generated app-side.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = "file:../data/local.db"
+}
+
+// ========== Auth (Better-Auth managed shape) ==========
+
+model User {
+  id            String    @id
+  name          String
+  email         String    @unique
+  emailVerified Boolean   @default(false)
+  image         String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  sessions   Session[]
+  accounts   Account[]
+  projects   Project[]
+  episodes   Episode[]
+  scenes     Scene[]
+  shots      Shot[]
+  characters Character[]
+  locations  Location[]
+  voiceLines VoiceLine[]
+  media      MediaObject[]
+  tasks      Task[]
+  auditLogs  AuditLog[]
+  aiCallLogs AiCallLog[]
+  providerKeys UserProviderKey[]
+  modelDefaults UserModelDefaults?
+  balance      UserBalance?
+  freezes      BalanceFreeze[]
+  transactions BalanceTransaction[]
+  promptOverrides PromptOverride[]
+  preferences  UserPreferences?
+
+  @@map("users")
+}
+
+model Session {
+  id        String   @id
+  expiresAt DateTime
+  token     String   @unique
+  ipAddress String?
+  userAgent String?
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId])
+  @@map("sessions")
+}
+
+model Account {
+  id                    String    @id
+  accountId             String
+  providerId            String
+  userId                String
+  user                  User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  accessToken           String?
+  refreshToken          String?
+  idToken               String?
+  accessTokenExpiresAt  DateTime?
+  refreshTokenExpiresAt DateTime?
+  scope                 String?
+  password              String?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  @@index([userId])
+  @@map("accounts")
+}
+
+model Verification {
+  id         String   @id
+  identifier String
+  value      String
+  expiresAt  DateTime
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@map("verifications")
+}
+
+// ========== Core domain ==========
+
+model Project {
+  id              String   @id
+  userId          String
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name            String
+  budgetUsd       Decimal? // per-project spend cap; null = uncapped
+  // AI episode planning (docs/plans/2026-07-19-episode-planning-design.md).
+  sourceText      String   @default("") // the full novel; episodes are sliced from it on confirm
+  theme           String   @default("") // 中心思想 anchor — injected into episode_split / rewrite_script
+  planStatus      String   @default("none") // 'none' | 'planning' | 'planned'
+  planConfig      Json     @default("{}") // { anchor:'length'|'count', seconds?, count?, hookStrength }
+  planResult      Json     @default("{}") // { episodes: [{index,title,summary,startAnchor,endAnchor,hook,risk}] } — not committed to Episode rows until confirm
+  stylePackId     String   @default("cinematic-01")
+  videoRatio      String   @default("9:16")
+  videoResolution String   @default("720p")
+  modelDefaults   Json     @default("{}") // { text:'openrouter::…', image:'fal::…', video:'fal::…', tts:'fal::…' }
+  inputType       String   @default("novel") // 'novel' | 'script' | 'srt'
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  lastAccessedAt  DateTime @default(now())
+
+  episodes   Episode[]
+  characters Character[]
+  locations  Location[]
+
+  @@index([userId, lastAccessedAt])
+  @@map("projects")
+}
+
+model Episode {
+  id            String  @id
+  userId        String
+  user          User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  projectId     String
+  project       Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  episodeNumber Int
+  rawText       String  @default("")
+  scriptText    String  @default("")
+  // 'draft'|'assets'|'script'|'storyboard'|'images'|'videos'|'export'|'done'
+  status        String  @default("draft")
+  // Batch/season generation: when true, each completed task auto-advances this
+  // episode via computeNextAction (docs/plans/2026-07-19-batch-generation-design.md).
+  autorun       Boolean @default(false)
+  autorunConfig Json    @default("{}") // { autoConfirmStoryboard, skipVideo }
+  // 劇本體檢 result { scenes: [{index,label,risk}], overall: {level,flags,note} } — informational, not a gate
+  scriptReview  Json    @default("{}")
+  exportMediaId String?
+  exportMedia   MediaObject? @relation("EpisodeExport", fields: [exportMediaId], references: [id])
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  scenes     Scene[]
+  shots      Shot[]
+  voiceLines VoiceLine[]
+
+  @@unique([projectId, episodeNumber])
+  @@index([userId])
+  @@map("episodes")
+}
+
+model Scene {
+  id          String  @id
+  userId      String
+  user        User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  episodeId   String
+  episode     Episode @relation(fields: [episodeId], references: [id], onDelete: Cascade)
+  sceneIndex  Int
+  summary     String  @default("")
+  content     String  @default("")
+  anchorStart String  @default("")
+  anchorEnd   String  @default("")
+  // 空間契約 (spatial blocking): 每角色畫面左右位/面向 + 180° 軸 + 關鍵道具，
+  // storyboard_plan 一次過鎖定，之後每鏡生圖必守 — 連戲唔靠彩數
+  blocking    Json    @default("{}")
+
+  shots Shot[]
+
+  @@unique([episodeId, sceneIndex])
+  @@map("scenes")
+}
+
+model Shot {
+  id             String  @id
+  userId         String
+  user           User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  episodeId      String
+  episode        Episode @relation(fields: [episodeId], references: [id], onDelete: Cascade)
+  sceneId        String
+  scene          Scene   @relation(fields: [sceneId], references: [id], onDelete: Cascade)
+  shotIndex      Int
+  storyboardJson Json    @default("{}")
+  imagePrompt    String  @default("")
+  imageMediaId   String?
+  imageMedia     MediaObject? @relation("ShotImage", fields: [imageMediaId], references: [id])
+  imageCandidates Json   @default("[]")
+  videoPrompt    String  @default("")
+  videoMediaId   String?
+  videoMedia     MediaObject? @relation("ShotVideo", fields: [videoMediaId], references: [id])
+  // 'pending'|'generating'|'ready'|'failed' (+ stale flag inside storyboardJson meta)
+  status         String  @default("pending")
+  durationMs     Int     @default(0)
+  linkedToNext   Boolean @default(false)
+
+  voiceLines VoiceLine[]
+
+  @@unique([episodeId, shotIndex])
+  @@index([sceneId])
+  @@map("shots")
+}
+
+model Character {
+  id                 String  @id
+  userId             String
+  user               User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  projectId          String
+  project            Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  name               String
+  aliases            Json    @default("[]")
+  profile            String  @default("")
+  appearancePrompt   String  @default("")
+  // 人物小傳 { age, occupation, personality, painPoint, backstory, note } — 反哺 rewrite_script
+  bio                Json    @default("{}")
+  lockedImageMediaId String?
+  lockedImageMedia   MediaObject? @relation("CharacterLockedImage", fields: [lockedImageMediaId], references: [id])
+  // 近臉特寫 — auto-generated from the locked turnaround on lock; strongest
+  // identity signal for shot-image (and thus video) generation
+  faceImageMediaId   String?
+  faceImageMedia     MediaObject? @relation("CharacterFaceImage", fields: [faceImageMediaId], references: [id])
+  candidates         Json    @default("[]")
+  voiceId            String?
+  locked             Boolean @default(false)
+
+  voiceLines VoiceLine[]
+
+  @@index([projectId])
+  @@map("characters")
+}
+
+model Location {
+  id                 String  @id
+  userId             String
+  user               User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  projectId          String
+  project            Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  name               String
+  summary            String  @default("")
+  prompt             String  @default("")
+  lockedImageMediaId String?
+  lockedImageMedia   MediaObject? @relation("LocationLockedImage", fields: [lockedImageMediaId], references: [id])
+  candidates         Json    @default("[]")
+  locked             Boolean @default(false)
+
+  @@index([projectId])
+  @@map("locations")
+}
+
+model VoiceLine {
+  id              String  @id
+  userId          String
+  user            User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  episodeId       String
+  episode         Episode @relation(fields: [episodeId], references: [id], onDelete: Cascade)
+  lineIndex       Int
+  speaker         String  @default("")
+  content         String  @default("")
+  characterId     String?
+  character       Character? @relation(fields: [characterId], references: [id], onDelete: SetNull)
+  emotion         String  @default("")
+  emotionStrength Float   @default(0.4) // hard cap 0.5, enforced app-side
+  // 'dialogue' | 'vo' (voice-over 旁白/內心獨白) | 'os' (off-screen 畫外對白)
+  lineType        String  @default("dialogue")
+  cue             String  @default("") // 括號演技/語氣指示，e.g. 冷笑、拍檯大聲
+  audioMediaId    String?
+  audioMedia      MediaObject? @relation("VoiceLineAudio", fields: [audioMediaId], references: [id])
+  matchedShotId   String?
+  matchedShot     Shot?   @relation(fields: [matchedShotId], references: [id], onDelete: SetNull)
+
+  @@unique([episodeId, lineIndex])
+  @@map("voice_lines")
+}
+
+// ========== Infra domain ==========
+
+model MediaObject {
+  id         String   @id
+  userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  publicId   String   @unique
+  storageKey String   @unique
+  sha256     String   @default("")
+  mimeType   String   @default("")
+  sizeBytes  BigInt   @default(0)
+  width      Int?
+  height     Int?
+  durationMs Int?
+  createdAt  DateTime @default(now())
+
+  episodeExports        Episode[]   @relation("EpisodeExport")
+  shotImages            Shot[]      @relation("ShotImage")
+  shotVideos            Shot[]      @relation("ShotVideo")
+  characterLockedImages Character[] @relation("CharacterLockedImage")
+  characterFaceImages   Character[] @relation("CharacterFaceImage")
+  locationLockedImages  Location[]  @relation("LocationLockedImage")
+  voiceLineAudios       VoiceLine[] @relation("VoiceLineAudio")
+
+  @@index([userId])
+  @@map("media_objects")
+}
+
+model Task {
+  id           String    @id
+  userId       String
+  user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  projectId    String?
+  episodeId    String?
+  type         String
+  targetType   String    @default("")
+  targetId     String    @default("")
+  // 'queued'|'processing'|'completed'|'failed'|'canceled'
+  status       String    @default("queued")
+  progress     Int       @default(0)
+  attempt      Int       @default(0)
+  maxAttempts  Int       @default(3)
+  dedupeKey    String    @unique
+  payload      Json      @default("{}")
+  result       Json?
+  errorCode    String?
+  errorMessage String?
+  queuedAt     DateTime  @default(now())
+  startedAt    DateTime?
+  finishedAt   DateTime?
+  heartbeatAt  DateTime?
+
+  events TaskEvent[]
+
+  @@index([status])
+  @@index([userId, queuedAt])
+  @@index([heartbeatAt])
+  @@map("tasks")
+}
+
+model TaskEvent {
+  id        BigInt   @id @default(autoincrement())
+  taskId    String
+  task      Task     @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  eventType String
+  payload   Json     @default("{}")
+  createdAt DateTime @default(now())
+
+  @@index([taskId, id])
+  @@map("task_events")
+}
+
+// ========== Audit domain (docs/tech/04-audit.md) ==========
+
+model AuditLog {
+  id         BigInt   @id @default(autoincrement())
+  userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  at         DateTime @default(now())
+  action     String
+  targetType String   @default("")
+  targetId   String   @default("")
+  // 'ui'|'system'|'watchdog'|'agent'
+  source     String   @default("ui")
+  metadata   Json     @default("{}")
+
+  @@index([userId, at])
+  @@index([targetType, targetId])
+  @@map("audit_logs")
+}
+
+model AiCallLog {
+  id                BigInt   @id @default(autoincrement())
+  userId            String
+  user              User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  at                DateTime @default(now())
+  modelKey          String
+  apiType           String // 'text'|'image'|'video'|'tts'
+  promptId          String?
+  promptVersion     String?
+  taskId            String?
+  projectId         String?
+  episodeId         String?
+  inputTokens       Int?
+  outputTokens      Int?
+  quantity          Float?
+  unit              String?
+  unitPriceSnapshot Decimal?
+  // text price snapshot at call time (per-MTok rates from capabilities.json)
+  inputPerMTokSnapshot  Decimal?
+  outputPerMTokSnapshot Decimal?
+  // provider-reported billed cost (e.g. OpenRouter usage.cost); null = not reported
+  providerCostUsd   Decimal?
+  cachedInputTokens Int?
+  reasoningTokens   Int?
+  estCostUsd        Decimal?
+  latencyMs         Int      @default(0)
+  status            String   @default("ok") // 'ok'|'error'
+  errorCode         String?
+  providerRequestId String?
+  // 進階模式 (advanced prompt mode): the exact rendered prompt text handed to
+  // callModel(), plus which layer resolved it — captured unconditionally so
+  // "上次送出" review works even before a user ever opens the advanced UI.
+  renderedPrompt    String?
+  promptSource      String?  // 'system'|'user'|'project'|'oneoff'
+
+  @@index([userId, at])
+  @@index([taskId])
+  @@index([modelKey, at])
+  @@index([episodeId, promptId, at])
+  @@map("ai_call_logs")
+}
+
+// ========== M3: BYO-Key + billing ledger + quotas ==========
+
+model UserProviderKey {
+  id         String   @id
+  userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  provider   String // 'openrouter' | 'fal' | 'atlascloud'
+  // AES-256-GCM envelope: iv:authTag:ciphertext (hex). NEVER returned by any API.
+  encryptedKey String
+  last4      String   @default("")
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@unique([userId, provider])
+  @@map("user_provider_keys")
+}
+
+// Per-user model-defaults (the "user" layer of the 3-layer resolver, design doc
+// 2026-07-19-provider-model-defaults). Sidecar to the Better-Auth users table
+// (mirrors UserProviderKey/UserBalance) so we never touch the managed shape.
+model UserModelDefaults {
+  userId    String   @id
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  // { text?:'provider::modelId', image?, video?, tts? } — a cleared slot is
+  // absent (never stored as ""); resolution falls back to the system layer.
+  defaults  Json     @default("{}")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("user_model_defaults")
+}
+
+model UserBalance {
+  userId       String  @id
+  user         User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  balanceUsd   Decimal @default(0)
+  frozenUsd    Decimal @default(0)
+  totalSpentUsd Decimal @default(0)
+  updatedAt    DateTime @updatedAt
+
+  @@map("user_balances")
+}
+
+model BalanceFreeze {
+  id             String    @id
+  userId         String
+  user           User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  amountUsd      Decimal
+  // 'pending' | 'confirmed' | 'rolled_back'
+  status         String    @default("pending")
+  taskId         String?
+  idempotencyKey String    @unique
+  createdAt      DateTime  @default(now())
+  resolvedAt     DateTime?
+
+  @@index([userId, status])
+  @@map("balance_freezes")
+}
+
+model BalanceTransaction {
+  id             BigInt   @id @default(autoincrement())
+  userId         String
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  // 'recharge' | 'consume' | 'refund' | 'adjust'
+  type           String
+  amountUsd      Decimal
+  balanceAfterUsd Decimal
+  freezeId       String?
+  idempotencyKey String
+  note           String   @default("")
+  metadata       Json     @default("{}")
+  createdAt      DateTime @default(now())
+
+  @@unique([userId, type, idempotencyKey])
+  @@index([userId, createdAt])
+  @@map("balance_transactions")
+}
+
+// ========== 進階模式：Prompt 覆寫 (docs/plans/2026-07-21-advanced-prompt-mode-design.md) ==========
+
+model PromptOverride {
+  id          String   @id
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  // "" = user 層；有值 = project 層。Postgres unique 索引視 NULL 為互不相等，
+  // 用 NULL 做 sentinel 會令 upsert 冧檔（同一 user 可插入無限個重複 user-層
+  // override）——所以一律用 "" 空字串。
+  projectId   String   @default("")
+  promptId    String
+  content     String
+  baseVersion String
+  // 儲存當刻嘅 system 全文快照 — system 檔案升版後舊文字冧咗，三欄 diff 要靠呢欄拎返
+  // 「你改嗰陣嘅官方版」。
+  baseContent String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([userId, projectId, promptId])
+  @@index([userId, promptId])
+  @@map("prompt_overrides")
+}
+
+model UserPreferences {
+  userId       String   @id
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  advancedMode Boolean  @default(false)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@map("user_preferences")
+}
