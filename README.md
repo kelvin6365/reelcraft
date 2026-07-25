@@ -26,12 +26,14 @@ AI 短劇生產平台：真多租戶、任務佇列有 watchdog 兜底、每次 
 
 ```bash
 npm install
-cp .env.example .env          # 冇 API key 就設 MODEL_DEFAULTS_PRESET=fake — fake providers 走全程
-docker compose up -d          # postgres + redis + minio（或用本機 brew 服務）
-npx prisma migrate dev
-npm run dev                   # web
-npm run worker                # 另一個 terminal
+npm run dev   # 一個 terminal 齊起 web＋worker；首次會自動建 .env、檢查 infra、行 migration
 ```
+
+`npm run dev` 前會自動跑 bootstrap：冇 `.env` 就由 `.env.example` 建立、冇 API key 就設 `MODEL_DEFAULTS_PRESET=fake`（fake providers 走全程，唔使錢）、確認 migration 已套用。
+
+> full 模式（現時預設）需要 Postgres + Redis 先行到：`docker compose up -d`（postgres + redis + minio，或用本機 brew 服務）。bootstrap 連唔到會提示咁做並停低，唔會靜靜 crash-loop。
+
+想分開行 web／worker（例如另開 terminal debug）：`npm run dev:web` 同 `npm run worker`。
 
 開 http://localhost:3000 → 註冊 → 「開始製作」三步引導流（貼小說或一撳用範例）→ 系統自動行到檢查點，跟住亮燈位撳。冇 API key 設 `MODEL_DEFAULTS_PRESET=fake` 都出到片（ffmpeg 生成嘅佔位素材）；填咗 `OPENROUTER_API_KEY` / `FAL_KEY` 就係真嘢（系統預設 = kling-v3 / nano-banana-pro / minimax TTS，`/settings` 或專案頁可改）。
 

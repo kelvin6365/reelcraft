@@ -3,7 +3,9 @@
   "version": "0.0.1",
   "private": true,
   "scripts": {
-    "dev": "next dev",
+    "predev": "node scripts/bootstrap-dev.mjs",
+    "dev": "concurrently -n web,worker -c blue,magenta \"next dev\" \"npm:worker\"",
+    "dev:web": "next dev",
     "build": "prisma generate && next build",
     "start": "next start",
     "typecheck": "tsc --noEmit",
@@ -52,6 +54,7 @@
     "@types/node": "^22.10.0",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
+    "concurrently": "^10.0.4",
     "postcss": "^8.5.20",
     "prisma": "^6.5.0",
     "tailwindcss": "^4.3.3",
