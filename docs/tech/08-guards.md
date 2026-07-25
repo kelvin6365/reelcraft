@@ -2,22 +2,24 @@
 
 原則：**每個架構決策配一個 guard**。Guard = `scripts/guards/*.mjs`，靜態掃描 `src/`，違規印出檔案+行號後 `exit 1`。全部掛 `npm run check`（CI + pre-commit）。AI agents 寫 code 唔會累積偏航——呢個係 solo×agents 工作法嘅核心保險。
 
-## M0 起步清單
+## 現行清單（`scripts/guards/*.mjs`，`lib.mjs` 係共用 helper 唔算獨立 guard）
 
 | Guard | 檢查乜 | 對應鐵律 |
 |---|---|---|
-| `no-ai-bypass` | adapter 目錄以外禁 import adapter、禁 provider endpoint 字串（queue.fal.run / openrouter.ai / atlascloud）、禁 adapter 以外讀 provider key env | CLAUDE.md #2 |
-| `no-model-key-guess` | 禁裸 modelId 字串落 DB 欄／task payload（必須 `provider::modelId`）；`parseModelKeyStrict` 必須存在且被 callModel 使用 | #3 |
+| `no-ai-bypass` | `src/lib/ai` 以外禁 import adapter / 禁 provider endpoint 字串 | CLAUDE.md #2 |
 | `no-raw-env` | `process.env.` 只准出現喺 `src/lib/env.ts` | 07-deployment |
-| `no-plaintext-key-response` | API route 回應唔准包含 `apiKey` 欄位（掃 route return shape + 常見字段名） | #5 |
-| `no-inline-prompt` | `src/` 內禁長中文字串模板（>200 字且含「你是/必須/輸出」樣式）——prompt 必須喺 `prompts/` | #7 |
-| `no-media-url-in-db` | Prisma schema 禁 `*Url` 欄（media 一律 `*MediaId`；白名單：exportUrl 都唔准，用 mediaId） | #4 |
+| `no-inline-prompt` | `src/` 內禁長中文指令字串模板——prompt 必須喺 `prompts/` | #7 |
+| `no-media-url-in-db` | Prisma schema 禁 `*Url` 欄（media 一律 `*MediaId`） | #4 |
 | `route-auth-check` | 所有 `app/api/**/route.ts` 必須 withAuth 或標 `// PUBLIC:` 註解+原因 | 05-api-routes |
-| `queue-route-exhaustive` | `getQueueForTaskType` switch 必須覆蓋所有 TASK_TYPE，冇 default fallthrough | 02-task-system |
-| `no-polling` | 前端 code 禁 `setInterval` 打 `/api/tasks`（一律 SSE） | 02-task-system |
-| `prompt-catalog-sync` | `prompts/catalog.json` 同 `prompts/**` 檔案一一對應；變數宣告同模板 placeholder 一致 | 06-prompts |
+| `prompt-catalog-sync` | `prompts/catalog.json` ⇄ `prompts/pipeline/**` 一一對應；canary 樣本render後約束字句唔失守 | 06-prompts |
+| `prompt-resolve-check` | worker/route 必須經 `resolvePrompt`（帶 user/project override），禁直接 `buildPrompt` 或直讀 prompt 檔 | #7 |
+| `provider-registry-check` | provider registry / model catalog / 系統 model-defaults 三方一致；禁復活 `fake::` fallback | #3, #8 |
+| `reference-capability-check` | `standards/capabilities.json` 同 `src/lib/model-defaults/resolve.ts` 引用一致 | 03-provider |
 | `capability-catalog-check` | `standards/capabilities.json` schema 驗證 + modelKey 格式 | 03-provider |
+| `template-check` | `standards/templates/*.json` 結構驗證（宣告式媒體模板） | 03-provider §M2 |
 | `env-example-sync` | `src/lib/env.ts` zod keys ⊆ `.env.example` | 07-deployment |
+
+以上 12 個 guard 已全部掛 `npm run check`。舊清單中嘅 `no-model-key-guess` / `no-plaintext-key-response` / `queue-route-exhaustive` / `no-polling` **未見對應腳本**，留待 orchestrator 決定係重新補寫定係移除呢幾條要求。
 
 ## Canary（06-prompts.md）
 

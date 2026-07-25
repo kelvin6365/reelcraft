@@ -1,7 +1,7 @@
 # 新人上手流程重設計 — 引導式建專流＋自動行進
 
 日期：2026-07-25
-狀態：設計已驗證（brainstorming 對話逐段確認），未實作
+狀態：已實作 — PR1 87e4d10 / PR2 0cd4fae / PR3 e2cc7be / PR4 2f1af6f（2026-07-25）
 背景：UX deep review（新帳戶全流程 walkthrough + UI code 深讀）發現新人上手同流程中段多處「卡位」。
 
 ## 目標用戶（三階段）

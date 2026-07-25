@@ -42,3 +42,12 @@ task 完成（lifecycle）→ 若該 episode 開咗 autorun：
 - 單元：advance mapping（每個 nextAction → 正確 task type）、審核閘 auto/pause、skipVideo 跳站。
 - E2E `smoke-batch.ts`：fake providers，規劃 2 集 → 批量開始 → 兩集全自動行到 exportMediaId，零人手介入。
 - 收貨：Web 一撳，N 集自動出晒片；中途 kill worker 恢復後繼續（watchdog + advance 冪等）。
+
+## 2026-07-25 更新：assisted 模式
+
+`autorunConfig` 加咗 `mode: "batch" | "assisted"` discriminator（唔存在時當 `"batch"` — 舊資料相容）：
+
+- **batch**（原設計）：`POST /api/projects/:id/batch` 開嘅全季批量，`autoConfirmStoryboard`/`skipVideo` 照舊。
+- **assisted**（新）：每集獨立開關，`PATCH /api/episodes/:id {autoAdvance:boolean}`；新建 episode 預設 `autorun:true` + `mode:"assisted"`。免費站（分割/抽資產/改寫/分鏡）全自動跑，但去到 money 站（生角色圖/單鏡圖/單鏡視頻/TTS）`advanceEpisode` 會停低返回 `"paused:asset-images"` 或 `"paused:money"`，等 `moneyAuthorized` 先繼續。`POST /api/episodes/:id/storyboard/confirm {authorizeDownstream:true}` 就係用戶落單授權嘅入口，寫 `autorunConfig.moneyAuthorized`。
+- `DELETE /api/projects/:id/batch` 停批量時只清 `mode:"batch"`（或冇 mode）嘅集數，assisted 集數獨立運作唔受影響。
+- 見 `src/lib/batch/advance.ts`、`src/app/api/episodes/[id]/route.ts`、`src/app/api/episodes/[id]/storyboard/confirm/route.ts`。

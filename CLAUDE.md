@@ -1,6 +1,6 @@
 # CLAUDE.md — ReelCraft
 
-AI 短劇生產平台（設計階段）。開工前先讀 `docs/plans/2026-07-18-reelcraft-mvp-design.md` — 佢係唯一真相來源。
+AI 短劇生產平台。開工前先讀 `docs/plans/2026-07-18-reelcraft-mvp-design.md`（產品設計真相來源）；實作細節見 `docs/tech/`。
 
 ## 鐵律（架構不變式，違反 = 錯）
 

@@ -6,7 +6,9 @@ AI 短劇生產平台：真多租戶、任務佇列有 watchdog 兜底、每次 
 
 ## 特點
 
-- **八站引導流程** — 進度總覽條 + 常駐「下一步」卡 + 失敗抽屜一鍵重試，永遠知道下一步
+- **三步建專引導流** — 貼故事（一撳範例小說即試 / SRT 上載自動識別）→ 視覺化揀畫風同比例 → 揀出法，唔使任何預備知識就開到工
+- **八站引導流程** — 進度總覽條 + 常駐「下一步」卡 + 失敗抽屜一鍵重試（同目標去重、附失敗時間），永遠知道下一步
+- **自動行進 + 使錢檢查點** — 免費文字站（劇本→抽資產→分鏡）自動接力；使錢站（出圖/視頻/配音）一定停低亮燈，確認分鏡一次過睇齊「圖+視頻+配音≈總價」先授權行到成片
 - **兩個人手審核閘** — 資產鎖定（3 選 1）同分鏡確認（附下游成本預覽），下游重生成本最細
 - **雙輸入模式** — 小說原文（LLM 全流程）或 SRT 字幕（確定性 1 cue = 1 鏡）
 - **AI 劇集規劃** — 貼全本小說自動分集（錨定集長或集數），🔴🟡🟢 風險圖示 review-by-exception，唔使逐集深審
@@ -15,9 +17,10 @@ AI 短劇生產平台：真多租戶、任務佇列有 watchdog 兜底、每次 
 - **模型三層預設** — 系統預設（真模型）→ 個人預設（/settings）→ 逐專案覆寫，四種模態（文字/圖像/視頻/語音）任揀，按 provider 分組、缺 key 或能力唔匹配自動禁用；站 UI 顯示現用模型 + 單價（fake 亮橙色警告）
 - **Provider 中立** — `provider::modelId` 嚴格契約；OpenRouter / fal / AtlasCloud 內建，或者用一份 JSON 宣告式模板接任意廠商
 - **審計一切** — `callModel()` 唯一入口自動記帳；`/usage` 儀表板睇成本、token、latency
+- **進階模式** — 每個生產站可以檢視／編輯實際送出嘅 AI prompt（用戶層／專案層覆寫，canary 鎖結構）
 - **生產級任務系統** — BullMQ ×4 + 心跳 + watchdog 殭屍恢復（kill -9 worker 任務自動續跑）
 - **商業化 ready** — BYO-Key 信封加密、預留→結算→退款計費帳本、Redis 分散式配額
-- **架構守則自動執行** — 10+ guard 腳本喺 CI 鎖住不變式
+- **架構守則自動執行** — 12 個 guard 腳本喺 CI 鎖住不變式
 
 ## 快速開始（本機）
 
@@ -30,13 +33,13 @@ npm run dev                   # web
 npm run worker                # 另一個 terminal
 ```
 
-開 http://localhost:3000 → 註冊 → 建專案 → 貼小說 → 跟住右下角張卡撳。冇 API key 設 `MODEL_DEFAULTS_PRESET=fake` 都出到片（ffmpeg 生成嘅佔位素材）；填咗 `OPENROUTER_API_KEY` / `FAL_KEY` 就係真嘢（系統預設 = kling-v3 / nano-banana-pro / minimax TTS，`/settings` 或專案頁可改）。
+開 http://localhost:3000 → 註冊 → 「開始製作」三步引導流（貼小說或一撳用範例）→ 系統自動行到檢查點，跟住亮燈位撳。冇 API key 設 `MODEL_DEFAULTS_PRESET=fake` 都出到片（ffmpeg 生成嘅佔位素材）；填咗 `OPENROUTER_API_KEY` / `FAL_KEY` 就係真嘢（系統預設 = kling-v3 / nano-banana-pro / minimax TTS，`/settings` 或專案頁可改）。
 
 ## 驗證
 
 ```bash
-npm run check          # 10+ guards + typecheck
-npm test               # 137+ tests
+npm run check          # 12 guards + typecheck
+npm test               # 410+ tests
 npm run smoke:pipeline # 小說→mp4 離線 E2E
 npm run smoke:batch    # 兩集批量自動出片離線 E2E
 npm run smoke:task     # kill -9 worker 恢復測試

@@ -15,13 +15,14 @@
 | `GET/PATCH/DELETE /api/projects/:id` | 讀/改設定/刪 | — |
 | `POST /api/projects/:id/episodes` | 貼原文建集 | `EPISODE_SPLIT`（長文） |
 | `GET /api/episodes/:id` | 集詳情（含八站進度聚合 = Next Best Action 數據源） | — |
+| `PATCH /api/episodes/:id {autoAdvance:boolean}` | 開關 assisted 自動連跑（`autorun` + `autorunConfig.mode="assisted"`） | — |
 | `POST /api/episodes/:id/extract-assets` | ③ 抽角色/場景 | `EXTRACT_ASSETS` |
 | `POST /api/characters/:id/generate-image` | 資產生圖（3 張候選） | `IMAGE_CHARACTER` |
 | `POST /api/characters/:id/lock` | ✋鎖定資產（揀一張） | — |
 | `POST /api/episodes/:id/rewrite-script` | ④ 改寫劇本 | `REWRITE_SCRIPT` |
 | `PATCH /api/episodes/:id/script` | 直接編輯劇本文本 | — |
 | `POST /api/episodes/:id/storyboard` | ⑤ 切塊+分鏡四階段 | `BUILD_SCENES`→`STORYBOARD_RUN` |
-| `POST /api/episodes/:id/storyboard/confirm` | ✋確認分鏡 | — |
+| `POST /api/episodes/:id/storyboard/confirm {authorizeDownstream?:boolean}` | ✋確認分鏡；assisted 模式下 `authorizeDownstream:true` 授權落單金錢站（寫 `autorunConfig.moneyAuthorized`） | — |
 | `PATCH /api/shots/:id` | 改單鏡（prompt/分鏡文字） | — |
 | `POST /api/shots/:id/generate-image` | ⑥ 單鏡生圖 | `IMAGE_SHOT` |
 | `POST /api/shots/:id/generate-video` | ⑦ 單鏡生視頻 | `VIDEO_SHOT` |
@@ -35,6 +36,8 @@
 | `POST /api/webhooks/:provider` | 廠商回調（驗簽，PUBLIC + secret path） | — |
 
 批量操作（`batch-generate-images` 等）= 前端逐個 POST，server 靠 dedupeKey 天然冪等——M1 唔起批量端點。
+
+`GET /api/projects` 每個 project 附帶 `episodes: {id, episodeNumber, status, updatedAt}[]`（`updatedAt` 供 dashboard「繼續上次」卡片排序用），`orderBy: lastAccessedAt desc`。
 
 ## Next Best Action 邏輯（server 計，唔係前端估）
 
