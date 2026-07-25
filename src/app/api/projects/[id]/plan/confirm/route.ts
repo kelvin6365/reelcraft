@@ -36,6 +36,8 @@ export const POST = withAuth(
           episodeNumber: existing + i + 1,
           rawText: slices[i]?.content ?? "",
           status: "draft",
+          autorun: true,
+          autorunConfig: { mode: "assisted" },
         });
       }
       await tx.episode.createMany({ data: rows });

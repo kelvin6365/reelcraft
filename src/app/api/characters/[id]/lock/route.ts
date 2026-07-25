@@ -4,6 +4,7 @@ import { withAuth } from "@/lib/api/with-auth";
 import { ApiError, ok } from "@/lib/api/errors";
 import { submitTask } from "@/lib/task/submit";
 import { TASK_TYPE } from "@/lib/task/types";
+import { advanceAfterTask } from "@/lib/batch/advance";
 
 export const POST = withAuth(
   async ({ userId, params, req }) => {
@@ -29,6 +30,10 @@ export const POST = withAuth(
       payload: { face: true },
       dedupeActive: true,
     });
+    // Assets are project-level (shared across episodes) — kick every autorun
+    // episode in the project so a lock can unblock a stalled 揀圖 gate.
+    const episodes = await prisma.episode.findMany({ where: { projectId: row.projectId, autorun: true }, select: { id: true } });
+    for (const e of episodes) advanceAfterTask(e.id);
     return ok({ locked: true, faceTaskId: face.taskId });
   },
   { auditAction: "asset.lock" },

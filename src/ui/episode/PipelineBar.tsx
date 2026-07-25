@@ -2,8 +2,10 @@
 import { Fragment, type ReactNode } from "react";
 import { AlertTriangle, Check, Hand, Loader2, Lock } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
+import { Switch } from "@/components/ui/switch";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import type { StageKey, StageState } from "@/ui/types";
 import { STATIONS } from "./stations";
@@ -41,6 +43,9 @@ export function PipelineBar({
   current,
   onSelect,
   notice,
+  autoAdvance,
+  onToggleAutoAdvance,
+  toggleBusy,
 }: {
   stages: StageState[];
   progress: Partial<Record<StageKey, number>>;
@@ -48,6 +53,9 @@ export function PipelineBar({
   current: StageKey;
   onSelect: (key: StageKey) => void;
   notice?: ReactNode;
+  autoAdvance?: { enabled: boolean; mode: string | null };
+  onToggleAutoAdvance?: (on: boolean) => void;
+  toggleBusy?: boolean;
 }) {
   const byKey = Object.fromEntries(stages.map((s) => [s.key, s])) as Record<StageKey, StageState | undefined>;
   const doneCount = stages.filter((s) => s.done).length;
@@ -57,9 +65,26 @@ export function PipelineBar({
     <Card>
       <CardHeader className="flex-row items-center justify-between">
         <CardTitle className="text-base">八站流程進度</CardTitle>
-        <span className="text-sm text-muted-foreground">
-          已完成 {doneCount} / {STATIONS.length} 站 · 整體進度 {overallPct}%
-        </span>
+        <div className="flex items-center gap-3">
+          <span className="text-sm text-muted-foreground">
+            已完成 {doneCount} / {STATIONS.length} 站 · 整體進度 {overallPct}%
+          </span>
+          {autoAdvance?.mode === "batch" ? (
+            <Badge variant="secondary">批量生成中</Badge>
+          ) : (
+            <label
+              className="flex items-center gap-2 text-sm text-muted-foreground"
+              title="開：免費步驟自動接力，使錢步驟先停低問你。閂：逐站手動。"
+            >
+              自動行進
+              <Switch
+                checked={!!autoAdvance?.enabled}
+                disabled={toggleBusy}
+                onCheckedChange={(v) => onToggleAutoAdvance?.(v)}
+              />
+            </label>
+          )}
+        </div>
       </CardHeader>
       <CardContent className="space-y-4">
         <nav aria-label="八站工作流">

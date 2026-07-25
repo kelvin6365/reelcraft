@@ -36,6 +36,8 @@ export const POST = withAuth(
         episodeNumber: (last?.episodeNumber ?? 0) + 1,
         rawText,
         status: "draft",
+        autorun: true,
+        autorunConfig: { mode: "assisted" },
       },
     });
     return ok(episode, 201);

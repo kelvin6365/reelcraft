@@ -180,6 +180,44 @@ describe("advanceEpisode", () => {
     expect(submitTask).not.toHaveBeenCalled();
   });
 
+  describe("assisted mode", () => {
+    it("still submits free stages automatically (rewrite-script)", async () => {
+      mockEpisode({ mode: "assisted" });
+      mockSnapshot({});
+      expect(await advanceEpisode("e1")).toBe("rewrite-script");
+      expect(submitTask).toHaveBeenCalledWith(expect.objectContaining({ type: "REWRITE_SCRIPT" }));
+    });
+
+    it("pauses at generate-asset-images (checkpoint 1) with zero submits", async () => {
+      mockEpisode({ mode: "assisted" });
+      mockSnapshot({ hasScript: true, characters: { total: 2, locked: 0, withCandidates: 0 } });
+      expect(await advanceEpisode("e1")).toBe("paused:asset-images");
+      expect(submitTask).not.toHaveBeenCalled();
+    });
+
+    it("pauses at shot-images without moneyAuthorized", async () => {
+      mockEpisode({ mode: "assisted" });
+      mockSnapshot({ hasScript: true, scenes: 1, storyboardConfirmed: true, shots: { total: 2, withImage: 0, withVideo: 0 } });
+      expect(await advanceEpisode("e1")).toBe("paused:money");
+      expect(submitTask).not.toHaveBeenCalled();
+    });
+
+    it("fans out shot-images normally once moneyAuthorized", async () => {
+      mockEpisode({ mode: "assisted", moneyAuthorized: true });
+      mockSnapshot({ hasScript: true, scenes: 1, storyboardConfirmed: true, shots: { total: 2, withImage: 0, withVideo: 0 } });
+      shotFindMany.mockResolvedValue([{ id: "s1" }, { id: "s2" }]);
+      expect(await advanceEpisode("e1")).toBe("shot-images:2");
+      expect(submitTask).toHaveBeenCalledWith(expect.objectContaining({ type: "IMAGE_SHOT", targetId: "s1" }));
+    });
+
+    it("still pauses at the storyboard confirm gate (assisted never sets autoConfirmStoryboard)", async () => {
+      mockEpisode({ mode: "assisted" });
+      mockSnapshot({ hasScript: true, scenes: 1, shots: { total: 3, withImage: 0, withVideo: 0 } });
+      expect(await advanceEpisode("e1")).toBe("paused:confirm-storyboard");
+      expect(episodeUpdate).not.toHaveBeenCalled();
+    });
+  });
+
   it("SRT mode: builds structure via SRT_BUILD then fans out tts-all", async () => {
     episodeFindUnique.mockResolvedValue({
       id: "e1", userId: "u1", projectId: "p1", autorun: true, autorunConfig: {},

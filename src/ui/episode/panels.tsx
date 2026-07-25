@@ -28,6 +28,7 @@ import { useStationNav } from "./station-nav";
 import { SavedHint, useAutosaveField, useSavedFlash } from "./SavedHint";
 import { ShotWorkbench } from "./ShotWorkbench";
 import { shortModelName, isFakeModel } from "@/ui/model-format";
+import { formatUsdDisplay } from "./cost-confirm";
 import { cn } from "@/lib/utils";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { Badge } from "@/components/ui/badge";
@@ -563,7 +564,16 @@ export function StoryboardPanel({ view, progress }: PanelProps) {
   const confirm = useAction(qk.episode(epId));
   const regen = useAction(qk.episode(epId));
   const [regenConfirmOpen, setRegenConfirmOpen] = useState(false);
+  const [confirmStoryboardOpen, setConfirmStoryboardOpen] = useState(false);
   const spentSoFar = view.cost?.projectSpendUsd;
+  const downstream = view.cost?.downstream;
+  const assistedAutoAdvance = view.episode.autoAdvance?.enabled && view.episode.autoAdvance.mode === "assisted";
+
+  function runConfirmStoryboard() {
+    confirm.run(() =>
+      api.post(`/api/episodes/${epId}/storyboard/confirm`, assistedAutoAdvance ? { authorizeDownstream: true } : {}),
+    );
+  }
   return (
     <Station
       stage="storyboard"
@@ -609,10 +619,36 @@ export function StoryboardPanel({ view, progress }: PanelProps) {
               size="sm"
               disabled={confirm.busy || regen.busy}
               aria-busy={confirm.busy}
-              onClick={() => confirm.run(() => api.post(`/api/episodes/${epId}/storyboard/confirm`))}
+              onClick={() => setConfirmStoryboardOpen(true)}
             >
               {confirm.busy ? <Loader2 className="animate-spin" /> : "確認分鏡"}
             </Button>
+            <ConfirmDialog
+              open={confirmStoryboardOpen}
+              onOpenChange={setConfirmStoryboardOpen}
+              title="確認分鏡，開始生成？"
+              description={
+                <>
+                  {downstream && downstream.totalUsd > 0 ? (
+                    <>
+                      圖像 {downstream.pendingImages} 張 ≈ {formatUsdDisplay(downstream.estImageUsd)}、視頻{" "}
+                      {downstream.pendingVideos} 鏡 ≈ {formatUsdDisplay(downstream.estVideoUsd)}、配音（上限）≈{" "}
+                      {formatUsdDisplay(downstream.estVoiceUsd)}，總計 ≈{" "}
+                      <b>{formatUsdDisplay(downstream.totalUsd)}</b>
+                    </>
+                  ) : (
+                    "確認後會開始生成後續步驟。"
+                  )}
+                  {assistedAutoAdvance && (
+                    <p className="mt-2">
+                      確認即係授權自動行到成片 — 圖像、視頻、配音會自動接力生成，唔會逐站再問。想逐站控制，可以先較熄「自動行進」。
+                    </p>
+                  )}
+                </>
+              }
+              confirmLabel="確認分鏡並開始"
+              onConfirm={runConfirmStoryboard}
+            />
           </>
         )
       }

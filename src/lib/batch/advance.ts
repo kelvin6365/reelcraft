@@ -12,6 +12,12 @@ import { TASK_TYPE } from "@/lib/task/types";
 export interface AutorunConfig {
   autoConfirmStoryboard?: boolean;
   skipVideo?: boolean;
+  // Assisted auto-advance (docs/plans/...): engine runs FREE stages automatically
+  // but stops at money stages until the user authorizes spend. Absent mode
+  // MUST behave exactly like today's batch engine — existing DB rows only have
+  // autoConfirmStoryboard/skipVideo.
+  mode?: "batch" | "assisted";
+  moneyAuthorized?: boolean;
 }
 
 function configOf(v: unknown): AutorunConfig {
@@ -23,6 +29,7 @@ export async function advanceEpisode(episodeId: string): Promise<string> {
   const episode = await prisma.episode.findUnique({ where: { id: episodeId }, include: { project: true } });
   if (!episode || !episode.autorun) return "not-autorun";
   const cfg = configOf(episode.autorunConfig);
+  const assisted = cfg.mode === "assisted";
   const userId = episode.userId;
   const projectId = episode.projectId;
 
@@ -58,6 +65,7 @@ export async function advanceEpisode(episodeId: string): Promise<string> {
       return "extract-assets";
     }
     case action.endpoint?.endsWith("/generate-asset-images") ?? false: {
+      if (assisted) return "paused:asset-images"; // checkpoint 1 — user clicks the costed button; 揀圖 stop is the existing paused:lock-assets gate
       const [chars, locs] = await Promise.all([
         prisma.character.findMany({ where: { projectId, locked: false } }),
         prisma.location.findMany({ where: { projectId, locked: false } }),
@@ -92,11 +100,13 @@ export async function advanceEpisode(episodeId: string): Promise<string> {
       return advanceEpisode(episodeId); // gate passed — advance again immediately
     }
     case action.endpoint?.endsWith("/generate-shot-images") ?? false: {
+      if (assisted && !cfg.moneyAuthorized) return "paused:money";
       const shots = await prisma.shot.findMany({ where: { episodeId, imageMediaId: null } });
       for (const s of shots) await submitTask({ ...ep, type: TASK_TYPE.IMAGE_SHOT, targetType: "shot", targetId: s.id, payload: { at: 0 } });
       return `shot-images:${shots.length}`;
     }
     case action.endpoint?.endsWith("/generate-shot-videos") ?? false: {
+      if (assisted && !cfg.moneyAuthorized) return "paused:money";
       const shots = await prisma.shot.findMany({ where: { episodeId, videoMediaId: null, imageMediaId: { not: null } } });
       for (const s of shots) await submitTask({ ...ep, type: TASK_TYPE.VIDEO_SHOT, targetType: "shot", targetId: s.id, payload: { at: 0 } });
       return `shot-videos:${shots.length}`;
@@ -106,6 +116,7 @@ export async function advanceEpisode(episodeId: string): Promise<string> {
       return "voice-analyze";
     }
     case action.endpoint?.endsWith("/tts-all") ?? false: {
+      if (assisted && !cfg.moneyAuthorized) return "paused:money";
       const lines = await prisma.voiceLine.findMany({ where: { episodeId, audioMediaId: null } });
       for (const l of lines) await submitTask({ ...ep, type: TASK_TYPE.TTS_LINE, targetType: "voiceLine", targetId: l.id, payload: { at: 0 } });
       return `tts:${lines.length}`;

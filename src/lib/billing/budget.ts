@@ -40,6 +40,7 @@ export interface DownstreamEstimate {
   pendingVideos: number;
   estImageUsd: number;
   estVideoUsd: number;
+  estVoiceUsd: number;
   totalUsd: number;
   videoUnitUsd: number | null;
   activeModels: ActiveModels;
@@ -61,10 +62,13 @@ export async function estimateDownstreamCost(userId: string, episodeId: string):
 
   const imageEntry = getCapabilityEntry(defaults.image);
   const videoEntry = getCapabilityEntry(defaults.video);
+  const ttsEntry = getCapabilityEntry(defaults.tts);
   const imagePricing = imageEntry?.pricing;
   const videoPricing = videoEntry?.pricing;
+  const ttsPricing = ttsEntry?.pricing;
   const imageUnitUsd = imagePricing && "unit" in imagePricing && imagePricing.unit === "image" ? Number(imagePricing.perUnit) : null;
   const videoPerSecUsd = videoPricing && "unit" in videoPricing && videoPricing.unit === "second" ? Number(videoPricing.perUnit) : null;
+  const perCharUsd = ttsPricing && "unit" in ttsPricing && ttsPricing.unit === "character" ? Number(ttsPricing.perUnit) : null;
   const perShotSec = videoEntry?.capabilities?.durationsSec?.length
     ? Math.min(...videoEntry.capabilities.durationsSec)
     : 5;
@@ -72,12 +76,15 @@ export async function estimateDownstreamCost(userId: string, episodeId: string):
 
   const estImageUsd = pendingImages * (imageUnitUsd ?? 0);
   const estVideoUsd = pendingVideos * (videoUnitUsd ?? 0);
+  // Worst-case: whole script still needs TTS. 0 for fake models / no price.
+  const estVoiceUsd = episode.scriptText.length * (perCharUsd ?? 0);
   return {
     pendingImages,
     pendingVideos,
     estImageUsd,
     estVideoUsd,
-    totalUsd: estImageUsd + estVideoUsd,
+    estVoiceUsd,
+    totalUsd: estImageUsd + estVideoUsd + estVoiceUsd,
     videoUnitUsd,
     activeModels: {
       image: { modelKey: defaults.image, unitUsd: imageUnitUsd },

@@ -53,6 +53,7 @@ export default function EpisodeWorkspacePage({
   const { view, error, progress, live, stalled, reconnect } = useEpisode(episodeId);
   const [station, setStation] = useState<StageKey | null>(null);
   const [failuresOpen, setFailuresOpen] = useState(false);
+  const toggle = useAction(qk.episode(episodeId));
 
   useEffect(() => {
     const fromUrl = new URLSearchParams(window.location.search).get("station");
@@ -128,6 +129,11 @@ export default function EpisodeWorkspacePage({
           failedByStage={view.failedByStage}
           current={current}
           onSelect={selectStation}
+          autoAdvance={episode.autoAdvance}
+          toggleBusy={toggle.busy}
+          onToggleAutoAdvance={(on) =>
+            void toggle.run(() => api.patch(`/api/episodes/${episodeId}`, { autoAdvance: on }))
+          }
           notice={
             stalled ? (
               <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-sm text-amber-700 dark:text-amber-400">
@@ -136,6 +142,8 @@ export default function EpisodeWorkspacePage({
                   重新整理
                 </Button>
               </div>
+            ) : toggle.err ? (
+              <p className="text-sm text-destructive">{toggle.err}</p>
             ) : null
           }
         />
@@ -168,6 +176,7 @@ export default function EpisodeWorkspacePage({
               episodeId={episodeId}
               pendingUnits={stagePendingUnits(view)}
               suppressButton={current === view.nextAction.stage && isStageEmpty(view, current)}
+              autoAdvance={episode.autoAdvance}
             />
             <CostCard view={view} />
             {view.stuckTasks > 0 && <StuckTasksCard episodeId={episodeId} count={view.stuckTasks} />}

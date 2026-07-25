@@ -74,6 +74,7 @@ export async function buildEpisodeView(userId: string, episodeId: string) {
 
   const { snapshot, characters, locations, shots, voiceLines, activeTasks, failedTaskTypes } = await buildEpisodeSnapshot(episode, episode.project.inputType);
   const failedTasks = snapshot.failedTasks;
+  const autorunCfg = (episode.autorunConfig ?? {}) as { mode?: "batch" | "assisted"; moneyAuthorized?: boolean };
 
   const activeByKey = new Map<string, { taskId: string; status: string; progress: number }>();
   for (const t of activeTasks) {
@@ -124,6 +125,11 @@ export async function buildEpisodeView(userId: string, episodeId: string) {
       scriptText: episode.scriptText,
       scriptReview: episode.scriptReview,
       exportUrl: (episodeWithUrl[0] as { exportUrl?: string | null }).exportUrl ?? null,
+      autoAdvance: {
+        enabled: episode.autorun,
+        mode: autorunCfg.mode ?? (episode.autorun ? "batch" : null),
+        moneyAuthorized: !!autorunCfg.moneyAuthorized,
+      },
       project: {
         id: episode.project.id,
         name: episode.project.name,

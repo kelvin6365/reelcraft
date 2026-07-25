@@ -192,6 +192,11 @@ export interface EpisodeView {
     scriptText: string;
     scriptReview?: ScriptReviewView | Record<string, never>;
     exportUrl: string | null;
+    autoAdvance: {
+      enabled: boolean;
+      mode: "batch" | "assisted" | null;
+      moneyAuthorized: boolean;
+    };
     project: { id: string; name: string; stylePackId: string; videoRatio: string };
   };
   characters: CharacterView[];
@@ -213,6 +218,7 @@ export interface EpisodeView {
       pendingVideos: number;
       estImageUsd: number;
       estVideoUsd: number;
+      estVoiceUsd: number;
       totalUsd: number;
       videoUnitUsd: number | null;
     } | null;

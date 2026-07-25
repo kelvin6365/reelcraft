@@ -4,7 +4,7 @@ import { CheckCircle2, Loader2 } from "lucide-react";
 import { api } from "@/ui/api";
 import { useAction } from "@/ui/planning/useAction";
 import { qk } from "@/ui/query-keys";
-import type { NextAction } from "@/ui/types";
+import type { EpisodeView, NextAction } from "@/ui/types";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ConfirmDialog } from "@/components/confirm-dialog";
@@ -16,11 +16,13 @@ export function NextActionCard({
   episodeId,
   pendingUnits,
   suppressButton,
+  autoAdvance,
 }: {
   nextAction: NextAction;
   episodeId: string;
   pendingUnits?: number;
   suppressButton?: boolean;
+  autoAdvance?: EpisodeView["episode"]["autoAdvance"];
 }) {
   const goToStation = useStationNav();
   const { busy, err, run } = useAction(qk.episode(episodeId));
@@ -65,6 +67,13 @@ export function NextActionCard({
         <CardTitle className="text-base">下一步</CardTitle>
       </CardHeader>
       <CardContent className="space-y-3">
+        {autoAdvance?.enabled && autoAdvance.mode === "assisted" && (
+          running ? (
+            <p className="text-xs text-primary">▶ 自動行進中 — 完成後會自動去下一步</p>
+          ) : (
+            <p className="text-xs text-amber-600 dark:text-amber-400">⏸ 等緊你操作</p>
+          )
+        )}
         <p className="text-sm font-medium">{nextAction.label}</p>
         {nextAction.endpoint ? (
           <>

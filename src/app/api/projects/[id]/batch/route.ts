@@ -43,6 +43,7 @@ export const POST = withAuth(
     if (episodes.length === 0) throw new ApiError("NO_EPISODES", 400, "冇集數可以批量生成");
 
     const autorunConfig = {
+      mode: "batch" as const,
       autoConfirmStoryboard: body.autoConfirmStoryboard ?? true,
       skipVideo: body.skipVideo ?? false,
     };
@@ -71,12 +72,21 @@ export const POST = withAuth(
 export const DELETE = withAuth(
   async ({ userId, params }) => {
     await getOwned(userId, params.id);
-    // Stop = clear the flags. In-flight tasks finish normally; the hook simply
-    // stops chaining (advanceEpisode sees autorun=false).
-    const cleared = await prisma.episode.updateMany({
+    // Stop = clear the flags, but only for batch-mode episodes. Assisted
+    // episodes run independently of the batch toggle and must keep running.
+    const running = await prisma.episode.findMany({
       where: { projectId: params.id, userId, autorun: true },
-      data: { autorun: false },
+      select: { id: true, autorunConfig: true },
     });
+    const batchIds = running
+      .filter((e) => {
+        const mode = (e.autorunConfig as { mode?: "batch" | "assisted" } | null)?.mode;
+        return mode === "batch" || mode === undefined;
+      })
+      .map((e) => e.id);
+    const cleared = batchIds.length
+      ? await prisma.episode.updateMany({ where: { id: { in: batchIds } }, data: { autorun: false } })
+      : { count: 0 };
     return ok({ stopped: cleared.count });
   },
   { auditAction: "batch.stop" },
