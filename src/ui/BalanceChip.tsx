@@ -13,6 +13,23 @@ export function BalanceChip() {
   if (isLoading) return <Skeleton className="h-5 w-24 rounded-full" />;
   if (!data || data.mode === "OFF") return null;
 
+  // SHADOW 未強制扣費，餘額冇意義 — 淨係顯示已用金額；ENFORCE 先顯示餘額。
+  if (data.mode === "SHADOW") {
+    return (
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <span
+            tabIndex={0}
+            className="inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs text-muted-foreground tabular-nums"
+          >
+            已用 ${data.totalSpentUsd.toFixed(2)}
+          </span>
+        </TooltipTrigger>
+        <TooltipContent>已用 ${data.totalSpentUsd.toFixed(2)}</TooltipContent>
+      </Tooltip>
+    );
+  }
+
   const held = data.frozenUsd > 0 ? `（凍結 $${data.frozenUsd.toFixed(2)}）` : "";
   return (
     <Tooltip>

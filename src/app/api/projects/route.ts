@@ -7,7 +7,7 @@ export const GET = withAuth(async ({ userId }) => {
   const projects = await prisma.project.findMany({
     where: { userId },
     orderBy: { lastAccessedAt: "desc" },
-    include: { episodes: { select: { id: true, episodeNumber: true, status: true } } },
+    include: { episodes: { select: { id: true, episodeNumber: true, status: true, updatedAt: true } } },
   });
   return ok(projects);
 });
