@@ -8,16 +8,9 @@ import { submitTask } from "../src/lib/task/submit";
 import { TASK_TYPE } from "../src/lib/task/types";
 import { planResultFromJson } from "../src/lib/planning/plan";
 import { sliceByAnchors } from "../src/lib/workers/handlers/shared";
+import { SAMPLE_NOVEL as NOVEL } from "../src/lib/fixtures/sample-novel";
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
-
-const NOVEL = `雨夜，林知夏推開咖啡店的門，風鈴輕響。店裡只剩靠窗那一桌還亮著燈。
-陳沉坐在那裡，面前的咖啡早就涼了。他抬起頭，兩人的目光在昏黃的燈光下相遇。
-「你遲到了。」林知夏拉開椅子坐下，聲音比她想像中平靜。
-「路上有事。」陳沉答得很短。
-沉默在兩人之間蔓延。窗外的雨越下越大，把整條街的燈光都暈開了。
-林知夏從包裡拿出一份文件，推到桌子中央。「簽了它，我們就兩清了。」
-陳沉盯著那份文件，很久都沒有動。`;
 
 async function waitTask(taskId: string, label: string, timeoutMs = 60_000) {
   const start = Date.now();

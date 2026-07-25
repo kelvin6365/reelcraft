@@ -1,12 +1,12 @@
 "use client";
 // 專案總覽 — rebuilt to the Pencil ref (frame nfIj9): metric cards, projects
 // table with status badges, sidebar shell. Data layer is TanStack Query.
-import { Suspense, useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { useRouter, useSearchParams } from "next/navigation";
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useRouter } from "next/navigation";
+import { useQuery } from "@tanstack/react-query";
 import { Plus } from "lucide-react";
-import { api, ApiClientError } from "@/ui/api";
+import { ApiClientError } from "@/ui/api";
 import { useSession } from "@/ui/auth-client";
 import { balanceQuery, projectsQuery, usageQuery } from "@/ui/query-keys";
 import type { ProjectSummary } from "@/ui/types";
@@ -15,22 +15,6 @@ import { AppShell } from "@/components/app-shell";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import {
-  Dialog,
-  DialogContent,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   Table,
@@ -41,18 +25,6 @@ import {
   TableRow,
 } from "@/components/ui/table";
 
-const STYLE_PACKS = [
-  { id: "cinematic-01", label: "真人電影感 cinematic-01" },
-  { id: "kdrama-01", label: "真人韓劇 kdrama-01" },
-  { id: "anime-01", label: "2D 動漫 anime-01" },
-  { id: "3d-01", label: "3D 動畫 3d-01" },
-];
-const RATIOS = ["9:16", "16:9"];
-const INPUT_TYPES = [
-  { id: "novel", label: "小說原文" },
-  { id: "srt", label: "SRT 字幕" },
-];
-
 function projectStatus(p: ProjectSummary): { label: string; variant: "default" | "secondary" | "destructive" | "outline" } {
   if (p.episodes.length === 0) return { label: "草稿", variant: "outline" };
   if (p.episodes.some((e) => e.status.includes("FAILED"))) return { label: "有失敗", variant: "destructive" };
@@ -61,29 +33,13 @@ function projectStatus(p: ProjectSummary): { label: string; variant: "default" |
 }
 
 export default function ProjectsPage() {
-  // useSearchParams (in the inner component) requires a Suspense boundary at build time
-  return (
-    <Suspense fallback={<div className="flex min-h-svh items-center justify-center text-muted-foreground">載入中…</div>}>
-      <ProjectsPageInner />
-    </Suspense>
-  );
-}
-
-function ProjectsPageInner() {
   const router = useRouter();
-  const searchParams = useSearchParams();
   const { data: session, isPending } = useSession();
-  const [showModal, setShowModal] = useState(false);
 
   useEffect(() => {
     if (isPending) return;
     if (!session) router.replace("/signin");
   }, [isPending, session, router]);
-
-  // sidebar「新專案」links here with ?new=1
-  useEffect(() => {
-    if (searchParams.get("new") === "1") setShowModal(true);
-  }, [searchParams]);
 
   const enabled = !isPending && !!session;
   const { data: projects, error, isLoading } = useQuery({ ...projectsQuery(), enabled });
@@ -120,8 +76,10 @@ function ProjectsPageInner() {
       active="projects"
       title="專案總覽"
       actions={
-        <Button size="sm" onClick={() => setShowModal(true)}>
-          <Plus /> 新專案
+        <Button size="sm" asChild>
+          <Link href="/projects/new">
+            <Plus /> 新專案
+          </Link>
         </Button>
       }
     >
@@ -163,8 +121,10 @@ function ProjectsPageInner() {
               <CardContent className="flex flex-col items-center gap-3 py-14 text-center">
                 <p className="text-base">仲未有專案。</p>
                 <p className="text-sm text-muted-foreground">建立第一個專案，貼一段小說，行八站流程出一集短劇。</p>
-                <Button onClick={() => setShowModal(true)}>
-                  <Plus /> 建立專案
+                <Button asChild>
+                  <Link href="/projects/new">
+                    <Plus /> 建立專案
+                  </Link>
                 </Button>
               </CardContent>
             </Card>
@@ -213,125 +173,6 @@ function ProjectsPageInner() {
           ) : null}
         </div>
       </div>
-
-      <CreateProjectDialog
-        open={showModal}
-        onClose={() => setShowModal(false)}
-        onCreated={(p) => {
-          setShowModal(false);
-          router.push(`/projects/${p.id}`);
-        }}
-      />
     </AppShell>
-  );
-}
-
-function CreateProjectDialog({
-  open,
-  onClose,
-  onCreated,
-}: {
-  open: boolean;
-  onClose: () => void;
-  onCreated: (p: ProjectSummary) => void;
-}) {
-  const [name, setName] = useState("");
-  const [stylePackId, setStylePackId] = useState(STYLE_PACKS[0].id);
-  const [videoRatio, setVideoRatio] = useState(RATIOS[0]);
-  const [inputType, setInputType] = useState(INPUT_TYPES[0].id);
-  const [validationErr, setValidationErr] = useState<string | null>(null);
-
-  const mutation = useMutation({
-    mutationFn: () =>
-      api.post<ProjectSummary>("/api/projects", { name: name.trim(), stylePackId, videoRatio, inputType }),
-    onSuccess: (p) => onCreated({ ...p, episodes: p.episodes ?? [] }),
-  });
-
-  const busy = mutation.isPending;
-  const err = validationErr ?? (mutation.error ? (mutation.error as ApiClientError).message : null);
-
-  function create() {
-    if (!name.trim()) {
-      setValidationErr("請輸入專案名稱。");
-      return;
-    }
-    setValidationErr(null);
-    mutation.mutate();
-  }
-
-  return (
-    <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="sm:max-w-md">
-        <DialogHeader>
-          <DialogTitle>新專案</DialogTitle>
-        </DialogHeader>
-        <div className="space-y-4">
-          <div className="space-y-2">
-            <Label htmlFor="project-name">專案名稱</Label>
-            <Input
-              id="project-name"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              autoFocus
-              placeholder="例：宮鬥短劇 第一部"
-            />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="input-type">輸入類型</Label>
-            <Select value={inputType} onValueChange={setInputType}>
-              <SelectTrigger id="input-type" className="w-full">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {INPUT_TYPES.map((t) => (
-                  <SelectItem key={t.id} value={t.id}>
-                    {t.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="style-pack">畫風包</Label>
-            <Select value={stylePackId} onValueChange={setStylePackId}>
-              <SelectTrigger id="style-pack" className="w-full">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {STYLE_PACKS.map((s) => (
-                  <SelectItem key={s.id} value={s.id}>
-                    {s.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="video-ratio">比例</Label>
-            <Select value={videoRatio} onValueChange={setVideoRatio}>
-              <SelectTrigger id="video-ratio" className="w-full">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {RATIOS.map((r) => (
-                  <SelectItem key={r} value={r}>
-                    {r}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          {err && <p className="text-sm text-destructive">{err}</p>}
-        </div>
-        <DialogFooter>
-          <Button variant="ghost" onClick={onClose} disabled={busy}>
-            取消
-          </Button>
-          <Button onClick={create} disabled={busy}>
-            {busy ? "建立中…" : "建立"}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
   );
 }

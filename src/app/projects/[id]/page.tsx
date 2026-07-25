@@ -3,7 +3,7 @@ import { use, useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { Loader2 } from "lucide-react";
+import { ChevronDown, ChevronUp, Loader2 } from "lucide-react";
 import { api, ApiClientError } from "@/ui/api";
 import { PlanSetup } from "@/ui/planning/PlanSetup";
 import { PlanReview } from "@/ui/planning/PlanReview";
@@ -18,14 +18,15 @@ import { useAdvancedMode } from "@/ui/prompts/useAdvancedMode";
 import { AppShell } from "@/components/app-shell";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
 import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardFooter,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
 
 const STATUS_LABEL: Record<string, string> = {
@@ -45,6 +46,8 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
   const [rawText, setRawText] = useState("");
   const [validationErr, setValidationErr] = useState<string | null>(null);
   const [reviewOpen, setReviewOpen] = useState(false);
+  const [episodeDialogOpen, setEpisodeDialogOpen] = useState(false);
+  const [modelSettingsOpen, setModelSettingsOpen] = useState(false);
   const { advancedMode } = useAdvancedMode();
 
   const {
@@ -88,6 +91,12 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
     createEpisodeMutation.mutate(rawText.trim());
   }
 
+  function closeEpisodeDialog() {
+    setEpisodeDialogOpen(false);
+    setRawText("");
+    setValidationErr(null);
+  }
+
   if (!project && !loadErrMsg) {
     return <div className="flex min-h-svh items-center justify-center text-muted-foreground">載入中…</div>;
   }
@@ -113,7 +122,7 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
                 {/* ---------- episode planning (novels only) ---------- */}
                 {!isSrt && (
                   <>
-                    {!planned && (
+                    {!planned && episodes.length === 0 && (
                       <PlanSetup
                         id={id}
                         initialSourceText={project.sourceText}
@@ -153,45 +162,19 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
                   </>
                 )}
 
-                {/* ---------- manual single-episode create (legacy path kept) ---------- */}
-                <Card>
-                  <CardHeader>
-                    <CardTitle className="text-base">新增一集</CardTitle>
-                    <CardDescription>
-                      {isSrt
-                        ? "貼上 SRT 字幕，系統會按字幕逐句建立分鏡與配音，然後帶你行流程。"
-                        : "唔想規劃整部小說？貼上單集原文，系統會直接建立一集帶你行八站流程。"}
-                    </CardDescription>
-                  </CardHeader>
-                  <CardContent className="space-y-2">
-                    <Textarea
-                      value={rawText}
-                      onChange={(e) => setRawText(e.target.value)}
-                      rows={8}
-                      placeholder={isSrt ? "喺呢度貼上 SRT 字幕內容…" : "喺呢度貼上小說章節原文…"}
-                      aria-invalid={validationErr ? true : undefined}
-                    />
-                    {validationErr && <p className="text-sm text-destructive">{validationErr}</p>}
-                  </CardContent>
-                  <CardFooter className="flex-col items-end gap-2 border-t">
-                    {mutationErrMsg && (
-                      <p className="text-sm text-destructive">建立呢一集失敗：{mutationErrMsg}</p>
-                    )}
-                    <Button onClick={createEpisode} disabled={busy}>
-                      {busy && <Loader2 className="animate-spin" />}
-                      建立這一集
-                    </Button>
-                  </CardFooter>
-                </Card>
-
                 {hasEpisodes && <BatchPanel id={id} episodes={episodes} />}
 
                 <div className="space-y-4">
-                  <h2 className="text-lg font-medium">劇集</h2>
+                  <div className="flex items-center justify-between">
+                    <h2 className="text-lg font-medium">劇集</h2>
+                    <Button size="sm" variant="outline" onClick={() => setEpisodeDialogOpen(true)}>
+                      ＋ 新增一集
+                    </Button>
+                  </div>
                   {episodes.length === 0 ? (
                     <Card>
                       <CardContent className="py-10 text-center text-sm text-muted-foreground">
-                        仲未有劇集。喺上面規劃分集或貼原文建立第一集。
+                        仲未有劇集。喺上面規劃分集，或撳「＋ 新增一集」貼原文直接開一集。
                       </CardContent>
                     </Card>
                   ) : (
@@ -213,18 +196,65 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
               </div>
 
               <div className="space-y-6">
-                <ModelPicker
-                  id={id}
-                  modelDefaults={project.modelDefaults}
-                  videoRatio={project.videoRatio}
-                  videoResolution={project.videoResolution ?? "720p"}
-                />
-                {advancedMode && <ProjectPromptCard projectId={id} />}
+                <Card className="p-0">
+                  <Button
+                    variant="ghost"
+                    className="h-auto w-full justify-between rounded-xl px-4 py-3 font-medium"
+                    onClick={() => setModelSettingsOpen((o) => !o)}
+                  >
+                    AI 模型設定
+                    {modelSettingsOpen ? <ChevronUp /> : <ChevronDown />}
+                  </Button>
+                </Card>
+                {modelSettingsOpen && (
+                  <>
+                    <ModelPicker
+                      id={id}
+                      modelDefaults={project.modelDefaults}
+                      videoRatio={project.videoRatio}
+                      videoResolution={project.videoResolution ?? "720p"}
+                    />
+                    {advancedMode && <ProjectPromptCard projectId={id} />}
+                  </>
+                )}
               </div>
             </div>
           </>
         )}
       </div>
+
+      <Dialog open={episodeDialogOpen} onOpenChange={(o) => !o && closeEpisodeDialog()}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>新增一集</DialogTitle>
+            <DialogDescription>
+              {isSrt
+                ? "貼上 SRT 字幕，系統會按字幕逐句建立分鏡與配音，然後帶你行流程。"
+                : "唔想規劃整部小說？貼上單集原文，系統會直接建立一集帶你行八站流程。"}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2">
+            <Textarea
+              value={rawText}
+              onChange={(e) => setRawText(e.target.value)}
+              rows={8}
+              placeholder={isSrt ? "喺呢度貼上 SRT 字幕內容…" : "喺呢度貼上小說章節原文…"}
+              aria-invalid={validationErr ? true : undefined}
+            />
+            {validationErr && <p className="text-sm text-destructive">{validationErr}</p>}
+          </div>
+          <DialogFooter>
+            {mutationErrMsg && <p className="text-sm text-destructive">建立呢一集失敗：{mutationErrMsg}</p>}
+            <Button variant="ghost" onClick={closeEpisodeDialog} disabled={busy}>
+              取消
+            </Button>
+            <Button onClick={createEpisode} disabled={busy}>
+              {busy && <Loader2 className="animate-spin" />}
+              建立這一集
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </AppShell>
   );
 }
