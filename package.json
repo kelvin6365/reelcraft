@@ -3,8 +3,7 @@
   "version": "0.0.1",
   "private": true,
   "scripts": {
-    "predev": "node scripts/bootstrap-dev.mjs",
-    "dev": "concurrently -n web,worker -c blue,magenta \"next dev\" \"npm:worker\"",
+    "dev": "node scripts/dev.mjs",
     "dev:web": "next dev",
     "build": "prisma generate && next build",
     "start": "next start",
@@ -21,6 +20,7 @@
     "watchdog": "tsx watch --env-file=.env src/lib/workers/watchdog.ts",
     "smoke:task": "MODEL_DEFAULTS_PRESET=fake tsx --env-file=.env scripts/smoke-task.ts",
     "smoke:pipeline": "MODEL_DEFAULTS_PRESET=fake tsx --env-file=.env scripts/smoke-pipeline.ts",
+    "smoke:pipeline:local": "node scripts/smoke-pipeline-local.mjs",
     "smoke:plan": "MODEL_DEFAULTS_PRESET=fake tsx --env-file=.env scripts/smoke-plan.ts",
     "smoke:srt": "MODEL_DEFAULTS_PRESET=fake tsx --env-file=.env scripts/smoke-srt.ts",
     "smoke:batch": "MODEL_DEFAULTS_PRESET=fake tsx --env-file=.env scripts/smoke-batch.ts",

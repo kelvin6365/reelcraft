@@ -20,31 +20,37 @@ AI 短劇生產平台：真多租戶、任務佇列有 watchdog 兜底、每次 
 - **進階模式** — 每個生產站可以檢視／編輯實際送出嘅 AI prompt（用戶層／專案層覆寫，canary 鎖結構）
 - **生產級任務系統** — BullMQ ×4 + 心跳 + watchdog 殭屍恢復（kill -9 worker 任務自動續跑）
 - **商業化 ready** — BYO-Key 信封加密、預留→結算→退款計費帳本、Redis 分散式配額
-- **架構守則自動執行** — 12 個 guard 腳本喺 CI 鎖住不變式
+- **零依賴 local 模式** — 冇 Docker？自動落 SQLite＋本機檔案＋內嵌 worker，一條命令跑起
+- **架構守則自動執行** — guard 腳本喺 CI 鎖住不變式
 
 ## 快速開始（本機）
 
 ```bash
 npm install
-npm run dev   # 一個 terminal 齊起 web＋worker；首次會自動建 .env、檢查 infra、行 migration
+npm run dev   # 零 Docker：自動偵測、首次會建 .env、跑 db 設定，出到片
 ```
 
-`npm run dev` 前會自動跑 bootstrap：冇 `.env` 就由 `.env.example` 建立、冇 API key 就設 `MODEL_DEFAULTS_PRESET=fake`（fake providers 走全程，唔使錢）、確認 migration 已套用。
+`npm run dev` 會先自動跑 bootstrap，再按偵測結果起對應 process：
 
-> full 模式（現時預設）需要 Postgres + Redis 先行到：`docker compose up -d`（postgres + redis + minio，或用本機 brew 服務）。bootstrap 連唔到會提示咁做並停低，唔會靜靜 crash-loop。
+- 冇 `.env` 就由 `.env.example` 建立；冇 API key 就設 `MODEL_DEFAULTS_PRESET=fake`（fake providers 走全程，唔使錢）。
+- **偵測唔到 Postgres**（`DATABASE_URL` 3 秒 ping 唔通）→ 用 **local 模式**：SQLite（`data/local.db`）+ worker 內嵌喺同一個 `next dev` process，零 Docker、零額外 terminal。
+- **偵測到 Postgres** → 用 **full 模式**：一個 terminal 齊起 web＋worker（BullMQ + Redis），同以前一樣。
 
-想分開行 web／worker（例如另開 terminal debug）：`npm run dev:web` 同 `npm run worker`。
+模式一經偵測會寫死入 `.env`（`DEPLOY_MODE=local` 或 `full`），唔會之後靜靜轉；想強制用完整版：手動設 `DEPLOY_MODE=full` 並 `docker compose up -d`（postgres + redis + minio，或本機 brew 服務）。想由 local 打回白紙：`rm -rf data && npm run dev`。
+
+想分開行 web／worker（full 模式，例如另開 terminal debug）：`npm run dev:web` 同 `npm run worker`。
 
 開 http://localhost:3000 → 註冊 → 「開始製作」三步引導流（貼小說或一撳用範例）→ 系統自動行到檢查點，跟住亮燈位撳。冇 API key 設 `MODEL_DEFAULTS_PRESET=fake` 都出到片（ffmpeg 生成嘅佔位素材）；填咗 `OPENROUTER_API_KEY` / `FAL_KEY` 就係真嘢（系統預設 = kling-v3 / nano-banana-pro / minimax TTS，`/settings` 或專案頁可改）。
 
 ## 驗證
 
 ```bash
-npm run check          # 12 guards + typecheck
-npm test               # 410+ tests
-npm run smoke:pipeline # 小說→mp4 離線 E2E
-npm run smoke:batch    # 兩集批量自動出片離線 E2E
-npm run smoke:task     # kill -9 worker 恢復測試
+npm run check                # guards + typecheck
+npm test                     # 430+ tests
+npm run smoke:pipeline       # 小說→mp4 離線 E2E（full 模式：postgres + BullMQ）
+npm run smoke:pipeline:local # 同上，但行 local 模式（SQLite + 內嵌 worker，throwaway db）
+npm run smoke:batch          # 兩集批量自動出片離線 E2E
+npm run smoke:task           # kill -9 worker 恢復測試
 ```
 
 ## 部署

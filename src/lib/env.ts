@@ -6,6 +6,11 @@ const schema = z.object({
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
   DATABASE_URL: z.string().url(),
   REDIS_URL: z.string().url(),
+  // Datasource for prisma/schema.sqlite.prisma (DEPLOY_MODE=local). Only Prisma's
+  // own env() lookup reads this raw — app code never imports env.SQLITE_URL — but
+  // it's declared here so it's validated/documented like every other var and
+  // env-example-sync catches drift from .env.example.
+  SQLITE_URL: z.string().optional().default("file:../data/local.db"),
 
   // "full" = Postgres+Redis+BullMQ (default, unchanged behavior). "local" = SQLite
   // + in-process substitutes for every Redis dependency (docs/plans/2026-07-25-

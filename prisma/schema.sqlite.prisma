@@ -11,7 +11,7 @@ generator client {
 
 datasource db {
   provider = "sqlite"
-  url      = "file:../data/local.db"
+  url      = env("SQLITE_URL")
 }
 
 // ========== Auth (Better-Auth managed shape) ==========
@@ -107,12 +107,12 @@ model Project {
   sourceText      String   @default("") // the full novel; episodes are sliced from it on confirm
   theme           String   @default("") // 中心思想 anchor — injected into episode_split / rewrite_script
   planStatus      String   @default("none") // 'none' | 'planning' | 'planned'
-  planConfig      Json     @default("{}") // { anchor:'length'|'count', seconds?, count?, hookStrength }
-  planResult      Json     @default("{}") // { episodes: [{index,title,summary,startAnchor,endAnchor,hook,risk}] } — not committed to Episode rows until confirm
+  planConfig      Json     @default(dbgenerated("'{}'")) // { anchor:'length'|'count', seconds?, count?, hookStrength }
+  planResult      Json     @default(dbgenerated("'{}'")) // { episodes: [{index,title,summary,startAnchor,endAnchor,hook,risk}] } — not committed to Episode rows until confirm
   stylePackId     String   @default("cinematic-01")
   videoRatio      String   @default("9:16")
   videoResolution String   @default("720p")
-  modelDefaults   Json     @default("{}") // { text:'openrouter::…', image:'fal::…', video:'fal::…', tts:'fal::…' }
+  modelDefaults   Json     @default(dbgenerated("'{}'")) // { text:'openrouter::…', image:'fal::…', video:'fal::…', tts:'fal::…' }
   inputType       String   @default("novel") // 'novel' | 'script' | 'srt'
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
@@ -140,9 +140,9 @@ model Episode {
   // Batch/season generation: when true, each completed task auto-advances this
   // episode via computeNextAction (docs/plans/2026-07-19-batch-generation-design.md).
   autorun       Boolean @default(false)
-  autorunConfig Json    @default("{}") // { autoConfirmStoryboard, skipVideo }
+  autorunConfig Json    @default(dbgenerated("'{}'")) // { autoConfirmStoryboard, skipVideo }
   // 劇本體檢 result { scenes: [{index,label,risk}], overall: {level,flags,note} } — informational, not a gate
-  scriptReview  Json    @default("{}")
+  scriptReview  Json    @default(dbgenerated("'{}'"))
   exportMediaId String?
   exportMedia   MediaObject? @relation("EpisodeExport", fields: [exportMediaId], references: [id])
   createdAt     DateTime @default(now())
@@ -170,7 +170,7 @@ model Scene {
   anchorEnd   String  @default("")
   // 空間契約 (spatial blocking): 每角色畫面左右位/面向 + 180° 軸 + 關鍵道具，
   // storyboard_plan 一次過鎖定，之後每鏡生圖必守 — 連戲唔靠彩數
-  blocking    Json    @default("{}")
+  blocking    Json    @default(dbgenerated("'{}'"))
 
   shots Shot[]
 
@@ -187,11 +187,11 @@ model Shot {
   sceneId        String
   scene          Scene   @relation(fields: [sceneId], references: [id], onDelete: Cascade)
   shotIndex      Int
-  storyboardJson Json    @default("{}")
+  storyboardJson Json    @default(dbgenerated("'{}'"))
   imagePrompt    String  @default("")
   imageMediaId   String?
   imageMedia     MediaObject? @relation("ShotImage", fields: [imageMediaId], references: [id])
-  imageCandidates Json   @default("[]")
+  imageCandidates Json   @default(dbgenerated("'[]'"))
   videoPrompt    String  @default("")
   videoMediaId   String?
   videoMedia     MediaObject? @relation("ShotVideo", fields: [videoMediaId], references: [id])
@@ -214,18 +214,18 @@ model Character {
   projectId          String
   project            Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
   name               String
-  aliases            Json    @default("[]")
+  aliases            Json    @default(dbgenerated("'[]'"))
   profile            String  @default("")
   appearancePrompt   String  @default("")
   // 人物小傳 { age, occupation, personality, painPoint, backstory, note } — 反哺 rewrite_script
-  bio                Json    @default("{}")
+  bio                Json    @default(dbgenerated("'{}'"))
   lockedImageMediaId String?
   lockedImageMedia   MediaObject? @relation("CharacterLockedImage", fields: [lockedImageMediaId], references: [id])
   // 近臉特寫 — auto-generated from the locked turnaround on lock; strongest
   // identity signal for shot-image (and thus video) generation
   faceImageMediaId   String?
   faceImageMedia     MediaObject? @relation("CharacterFaceImage", fields: [faceImageMediaId], references: [id])
-  candidates         Json    @default("[]")
+  candidates         Json    @default(dbgenerated("'[]'"))
   voiceId            String?
   locked             Boolean @default(false)
 
@@ -246,7 +246,7 @@ model Location {
   prompt             String  @default("")
   lockedImageMediaId String?
   lockedImageMedia   MediaObject? @relation("LocationLockedImage", fields: [lockedImageMediaId], references: [id])
-  candidates         Json    @default("[]")
+  candidates         Json    @default(dbgenerated("'[]'"))
   locked             Boolean @default(false)
 
   @@index([projectId])
@@ -321,7 +321,7 @@ model Task {
   attempt      Int       @default(0)
   maxAttempts  Int       @default(3)
   dedupeKey    String    @unique
-  payload      Json      @default("{}")
+  payload      Json      @default(dbgenerated("'{}'"))
   result       Json?
   errorCode    String?
   errorMessage String?
@@ -339,11 +339,11 @@ model Task {
 }
 
 model TaskEvent {
-  id        BigInt   @id @default(autoincrement())
+  id        Int   @id @default(autoincrement())
   taskId    String
   task      Task     @relation(fields: [taskId], references: [id], onDelete: Cascade)
   eventType String
-  payload   Json     @default("{}")
+  payload   Json     @default(dbgenerated("'{}'"))
   createdAt DateTime @default(now())
 
   @@index([taskId, id])
@@ -353,7 +353,7 @@ model TaskEvent {
 // ========== Audit domain (docs/tech/04-audit.md) ==========
 
 model AuditLog {
-  id         BigInt   @id @default(autoincrement())
+  id         Int   @id @default(autoincrement())
   userId     String
   user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   at         DateTime @default(now())
@@ -362,7 +362,7 @@ model AuditLog {
   targetId   String   @default("")
   // 'ui'|'system'|'watchdog'|'agent'
   source     String   @default("ui")
-  metadata   Json     @default("{}")
+  metadata   Json     @default(dbgenerated("'{}'"))
 
   @@index([userId, at])
   @@index([targetType, targetId])
@@ -370,7 +370,7 @@ model AuditLog {
 }
 
 model AiCallLog {
-  id                BigInt   @id @default(autoincrement())
+  id                Int   @id @default(autoincrement())
   userId            String
   user              User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   at                DateTime @default(now())
@@ -436,7 +436,7 @@ model UserModelDefaults {
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   // { text?:'provider::modelId', image?, video?, tts? } — a cleared slot is
   // absent (never stored as ""); resolution falls back to the system layer.
-  defaults  Json     @default("{}")
+  defaults  Json     @default(dbgenerated("'{}'"))
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -471,7 +471,7 @@ model BalanceFreeze {
 }
 
 model BalanceTransaction {
-  id             BigInt   @id @default(autoincrement())
+  id             Int   @id @default(autoincrement())
   userId         String
   user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   // 'recharge' | 'consume' | 'refund' | 'adjust'
@@ -481,7 +481,7 @@ model BalanceTransaction {
   freezeId       String?
   idempotencyKey String
   note           String   @default("")
-  metadata       Json     @default("{}")
+  metadata       Json     @default(dbgenerated("'{}'"))
   createdAt      DateTime @default(now())
 
   @@unique([userId, type, idempotencyKey])

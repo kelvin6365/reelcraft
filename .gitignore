@@ -11,3 +11,7 @@ next-env.d.ts
 # local tooling artifacts
 .codegraph/
 .cursor/
+
+# throwaway sqlite db for smoke:pipeline:local (relative to prisma/)
+prisma/smoke-local.db
+prisma/smoke-local.db-journal

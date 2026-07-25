@@ -54,7 +54,11 @@ export async function GET(req: NextRequest) {
         // Replay missed events
         if (lastEventId) {
           const missed = await prisma.taskEvent.findMany({
-            where: { id: { gt: BigInt(lastEventId) }, task: { projectId, userId } },
+            // Number, not BigInt: task_events.id is BigInt in postgres but Int in
+            // sqlite (DEPLOY_MODE=local — SQLite autoincrement only works on an
+            // Int-typed primary key, see scripts/lib-sqlite-transform.mjs). Both
+            // generated Prisma filter types accept a plain number for `gt`.
+            where: { id: { gt: Number(lastEventId) }, task: { projectId, userId } },
             orderBy: { id: "asc" },
             take: 500,
             include: { task: { select: { type: true } } },

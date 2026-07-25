@@ -8,6 +8,8 @@ import { prisma } from "../src/lib/db";
 import { newId } from "../src/lib/ids";
 import { submitTask } from "../src/lib/task/submit";
 import { TASK_TYPE, type TaskType } from "../src/lib/task/types";
+import { isLocalMode } from "../src/lib/env";
+import { startLocalWorker } from "../src/lib/task/local-queue";
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -39,9 +41,18 @@ async function run(userId: string, projectId: string, episodeId: string, type: T
 }
 
 async function main() {
-  console.log("[pipeline] spawning worker…");
-  const worker = spawn("npx", ["tsx", "--env-file=.env", "src/lib/workers/index.ts"], { stdio: ["ignore", "ignore", "pipe"] });
-  worker.stderr?.on("data", (d) => process.stderr.write(`  [w!] ${d}`));
+  // DEPLOY_MODE=local has no BullMQ/Redis — src/lib/workers/index.ts is a
+  // deliberate no-op there (worker runs embedded in the web process via
+  // instrumentation.ts). This script isn't the web process, so it must start
+  // the same embedded poller itself to have anything consume submitted tasks.
+  const worker = isLocalMode() ? null : spawn("npx", ["tsx", "--env-file=.env", "src/lib/workers/index.ts"], { stdio: ["ignore", "ignore", "pipe"] });
+  if (worker) {
+    console.log("[pipeline] spawning worker…");
+    worker.stderr?.on("data", (d) => process.stderr.write(`  [w!] ${d}`));
+  } else {
+    console.log("[pipeline] local 模式 — 起內嵌 worker…");
+    startLocalWorker();
+  }
   await sleep(3000);
 
   try {
@@ -118,7 +129,7 @@ async function main() {
     });
     console.log(`[pipeline] play it: open data/storage/${done.exportMedia.storageKey}`);
   } finally {
-    worker.kill("SIGTERM");
+    worker?.kill("SIGTERM");
     await prisma.$disconnect();
   }
   process.exit(0);

@@ -16,16 +16,22 @@ model Foo {
   amountUsd Decimal @db.Decimal(18, 6) // per-project cap
   note      String  @db.Text
   config    Json    @default("{}")
+  items     Json    @default("[]")
+}
+
+model Bar {
+  id     BigInt   @id @default(autoincrement())
+  amount BigInt
 }
 `;
 
 describe("transformSchema", () => {
-  it("replaces the datasource block with a sqlite provider + literal file url", () => {
+  it("replaces the datasource block with a sqlite provider + SQLITE_URL env lookup", () => {
     const out = transformSchema(SAMPLE);
     expect(out).toContain('provider = "sqlite"');
     expect(out).not.toContain('provider = "postgresql"');
     expect(out).not.toContain('env("DATABASE_URL")');
-    expect(out).toMatch(/url\s+=\s+"file:/);
+    expect(out).toMatch(/url\s+=\s+env\("SQLITE_URL"\)/);
   });
 
   it("strips @db.Decimal(18, 6) while preserving the field's other attributes and trailing comment", () => {
@@ -40,9 +46,17 @@ describe("transformSchema", () => {
     expect(out).toContain("note      String");
   });
 
-  it("leaves Json @default(\"{}\") untouched", () => {
+  it("routes Json @default(\"{}\")/@default(\"[]\") through dbgenerated() (SQLite rejects the raw literal)", () => {
     const out = transformSchema(SAMPLE);
-    expect(out).toContain('config    Json    @default("{}")');
+    expect(out).toContain('config    Json    @default(dbgenerated("\'{}\'"))');
+    expect(out).toContain('items     Json    @default(dbgenerated("\'[]\'"))');
+  });
+
+  it("maps BigInt @id @default(autoincrement()) to Int (SQLite autoincrement requires an INTEGER PK)", () => {
+    const out = transformSchema(SAMPLE);
+    expect(out).toContain("id     Int   @id @default(autoincrement())");
+    // a plain (non-PK, non-autoincrement) BigInt column must be left alone
+    expect(out).toContain("amount BigInt");
   });
 
   it("preserves the generator block unchanged", () => {

@@ -47,3 +47,16 @@ LOG_LEVEL=info
 
 - postgres：每晚 `pg_dump` 去 storage bucket `backups/`（cron 喺 worker 容器）。
 - MinIO data volume 自己係媒體真身——上 R2 之後呢層冇單點。
+
+## Local 模式（單人本機，零 Docker）
+
+`DEPLOY_MODE=local`（`npm run dev` 偵測唔到 Postgres 就自動揀，詳見 README／`docs/plans/2026-07-25-local-quickstart-design.md`）係一個平行拓撲，唔係上面六 service 拓撲嘅簡化版：
+
+- **一個 process**：Next `next dev` 單一 process 起哂 web + worker（worker 內嵌喺 `src/instrumentation.ts` 嘅 DB poller，唔行獨立 `npm run worker`）。
+- **DB**：SQLite，`data/local.db`（`prisma/schema.sqlite.prisma`，`prisma db push` 而非 migration 歷史）。
+- **Redis 替身**：queue / SSE pubsub / quota / rate-limit 全部 in-process 版本（單一 Map / EventEmitter），語義喺單 process 內同 full 模式一致；**重啟歸零**（配額、rate-limit window）。
+- **Storage**：一樣用 `STORAGE_TYPE=local`（`data/storage/`），本身就唔靠 MinIO。
+
+**單人限制**：local 模式冇跨 process 協調——唔支援 `--scale worker=N`、唔支援多個 `next dev` 例項共享同一個 `data/local.db`（SQLite 並發寫入弱）。生產／多人一定要 `DEPLOY_MODE=full`。
+
+**轉返 full 模式**：`.env` 手動改 `DEPLOY_MODE=full`，`docker compose up -d` 開返 postgres/redis/minio，再 `npm run dev`（bootstrap 見 `DEPLOY_MODE` 已明確設定就唔會再自動偵測）。local ↔ full 冇數據遷移工具（YAGNI）——`data/local.db` 同 postgres 係兩份獨立數據。

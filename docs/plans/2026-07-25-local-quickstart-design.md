@@ -1,7 +1,7 @@
 # Local Quick Start — 零 Docker 一條命令起動
 
 日期：2026-07-25
-狀態：設計已驗證（brainstorming 逐段確認），未實作
+狀態：已實作（PR-A~D，2026-07-25）
 背景：public repo 而家 quickstart 要 6 步、兩個 terminal、Docker infra。目標係好似其他 open source 咁：`npm install && npm run dev` 一條命令，本機零外部依賴行到全功能。
 
 ## 定位
