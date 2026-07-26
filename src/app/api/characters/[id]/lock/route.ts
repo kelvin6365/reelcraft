@@ -2,8 +2,6 @@
 import { prisma } from "@/lib/db";
 import { withAuth } from "@/lib/api/with-auth";
 import { ApiError, ok } from "@/lib/api/errors";
-import { submitTask } from "@/lib/task/submit";
-import { TASK_TYPE } from "@/lib/task/types";
 import { advanceAfterTask } from "@/lib/batch/advance";
 
 export const POST = withAuth(
@@ -19,22 +17,13 @@ export const POST = withAuth(
       throw new ApiError("BAD_REQUEST", 400, "mediaId must be one of the candidates");
     }
     await prisma.character.update({ where: { id: row.id }, data: { lockedImageMediaId: body.mediaId, locked: true } });
-    // Auto-generate the 近臉特寫 from the freshly locked turnaround (idempotent:
-    // dedupeActive collapses repeat locks while one is still running).
-    const face = await submitTask({
-      userId,
-      type: TASK_TYPE.IMAGE_CHARACTER,
-      targetType: "character",
-      targetId: row.id,
-      projectId: row.projectId,
-      payload: { face: true },
-      dedupeActive: true,
-    });
+    // 近臉特寫 is user-initiated (the 近臉 button) — no auto-generation on lock.
+    // Shot generation tolerates a missing faceImageMediaId (conditional ref).
     // Assets are project-level (shared across episodes) — kick every autorun
     // episode in the project so a lock can unblock a stalled 揀圖 gate.
     const episodes = await prisma.episode.findMany({ where: { projectId: row.projectId, autorun: true }, select: { id: true } });
     for (const e of episodes) advanceAfterTask(e.id);
-    return ok({ locked: true, faceTaskId: face.taskId });
+    return ok({ locked: true });
   },
   { auditAction: "asset.lock" },
 );

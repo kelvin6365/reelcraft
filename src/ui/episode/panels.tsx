@@ -428,7 +428,7 @@ function AssetCard(props: {
               />
             </button>
           ) : props.showFaceHint ? (
-            <span className="mt-1 text-xs text-muted-foreground">近臉特寫生成中…</span>
+            <span className="mt-1 text-xs text-muted-foreground">未有近臉特寫 — 撳「近臉」可以生成，令鏡頭圖面容更一致（可選）</span>
           ) : null}
         </div>
       ) : props.candidates.length === 0 ? (
