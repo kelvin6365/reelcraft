@@ -101,7 +101,7 @@
     {
       "id": "image_prompt_shot",
       "path": "pipeline/image_prompt_shot.zh.txt",
-      "version": "6",
+      "version": "7",
       "variables": [
         "shot_json",
         "scene_blocking",

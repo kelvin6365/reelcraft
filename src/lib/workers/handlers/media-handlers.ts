@@ -12,7 +12,7 @@ import { TaskError } from "@/lib/task/types";
 import type { TaskHandler } from "@/lib/workers/lifecycle";
 import { resolveTaskModels, loadEpisodeWithProject, textCallJson, promptOverridesFromTask } from "@/lib/workers/handlers/shared";
 import { mergeNegatives } from "@/lib/prompts/negatives";
-import { matchShotCharacters, pickShotLocation } from "@/lib/prompts/shot-assets";
+import { buildShotRefAssets, matchShotCharacters, pickShotLocation } from "@/lib/prompts/shot-assets";
 import { buildAngleImagePrompt, buildAngleNegativePrompt, mergeAngleMediaId, type LocationAngle } from "@/lib/prompts/location-angles";
 
 interface StylePack {
@@ -193,15 +193,7 @@ export const imageShotHandler: TaskHandler = async ({ task, reportProgress }) =>
   ).map((m) => lockedCharacters.find((c) => c.name === m.name)!);
   const shotLocation = pickShotLocation(`${scene?.summary ?? ""}\n${scene?.content ?? ""}`, lockedLocations);
 
-  const refAssets = [
-    ...shotCharacters
-      .filter((c) => c.lockedImageMediaId)
-      .flatMap((c) => [
-        { mediaId: c.lockedImageMediaId!, label: `${c.name}（角色全身多視角）`, prompt: c.appearancePrompt },
-        ...(c.faceImageMediaId ? [{ mediaId: c.faceImageMediaId, label: `${c.name}（面部特寫）`, prompt: "面部身份參照" }] : []),
-      ]),
-    ...(shotLocation?.lockedImageMediaId ? [{ mediaId: shotLocation.lockedImageMediaId, label: `${shotLocation.name}（場景）`, prompt: shotLocation.prompt }] : []),
-  ];
+  const refAssets = buildShotRefAssets(shotCharacters, shotLocation);
   const referenceMediaIds = refAssets.map((a) => a.mediaId);
   const referenceLegend = refAssets.map((a, i) => `图片${i + 1}=${a.label}`).join("；") || "（無參考圖）";
   const lockedAssets = refAssets.map((a, i) => `图片${i + 1}（${a.label}）: ${a.prompt}`).join("\n") || "（無鎖定資產）";
