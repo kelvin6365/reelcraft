@@ -39,6 +39,12 @@ export const EpisodeSplitOutput = z.object({
 export type EpisodeSplitOutput = z.infer<typeof EpisodeSplitOutput>;
 
 // extract_assets
+// Models sometimes emit null instead of omitting an optional free-text field
+// (observed on locations.note after the v3 prompt change) — treat null as "".
+const optionalText = z
+  .string()
+  .nullish()
+  .transform((v) => v ?? "");
 export const ExtractAssetsOutput = z.object({
   characters: z.array(
     z.object({
@@ -46,14 +52,14 @@ export const ExtractAssetsOutput = z.object({
       aliases: z.array(z.string()).default([]),
       level: z.enum(["lead", "supporting", "extra"]),
       appearance: z.string(),
-      wardrobe: z.string().optional().default(""),
-      note: z.string().optional().default(""),
+      wardrobe: optionalText,
+      note: optionalText,
       // 人物小傳 (S2) — 反哺 rewrite_script，令對白貼人設
-      age: z.string().optional().default(""),
-      occupation: z.string().optional().default(""),
-      personality: z.string().optional().default(""),
-      painPoint: z.string().optional().default(""), // 內心缺失
-      backstory: z.string().optional().default(""), // 前史 2-3 句
+      age: optionalText,
+      occupation: optionalText,
+      personality: optionalText,
+      painPoint: optionalText, // 內心缺失
+      backstory: optionalText, // 前史 2-3 句
     }),
   ),
   locations: z.array(
@@ -61,12 +67,12 @@ export const ExtractAssetsOutput = z.object({
       name: z.string().min(1),
       timeOfDay,
       description: z.string(),
-      note: z.string().optional().default(""),
+      note: optionalText,
       // AI 建議視角 (S2) — 重要場景（出現 ≥2 場戲或關鍵劇情發生地）至少 2 個，普通場景為空陣列
       angles: z
         .array(z.object({ label: z.string().min(1), prompt: z.string().min(1) }))
-        .optional()
-        .default([]),
+        .nullish()
+        .transform((v) => v ?? []),
     }),
   ),
 });
