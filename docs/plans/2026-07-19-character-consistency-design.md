@@ -80,3 +80,14 @@
 
 - M1：fal adapter + outbound 正規化 + handler 收集 + prompt v3 + tests，約一薄片。
 - M2：自參考換裝 + 四視圖，各一薄片（schema 可選）。
+
+## 6. 後續演進（2026-07-26，本文檔以上內容為歷史設計原文，不改寫）
+
+M1 落地後再迭代出以下機制，均圍繞「令參考圖更準」呢個核心目標：
+
+- **近臉特寫改手動觸發**：原設計無提及，實作初期鎖定資產會自動提交近臉特寫任務；現改為使用者手動按「近臉」才生成（`lock` route 不再自動 submit），shot 生成本身容忍缺少 `faceImageMediaId`。理由：自動生成會在使用者未準備好時消耗一次生成額度，亦令鎖定動作的意圖變得混雜。
+- **墊臉（`refFaceMediaId`/`refFaceNote`）**：角色資產可上載一張參考臉相＋補充要求，生成候選圖時排第一張 reference（`keepIdentity` 鎖定圖排第二），令新角色候選圖從第一輪即跟隨指定的臉，無須鎖定之後再碰運氣。
+- **場景多視角接入鏡頭參考**：`Location.angles`（extract_assets v3 判斷重要場景建議 ≥2 個視角，逐張手動生成 16:9 單圖）已接入 `buildShotRefAssets`——鏡頭組裝參考圖時，場景主視角與已生成的場景視角均按優先序入列（角色 > 場景主視角 > 場景視角），AI 可按本鏡頭機位選取最貼合的一張場景參考，不再是一張場景圖供所有鏡頭共用。
+- **`MAX_SHOT_REFS = 6` 顯式截斷**：因應下游 provider 對參考圖數量有硬上限，在 legend 編號前截斷，避免圖例與實際送出圖片錯位。
+
+詳細機制見 `docs/tech/06-prompts.md`（鏡頭參考圖組裝、prompt 版本）同 `docs/tech/01-data-model.md`（`refFaceMediaId`/`angles` 欄位）。

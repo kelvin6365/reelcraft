@@ -37,10 +37,17 @@ shots           id, userId, episodeId, sceneId, shotIndex,
 characters      id, userId, projectId, name, aliases jsonb, profile text,
                 appearancePrompt,           // 出圖用外貌描述
                 lockedImageMediaId,         // ✋鎖定後才可以放入分鏡
+                faceImageMediaId,           // 近臉特寫（使用者手動按「近臉」才生成，非鎖定自動觸發）
+                refFaceMediaId, refFaceNote text default '',
+                                            // 墊臉——使用者上載的參考臉相＋補充要求；生成候選圖時
+                                            // 排第一張 reference（keepIdentity 鎖定圖排第二）
                 candidates jsonb, voiceId, locked bool default false
 
 locations       id, userId, projectId, name, summary, prompt,
-                lockedImageMediaId, candidates jsonb, locked bool default false
+                lockedImageMediaId, candidates jsonb, locked bool default false,
+                angles jsonb default '[]'  // [{label, prompt, mediaId}]——extract_assets v3 判斷
+                                            // 重要場景時建議 ≥2 個視角；mediaId 得 IMAGE_LOCATION
+                                            // angle 生成分支寫入，PATCH 不可直接指定
 
 voice_lines     id, userId, episodeId, lineIndex, speaker, content,
                 characterId, emotion, emotionStrength real default 0.4,  // 上限 0.5

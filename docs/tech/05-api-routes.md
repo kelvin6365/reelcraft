@@ -17,8 +17,12 @@
 | `GET /api/episodes/:id` | 集數詳情（含八站進度聚合 = Next Best Action 數據源） | — |
 | `PATCH /api/episodes/:id {autoAdvance:boolean}` | 開關 assisted 自動連跑（`autorun` + `autorunConfig.mode="assisted"`） | — |
 | `POST /api/episodes/:id/extract-assets` | ③ 抽取角色/場景 | `EXTRACT_ASSETS` |
-| `POST /api/characters/:id/generate-image` | 資產生圖（3 張候選） | `IMAGE_CHARACTER` |
-| `POST /api/characters/:id/lock` | ✋鎖定資產（選擇一張） | — |
+| `POST /api/characters/:id/generate-image` | 資產生圖（3 張候選）；場景圖 16:9、角色圖 9:16 | `IMAGE_CHARACTER` / `IMAGE_LOCATION` |
+| `POST /api/characters/:id/lock` | ✋鎖定資產（選擇一張）；不再自動觸發近臉特寫 | — |
+| `PATCH /api/characters/:id` | 改 `appearancePrompt` 和／或 `refFaceNote` | — |
+| `POST/DELETE /api/characters/:id/ref-face` | 墊臉——multipart 上載／移除參考臉相（jpeg/png/webp ≤10MB，經 MediaObject） | — |
+| `PATCH /api/locations/:id` | 改 `prompt`，或以 `{angleIndex, anglePrompt, angleLabel}` 改單條建議視角（`mediaId` 僅由 server 端寫入，不接受 client 指定） | — |
+| `POST /api/locations/:id/regenerate {angle?:number}` | 場景候選重生；帶 `angle` 則生成/重生單張 16:9 視角圖（需已鎖定主圖，否則 `NO_LOCKED_IMAGE`） | `IMAGE_LOCATION` |
 | `POST /api/episodes/:id/rewrite-script` | ④ 改寫劇本 | `REWRITE_SCRIPT` |
 | `PATCH /api/episodes/:id/script` | 直接編輯劇本文本 | — |
 | `POST /api/episodes/:id/storyboard` | ⑤ 切塊+分鏡四階段 | `BUILD_SCENES`→`STORYBOARD_RUN` |

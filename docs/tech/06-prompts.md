@@ -27,7 +27,23 @@ prompts/
   canary/
     build_scenes.canary.json     # {input, mustHaveKeys[], mustMatch[], mustNotMatch[]}
     storyboard_plan.canary.json
+    extract_assets.canary.json
 ```
+
+## Prompt 版本紀要
+
+- **`extract_assets`（v3）**：加場景視角建議判斷準則——重要場景（出現於兩場或以上戲，或屬關鍵劇情發生地）必須輸出 ≥2 個 `angles`（`{label, prompt}`，普通場景空陣列）；label 須具體到空間關係，prompt 30–60 字、嚴禁人物。輸出結構 `locations[]` 新增 `angles` 欄。對應 zod schema（`src/lib/prompts/schemas.ts`）所有自由文本欄位與 `angles` 皆 nullish→預設值（`""` / `[]`），容忍模型漏答或輸出 null。
+- **`image_prompt_shot`（v7）**：圖例規則加一句——標示「（場景視角：…）」者為同一場景的不同機位參考，按本鏡頭構圖需要選取最貼合的一張；「（場景主視角）」為該場景建立鏡頭全貌。參考圖組裝見下方「鏡頭參考圖組裝」。
+
+## 鏡頭參考圖組裝（`buildShotRefAssets`，`src/lib/prompts/shot-assets.ts`）
+
+鏡頭生圖前組裝 reference 陣列，優先序固定：
+
+1. 出場角色（`locked && lockedImageMediaId`）——全身圖 + 面部特寫（`faceImageMediaId`，如有）
+2. 場景主視角（`lockedImageMediaId`）
+3. 場景建議視角（`angles`，只取已生成即 `mediaId` 非空者）
+
+`MAX_SHOT_REFS = 6`——在 legend 編號之前顯式截斷（下游 `normalizeReferenceImages` 對超過 6 張會靜默 splice，若不在此層先行截斷，圖例編號與實際送出的圖片會錯位）。
 
 ## 載入與渲染
 
