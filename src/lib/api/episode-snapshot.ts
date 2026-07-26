@@ -14,8 +14,11 @@ export async function buildEpisodeSnapshot(
 ): Promise<{ snapshot: EpisodeSnapshot; characters: Awaited<ReturnType<typeof prisma.character.findMany>>; locations: Awaited<ReturnType<typeof prisma.location.findMany>>; shots: Awaited<ReturnType<typeof prisma.shot.findMany>>; voiceLines: Awaited<ReturnType<typeof prisma.voiceLine.findMany>>; activeTasks: { id: string; type: string; targetId: string; status: string; progress: number; queuedAt: Date; heartbeatAt: Date | null }[]; failedTaskTypes: string[] }> {
   const episodeId = episode.id;
   const [characters, locations, scenes, shots, voiceLines, activeTasks, terminalTasks] = await Promise.all([
-    prisma.character.findMany({ where: { projectId: episode.projectId } }),
-    prisma.location.findMany({ where: { projectId: episode.projectId } }),
+    // id is UUID v7 (time-ordered) → creation/extraction order. Without an
+    // orderBy, Postgres reorders rows after UPDATEs (lock/regen), making the
+    // asset cards jump around in the UI.
+    prisma.character.findMany({ where: { projectId: episode.projectId }, orderBy: { id: "asc" } }),
+    prisma.location.findMany({ where: { projectId: episode.projectId }, orderBy: { id: "asc" } }),
     prisma.scene.count({ where: { episodeId } }),
     prisma.shot.findMany({ where: { episodeId }, orderBy: { shotIndex: "asc" } }),
     prisma.voiceLine.findMany({ where: { episodeId }, orderBy: { lineIndex: "asc" } }),
