@@ -367,6 +367,10 @@ function AssetCard(props: {
         </div>
       </div>
       {props.desc && <p className="text-sm text-muted-foreground">{props.desc}</p>}
+      {/* disabled gates on busy only, NOT inFlight: a running generation task
+          already read the old row, so swapping the reference face mid-flight is
+          safe and only affects the next generation. Gating on inFlight made the
+          slot go dead for the whole auto face-close-up run right after locking. */}
       {props.isCharacter && (
         <RefFaceSlot
           characterId={props.id}
@@ -375,7 +379,7 @@ function AssetCard(props: {
           refFaceNote={props.refFaceNote ?? ""}
           imageRefSupported={props.imageRefSupported ?? true}
           episodeId={props.episodeId}
-          disabled={disabled}
+          disabled={busy}
           onLightbox={setLightbox}
         />
       )}
