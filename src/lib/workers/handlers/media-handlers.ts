@@ -73,14 +73,25 @@ function assetImageHandler(kind: "character" | "location"): TaskHandler {
       kind === "location"
         ? (style.locationPrefix ?? style.assetPrefix ?? style.prefix ?? "")
         : (style.assetPrefix ?? style.prefix ?? "");
-    const fullPrompt = [stylePart, basePrompt, refFraming].filter(Boolean).join(". ").trim();
+    // 墊臉 — user-uploaded reference face, only relevant to characters. Feeding
+    // it alongside keepIdentity's lockedImage lets the model lock the face while
+    // varying pose/outfit/style; see ref-face route for upload/removal.
+    const refFace = kind === "character" ? row.refFaceMediaId : null;
+    const keepIdentity = (task.payload as { keepIdentity?: boolean }).keepIdentity === true;
+    const identityRef = keepIdentity && row.lockedImageMediaId ? row.lockedImageMediaId : null;
+    const refs = [refFace, identityRef].filter((v): v is string => Boolean(v));
+
+    const refFacePrompt = refFace
+      ? refs.length > 1
+        ? "The character's face MUST exactly match the face in the first reference image; outfit and overall style follow the second reference image."
+        : "The character's face MUST exactly match the face in the reference image."
+      : "";
+    const refFaceNote = kind === "character" ? row.refFaceNote : "";
+    const fullPrompt = [stylePart, basePrompt, refFraming, refFacePrompt, refFaceNote].filter(Boolean).join(". ").trim();
     const negativePrompt =
       kind === "location"
         ? [style.negativePrompt, "people, person, human figure, crowd, silhouette of a person"].filter(Boolean).join(", ")
         : style.negativePrompt;
-
-    const keepIdentity = (task.payload as { keepIdentity?: boolean }).keepIdentity === true;
-    const identityRef = keepIdentity && row.lockedImageMediaId ? [row.lockedImageMediaId] : undefined;
 
     const mediaIds: string[] = [];
     for (let i = 0; i < CANDIDATE_COUNT; i++) {
@@ -92,7 +103,7 @@ function assetImageHandler(kind: "character" | "location"): TaskHandler {
           negativePrompt,
           aspectRatio: assetRatio,
           keyPrefix: `projects/${project.id}/${kind}s/${row.id}`,
-          referenceMediaIds: identityRef,
+          referenceMediaIds: refs.length ? refs : undefined,
         },
       );
       mediaIds.push(media.id);

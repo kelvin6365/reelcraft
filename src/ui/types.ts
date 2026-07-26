@@ -111,6 +111,9 @@ export interface CharacterView {
   lockedImageMediaId: string | null;
   lockedImageUrl: string | null;
   faceImageUrl?: string | null;
+  // 墊臉 — user-uploaded reference face fed into candidate generation
+  refFaceUrl: string | null;
+  refFaceNote: string;
   locked: boolean;
   activeTask?: ActiveTaskView | null;
 }
@@ -183,6 +186,10 @@ export interface VoiceLineView {
 
 export interface EpisodeView {
   candidateUrlById: Record<string, string>;
+  // Whether the project's resolved image model accepts reference images
+  // (natively, or via the atlascloud text-to-image → edit swap) — gates the
+  // 墊臉 upload affordance in the character card UI.
+  imageRefSupported: boolean;
   episode: {
     id: string;
     projectId: string;

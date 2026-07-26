@@ -30,10 +30,25 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
   return json.data;
 }
 
+// multipart/form-data upload — no Content-Type header so the browser sets the
+// boundary itself. Same envelope handling as request() above.
+async function upload<T>(path: string, form: FormData): Promise<T> {
+  const res = await fetch(path, { method: "POST", body: form });
+  let json: Envelope<T>;
+  try {
+    json = (await res.json()) as Envelope<T>;
+  } catch {
+    throw new ApiClientError("NETWORK", `無法解析回應（HTTP ${res.status}）`);
+  }
+  if (!json.ok) throw new ApiClientError(json.error.code, json.error.message);
+  return json.data;
+}
+
 export const api = {
   get: <T>(path: string) => request<T>("GET", path),
   post: <T>(path: string, body?: unknown) => request<T>("POST", path, body),
   put: <T>(path: string, body?: unknown) => request<T>("PUT", path, body),
   patch: <T>(path: string, body?: unknown) => request<T>("PATCH", path, body),
   del: <T>(path: string, body?: unknown) => request<T>("DELETE", path, body),
+  upload: <T>(path: string, form: FormData) => upload<T>(path, form),
 };

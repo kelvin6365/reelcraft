@@ -222,6 +222,11 @@ model Character {
   // identity signal for shot-image (and thus video) generation
   faceImageMediaId   String?
   faceImageMedia     MediaObject? @relation("CharacterFaceImage", fields: [faceImageMediaId], references: [id])
+  // 墊臉 — user-uploaded reference face fed to generateImage() as an extra
+  // reference alongside lockedImage (see assetImageHandler in media-handlers.ts)
+  refFaceMediaId     String?
+  refFaceMedia       MediaObject? @relation("CharacterRefFace", fields: [refFaceMediaId], references: [id])
+  refFaceNote        String  @default("")
   candidates         Json    @default("[]")
   voiceId            String?
   locked             Boolean @default(false)
@@ -296,6 +301,7 @@ model MediaObject {
   shotVideos            Shot[]      @relation("ShotVideo")
   characterLockedImages Character[] @relation("CharacterLockedImage")
   characterFaceImages   Character[] @relation("CharacterFaceImage")
+  characterRefFaces     Character[] @relation("CharacterRefFace")
   locationLockedImages  Location[]  @relation("LocationLockedImage")
   voiceLineAudios       VoiceLine[] @relation("VoiceLineAudio")
 

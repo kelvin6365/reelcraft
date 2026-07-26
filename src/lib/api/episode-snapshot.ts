@@ -5,6 +5,9 @@ import { attachMediaUrls } from "@/lib/media/service";
 import { ACTIVE_STATUSES } from "@/lib/task/types";
 import { countByStage } from "@/lib/task/stage-map";
 import { activeFailures } from "@/lib/task/superseded";
+import { resolveModelDefaults } from "@/lib/model-defaults/resolve";
+import { effectiveImageModelKey } from "@/lib/ai/generate-media";
+import { getCapabilities } from "@/lib/ai/capabilities";
 
 const CONFIRMED_STATUSES = ["images", "videos", "export", "done"];
 
@@ -98,12 +101,20 @@ export async function buildEpisodeView(userId: string, episodeId: string) {
     : activeTasks.filter((t) => !t.heartbeatAt && now - new Date(t.queuedAt).getTime() > STUCK_MS).length;
 
   const [charactersWithUrls, locationsWithUrls, shotsWithUrls, voiceLinesWithUrls, episodeWithUrl] = await Promise.all([
-    attachMediaUrls(characters, ["lockedImageMediaId", "faceImageMediaId"]),
+    attachMediaUrls(characters, ["lockedImageMediaId", "faceImageMediaId", "refFaceMediaId"]),
     attachMediaUrls(locations, ["lockedImageMediaId"]),
     attachMediaUrls(shots, ["imageMediaId", "videoMediaId"]),
     attachMediaUrls(voiceLines, ["audioMediaId"]),
     attachMediaUrls([episode], ["exportMediaId"]),
   ]);
+
+  // 墊臉 UI affordance is only worth showing when the resolved image model
+  // actually takes reference images — either natively, or via the
+  // text-to-image → edit swap effectiveImageModelKey performs when refs exist.
+  const resolvedModels = await resolveModelDefaults(userId, episode.project);
+  const imageRefSupported =
+    getCapabilities(resolvedModels.image)?.supportsReferenceImages === true ||
+    effectiveImageModelKey(resolvedModels.image, true) !== resolvedModels.image;
 
   const { getStorage } = await import("@/lib/storage");
   const storage = getStorage();
@@ -119,6 +130,7 @@ export async function buildEpisodeView(userId: string, episodeId: string) {
 
   return {
     candidateUrlById,
+    imageRefSupported,
     episode: {
       id: episode.id,
       projectId: episode.projectId,

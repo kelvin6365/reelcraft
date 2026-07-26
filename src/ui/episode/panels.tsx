@@ -15,7 +15,9 @@ import {
   Pencil,
   RefreshCw,
   Trash2,
+  Upload,
   Users,
+  X,
   ZoomIn,
   type LucideIcon,
 } from "lucide-react";
@@ -37,6 +39,7 @@ import { MediaLightbox, type MediaLightboxMedia } from "@/components/media-light
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import {
   DropdownMenu,
@@ -216,6 +219,9 @@ export function AssetsPanel({ view, progress, live }: PanelProps) {
               faceUrl={c.faceImageUrl ?? null}
               showFaceHint
               isCharacter
+              refFaceUrl={c.refFaceUrl}
+              refFaceNote={c.refFaceNote}
+              imageRefSupported={view.imageRefSupported}
               locked={c.locked}
               lockPath="/api/characters"
               liveState={live?.[`IMAGE_CHARACTER:${c.id}`] ?? c.activeTask ?? null}
@@ -261,6 +267,9 @@ function AssetCard(props: {
   faceUrl?: string | null;
   showFaceHint?: boolean;
   isCharacter?: boolean;
+  refFaceUrl?: string | null;
+  refFaceNote?: string;
+  imageRefSupported?: boolean;
   locked: boolean;
   lockPath: string;
   liveState: { progress?: number } | null;
@@ -358,6 +367,18 @@ function AssetCard(props: {
         </div>
       </div>
       {props.desc && <p className="text-sm text-muted-foreground">{props.desc}</p>}
+      {props.isCharacter && (
+        <RefFaceSlot
+          characterId={props.id}
+          name={props.name}
+          refFaceUrl={props.refFaceUrl ?? null}
+          refFaceNote={props.refFaceNote ?? ""}
+          imageRefSupported={props.imageRefSupported ?? true}
+          episodeId={props.episodeId}
+          disabled={disabled}
+          onLightbox={setLightbox}
+        />
+      )}
       {editing && (
         <div className="space-y-1">
           <Textarea
@@ -460,6 +481,160 @@ function AssetCard(props: {
       )}
       {err && <p className="text-sm text-destructive">{err}</p>}
       <MediaLightbox open={!!lightbox} onOpenChange={(o) => !o && setLightbox(null)} media={lightbox} />
+    </div>
+  );
+}
+
+const REF_FACE_ACCEPTED = ["image/jpeg", "image/png", "image/webp"];
+const REF_FACE_MAX_BYTES = 10 * 1024 * 1024;
+
+// 墊臉 — upload a reference face used as a face-lock for candidate generation.
+// Kept separate from AssetCard because it owns its own upload/note save state
+// and client-side validation, independent of the prompt-editing state above it.
+function RefFaceSlot({
+  characterId,
+  name,
+  refFaceUrl,
+  refFaceNote,
+  imageRefSupported,
+  episodeId,
+  disabled,
+  onLightbox,
+}: {
+  characterId: string;
+  name: string;
+  refFaceUrl: string | null;
+  refFaceNote: string;
+  imageRefSupported: boolean;
+  episodeId: string;
+  disabled: boolean;
+  onLightbox: (media: MediaLightboxMedia) => void;
+}) {
+  const { busy, err, run, setErr } = useAction(qk.episode(episodeId));
+  const { saved, flash } = useSavedFlash();
+  const [uploading, setUploading] = useState(false);
+  const [dragOver, setDragOver] = useState(false);
+  const [note, setNote] = useState(refFaceNote);
+  const fileInputId = `ref-face-${characterId}`;
+  useEffect(() => setNote(refFaceNote), [refFaceNote]);
+
+  const busyAll = busy || uploading || disabled;
+
+  async function doUpload(file: File) {
+    if (!REF_FACE_ACCEPTED.includes(file.type)) {
+      setErr("只支援 JPEG／PNG／WebP 格式");
+      return;
+    }
+    if (file.size > REF_FACE_MAX_BYTES) {
+      setErr("檔案超過 10MB 上限");
+      return;
+    }
+    const form = new FormData();
+    form.append("file", file);
+    setUploading(true);
+    try {
+      await run(() => api.upload(`/api/characters/${characterId}/ref-face`, form));
+    } finally {
+      setUploading(false);
+    }
+  }
+
+  async function saveNote() {
+    if (note === refFaceNote) return;
+    if (await run(() => api.patch(`/api/characters/${characterId}`, { refFaceNote: note }))) flash();
+  }
+
+  return (
+    <div className="flex flex-col gap-1.5">
+      <div className="flex items-start gap-3">
+        {refFaceUrl ? (
+          <div className="group relative shrink-0">
+            <button
+              type="button"
+              className="cursor-zoom-in"
+              onClick={() => onLightbox({ src: refFaceUrl, type: "image", title: `${name} 參考臉` })}
+            >
+              <img
+                src={refFaceUrl}
+                alt={`${name} 參考臉`}
+                className="size-24 rounded-md object-cover"
+                style={{ aspectRatio: "1/1" }}
+              />
+            </button>
+            <button
+              type="button"
+              aria-label="移除參考臉"
+              title="移除參考臉"
+              disabled={busyAll}
+              onClick={() => run(() => api.del(`/api/characters/${characterId}/ref-face`))}
+              className="absolute top-1 right-1 z-10 flex size-5 items-center justify-center rounded-full bg-black/60 text-white opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100"
+            >
+              <X className="size-3" />
+            </button>
+          </div>
+        ) : (
+          <label
+            htmlFor={fileInputId}
+            className={cn(
+              "flex size-24 shrink-0 cursor-pointer flex-col items-center justify-center gap-1 rounded-md border border-dashed text-muted-foreground transition-colors",
+              dragOver && "border-primary bg-primary/5",
+              busyAll && "pointer-events-none opacity-60",
+            )}
+            style={{ aspectRatio: "1/1" }}
+            title="上載一張參考臉相，生成出嚟嘅角色會用呢張臉"
+            onDragOver={(e) => {
+              e.preventDefault();
+              setDragOver(true);
+            }}
+            onDragLeave={() => setDragOver(false)}
+            onDrop={(e) => {
+              e.preventDefault();
+              setDragOver(false);
+              const file = e.dataTransfer.files?.[0];
+              if (file) void doUpload(file);
+            }}
+          >
+            {uploading ? <Loader2 className="size-5 animate-spin" aria-hidden /> : <Upload className="size-5" aria-hidden />}
+            <span className="text-xs">{uploading ? "上載中…" : "墊臉"}</span>
+            <input
+              id={fileInputId}
+              type="file"
+              accept="image/jpeg,image/png,image/webp"
+              className="sr-only"
+              disabled={busyAll}
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                e.target.value = "";
+                if (file) void doUpload(file);
+              }}
+            />
+          </label>
+        )}
+        <div className="flex min-w-0 flex-1 flex-col gap-1 pt-1">
+          {refFaceUrl && (
+            <span className="text-xs text-muted-foreground">已墊臉 — 撳「重生」先會用呢張臉出圖</span>
+          )}
+          {!imageRefSupported && (
+            <span className="text-xs text-amber-600 dark:text-amber-500">
+              目前圖像模型唔支援參考圖，墊臉唔會生效
+            </span>
+          )}
+          {refFaceUrl && (
+            <>
+              <Input
+                value={note}
+                onChange={(e) => setNote(e.target.value)}
+                onBlur={saveNote}
+                disabled={busyAll}
+                placeholder="補充要求（可選）：例如淨係跟塊臉，髮型跟提示詞"
+                className="h-8 text-xs"
+              />
+              <SavedHint saved={saved} />
+            </>
+          )}
+        </div>
+      </div>
+      {err && <p className="text-xs text-destructive">{err}</p>}
     </div>
   );
 }
