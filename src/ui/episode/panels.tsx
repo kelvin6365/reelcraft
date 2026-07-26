@@ -26,7 +26,7 @@ import { useAction } from "@/ui/planning/useAction";
 import { qk } from "@/ui/query-keys";
 import { useAdvancedMode } from "@/ui/prompts/useAdvancedMode";
 import { StationPromptSheet } from "@/ui/prompts/StationPromptSheet";
-import type { EpisodeView, LiveTaskMap, StageKey, ShotView, ScriptReviewView, VoiceLineView } from "@/ui/types";
+import type { EpisodeView, LiveTaskMap, LocationView, StageKey, ShotView, ScriptReviewView, VoiceLineView } from "@/ui/types";
 import { STATION_BY_KEY } from "./stations";
 import { useStationNav } from "./station-nav";
 import { SavedHint, useAutosaveField, useSavedFlash } from "./SavedHint";
@@ -242,6 +242,7 @@ export function AssetsPanel({ view, progress, live }: PanelProps) {
               chosenId={l.lockedImageMediaId}
               lockedUrl={l.lockedImageUrl}
               isLocation
+              angles={l.angles}
               locked={l.locked}
               lockPath="/api/locations"
               liveState={live?.[`IMAGE_LOCATION:${l.id}`] ?? l.activeTask ?? null}
@@ -272,6 +273,7 @@ function AssetCard(props: {
   refFaceUrl?: string | null;
   refFaceNote?: string;
   imageRefSupported?: boolean;
+  angles?: LocationView["angles"];
   locked: boolean;
   lockPath: string;
   liveState: { progress?: number } | null;
@@ -369,6 +371,24 @@ function AssetCard(props: {
         </div>
       </div>
       {props.desc && <p className="text-sm text-muted-foreground">{props.desc}</p>}
+      {props.isLocation && props.angles && props.angles.length > 0 && (
+        <div className="space-y-2 rounded-md border border-dashed p-3">
+          <p className="text-xs font-medium text-muted-foreground">AI 建議視角</p>
+          <div className="space-y-2">
+            {props.angles.map((angle, i) => (
+              <LocationAngleRow
+                key={i}
+                locationId={props.id}
+                angleIndex={i}
+                label={angle.label}
+                prompt={angle.prompt}
+                episodeId={props.episodeId}
+              />
+            ))}
+          </div>
+          <p className="text-xs text-muted-foreground">鎖定主圖後可以逐個生成視角圖</p>
+        </div>
+      )}
       {/* disabled gates on busy only, NOT inFlight: a running generation task
           already read the old row, so swapping the reference face mid-flight is
           safe and only affects the next generation. Gating on inFlight made the
@@ -496,6 +516,36 @@ function AssetCard(props: {
       )}
       {err && <p className="text-sm text-destructive">{err}</p>}
       <MediaLightbox open={!!lightbox} onOpenChange={(o) => !o && setLightbox(null)} media={lightbox} />
+    </div>
+  );
+}
+
+// One AI-suggested angle's prompt, editable independent of the other angles'
+// drafts — each row owns its own autosave state so editing one doesn't clobber
+// another mid-flight (same pattern as savePrompt above, one row per angle).
+function LocationAngleRow({
+  locationId,
+  angleIndex,
+  label,
+  prompt,
+  episodeId,
+}: {
+  locationId: string;
+  angleIndex: number;
+  label: string;
+  prompt: string;
+  episodeId: string;
+}) {
+  const { run } = useAction(qk.episode(episodeId));
+  const { text, onChange, onBlur, saved } = useAutosaveField(prompt, (v) =>
+    run(() => api.patch(`/api/locations/${locationId}`, { angleIndex, anglePrompt: v })),
+  );
+
+  return (
+    <div className="space-y-1">
+      <Badge variant="outline">{label}</Badge>
+      <Textarea value={text} onChange={(e) => onChange(e.target.value)} onBlur={onBlur} rows={2} />
+      <SavedHint saved={saved} />
     </div>
   );
 }

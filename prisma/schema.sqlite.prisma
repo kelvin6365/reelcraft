@@ -253,6 +253,8 @@ model Location {
   lockedImageMedia   MediaObject? @relation("LocationLockedImage", fields: [lockedImageMediaId], references: [id])
   candidates         Json    @default(dbgenerated("'[]'"))
   locked             Boolean @default(false)
+  // 額外視角建議 [{label, prompt, mediaId}] — extract_assets v3 產出；mediaId 由 IMAGE_LOCATION angle 分支寫入（PR3）
+  angles             Json    @default(dbgenerated("'[]'"))
 
   @@index([projectId])
   @@map("locations")

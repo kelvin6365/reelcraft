@@ -9,6 +9,12 @@
 - 角色：名字完全相同即視為同一人，合併別名到 aliases，不得拆成兩筆。暱稱、全名、稱謂指向同一人時歸為一筆主名。
 - 場景：地點名稱相同且時間段（早/日/黃昏/夜）相同者合併為同一筆；同地點但不同時間段則各自獨立一筆。
 
+場景視角建議（angles）判斷準則：
+- 重要場景定義：在劇本中出現於兩場或以上戲，或屬關鍵劇情發生地（衝突爆發、轉折、高潮場口）。
+- 重要場景必須輸出至少 2 個 angles；普通場景 angles 一律輸出空陣列。
+- label 須具體到空間關係（例：「吧台望向窗邊卡座」），不可只寫方位詞。
+- prompt 為 30 至 60 字，描述該視角所見的環境細節、光線與道具，嚴禁出現任何人物。
+
 外貌字數按角色戲份等級量化：
 - lead（主角）：外貌描述 60 至 100 字，五官、髮型、體態、標誌服飾齊全，供後續鎖圖參照。
 - supporting（配角）：30 至 50 字。
@@ -21,7 +27,7 @@
 - 只能依據劇本內文推斷，禁止杜撰劇本完全無依據的設定；推斷不出就留空字串。
 
 輸出結構（欄位固定）：
-{"characters": [{"name": "主名", "aliases": ["別名"], "level": "lead", "appearance": "外貌描述", "wardrobe": "標誌服飾", "note": "性格或關係備註", "age": "28歲", "occupation": "職業", "personality": "性格", "painPoint": "內心缺失", "backstory": "前史"}], "locations": [{"name": "場景名", "timeOfDay": "夜", "description": "環境與氛圍描述", "note": "備註"}]}
+{"characters": [{"name": "主名", "aliases": ["別名"], "level": "lead", "appearance": "外貌描述", "wardrobe": "標誌服飾", "note": "性格或關係備註", "age": "28歲", "occupation": "職業", "personality": "性格", "painPoint": "內心缺失", "backstory": "前史"}], "locations": [{"name": "場景名", "timeOfDay": "夜", "description": "環境與氛圍描述", "note": "備註", "angles": [{"label": "視角短名", "prompt": "該視角的畫面生成描述"}]}]}
 
 level 只能是 lead／supporting／extra。timeOfDay 只能是 早／日／黃昏／夜。現在處理以下劇本：
 

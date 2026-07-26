@@ -118,9 +118,11 @@ export async function buildEpisodeView(userId: string, episodeId: string) {
 
   const { getStorage } = await import("@/lib/storage");
   const storage = getStorage();
+  type LocationAngle = { label: string; prompt: string; mediaId: string | null };
   const allCandidateIds = [
     ...characters.flatMap((c) => c.candidates as string[]),
     ...locations.flatMap((l) => l.candidates as string[]),
+    ...locations.flatMap((l) => (l.angles as LocationAngle[]).map((a) => a.mediaId).filter((id): id is string => !!id)),
   ];
   const candidateMedia = allCandidateIds.length
     ? await prisma.mediaObject.findMany({ where: { id: { in: allCandidateIds } } })
@@ -159,6 +161,10 @@ export async function buildEpisodeView(userId: string, episodeId: string) {
     locations: locationsWithUrls.map((l) => ({
       ...l,
       activeTask: activeByKey.get(`IMAGE_LOCATION:${(l as { id: string }).id}`) ?? null,
+      angles: ((l as { angles: unknown }).angles as LocationAngle[]).map((a) => ({
+        ...a,
+        url: a.mediaId ? (candidateUrlById[a.mediaId] ?? null) : null,
+      })),
     })),
     shots: shotsWithUrls.map((sh) => ({
       ...sh,

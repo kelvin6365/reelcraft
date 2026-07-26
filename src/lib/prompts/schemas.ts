@@ -62,6 +62,11 @@ export const ExtractAssetsOutput = z.object({
       timeOfDay,
       description: z.string(),
       note: z.string().optional().default(""),
+      // AI 建議視角 (S2) — 重要場景（出現 ≥2 場戲或關鍵劇情發生地）至少 2 個，普通場景為空陣列
+      angles: z
+        .array(z.object({ label: z.string().min(1), prompt: z.string().min(1) }))
+        .optional()
+        .default([]),
     }),
   ),
 });

@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { buildPrompt, clearPromptCache, PromptError } from "@/lib/prompts/build-prompt";
 import { safeParseJson, parseWithSchema, JsonParseError, restoreCjkQuotes } from "@/lib/prompts/parse";
-import { VoiceAnalyzeOutput, ScenesOutput, ScriptReviewOutput } from "@/lib/prompts/schemas";
+import { VoiceAnalyzeOutput, ScenesOutput, ScriptReviewOutput, ExtractAssetsOutput } from "@/lib/prompts/schemas";
 
 describe("buildPrompt", () => {
   beforeEach(() => clearPromptCache());
@@ -37,6 +37,13 @@ describe("buildPrompt", () => {
     expect(built.text).toContain("角色（OS）：");
     expect(built.text).toContain("VO、OS 是保留字");
     expect(built.text).toContain("展示不明說");
+  });
+
+  it("renders extract_assets v3 with the angles judgment criteria intact", () => {
+    const built = buildPrompt("extract_assets", { script_text: "阿May推門而入。" });
+    expect(built.version).toBe("3");
+    expect(built.text).toContain("重要場景必須輸出至少 2 個 angles；普通場景 angles 一律輸出空陣列");
+    expect(built.text).toContain("嚴禁出現任何人物");
   });
 
   it("throws PROMPT_NOT_FOUND for an unknown promptId", () => {
@@ -149,6 +156,50 @@ describe("schema parsing", () => {
       lines: [{ index: 1, text: "x", speaker: "s", emotion: "憤怒", emotionStrength: 0.9, matchedShotIndex: 0 }],
     });
     expect(() => parseWithSchema(raw, VoiceAnalyzeOutput)).toThrow();
+  });
+
+  it("parses extract_assets locations with angles — important scene ≥2, normal scene empty", () => {
+    const raw = JSON.stringify({
+      characters: [],
+      locations: [
+        {
+          name: "咖啡店",
+          timeOfDay: "夜",
+          description: "臨街咖啡店，夜晚燈光溫暖",
+          angles: [
+            { label: "吧台望向窗邊卡座", prompt: "吧台望出去，窗邊卡座映住街燈，桌上留一杯未喝完的咖啡。" },
+            { label: "門口望向吧台", prompt: "推門望入，吧台後排列酒瓶與咖啡機，燈光偏暖黃。" },
+          ],
+        },
+        { name: "便利店", timeOfDay: "日", description: "普通便利店", angles: [] },
+      ],
+    });
+    const out = parseWithSchema(raw, ExtractAssetsOutput);
+    expect(out.locations[0].angles).toHaveLength(2);
+    expect(out.locations[1].angles).toHaveLength(0);
+  });
+
+  it("defaults extract_assets angles to [] when the model omits the field (backward-compatible with v2 output)", () => {
+    const raw = JSON.stringify({
+      characters: [],
+      locations: [{ name: "天台", timeOfDay: "夜", description: "天台" }],
+    });
+    const out = parseWithSchema(raw, ExtractAssetsOutput);
+    expect(out.locations[0].angles).toEqual([]);
+  });
+
+  it("rejects an extract_assets angle with an empty label or prompt", () => {
+    const badLabel = JSON.stringify({
+      characters: [],
+      locations: [{ name: "天台", timeOfDay: "夜", description: "天台", angles: [{ label: "", prompt: "細節描述" }] }],
+    });
+    expect(() => parseWithSchema(badLabel, ExtractAssetsOutput)).toThrow();
+
+    const badPrompt = JSON.stringify({
+      characters: [],
+      locations: [{ name: "天台", timeOfDay: "夜", description: "天台", angles: [{ label: "遠望", prompt: "" }] }],
+    });
+    expect(() => parseWithSchema(badPrompt, ExtractAssetsOutput)).toThrow();
   });
 
   it("parses a valid build_scenes output", () => {

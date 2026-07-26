@@ -142,10 +142,19 @@ export const extractAssetsHandler: TaskHandler = async ({ task, reportProgress }
     const existing = await prisma.location.findFirst({ where: { projectId: project.id, name } });
     if (!existing) {
       await prisma.location.create({
-        data: { id: newId(), userId: task.userId, projectId: project.id, name, summary: l.description, prompt: l.description },
+        data: {
+          id: newId(),
+          userId: task.userId,
+          projectId: project.id,
+          name,
+          summary: l.description,
+          prompt: l.description,
+          angles: l.angles.map((a) => ({ ...a, mediaId: null })),
+        },
       });
       created++;
     }
+    // existing: skip — 唔覆寫用戶已改嘅 angles／已生成圖
   }
   reportProgress(95);
   return { characters: out.characters.length, locations: out.locations.length, created };
