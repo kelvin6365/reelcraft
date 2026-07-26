@@ -241,6 +241,7 @@ export function AssetsPanel({ view, progress, live }: PanelProps) {
               candidates={l.candidates}
               chosenId={l.lockedImageMediaId}
               lockedUrl={l.lockedImageUrl}
+              isLocation
               locked={l.locked}
               lockPath="/api/locations"
               liveState={live?.[`IMAGE_LOCATION:${l.id}`] ?? l.activeTask ?? null}
@@ -267,6 +268,7 @@ function AssetCard(props: {
   faceUrl?: string | null;
   showFaceHint?: boolean;
   isCharacter?: boolean;
+  isLocation?: boolean;
   refFaceUrl?: string | null;
   refFaceNote?: string;
   imageRefSupported?: boolean;
@@ -409,8 +411,11 @@ function AssetCard(props: {
             <img
               src={props.lockedUrl}
               alt={props.name}
-              className="max-w-[200px] rounded-md object-cover"
-              style={{ aspectRatio: "3/4" }}
+              className={cn(
+                "rounded-md",
+                props.isLocation ? "max-w-[320px] object-contain" : "max-w-[200px] object-cover",
+              )}
+              style={props.isLocation ? undefined : { aspectRatio: "3/4" }}
             />
           </button>
           {props.faceUrl ? (
@@ -434,7 +439,12 @@ function AssetCard(props: {
       ) : props.candidates.length === 0 ? (
         <p className="text-sm text-muted-foreground">未有候選圖。撳上面「生成」生成 3 張候選，或喺「下一步」一次過生成全部資產圖。</p>
       ) : (
-        <div className="grid grid-cols-3 gap-3 sm:grid-cols-4">
+        <div
+          className={cn(
+            "grid gap-3",
+            props.isLocation ? "grid-cols-2 sm:grid-cols-3" : "grid-cols-3 sm:grid-cols-4",
+          )}
+        >
           {props.candidates.map((mediaId) => {
             const url = props.candidateUrlById[mediaId];
             const chosen = props.chosenId === mediaId;
@@ -448,7 +458,8 @@ function AssetCard(props: {
                   title={chosen ? "已揀呢張" : "揀呢張鎖定"}
                   aria-label={chosen ? `${props.name} 已揀呢張候選圖` : `揀 ${props.name} 呢張候選圖`}
                   className={cn(
-                    "block w-full aspect-[3/4] overflow-hidden rounded-md border-2 transition-colors",
+                    "block w-full overflow-hidden rounded-md border-2 transition-colors",
+                    props.isLocation ? "aspect-video" : "aspect-[3/4]",
                     chosen ? "border-primary ring-2 ring-primary" : "border-transparent hover:border-border",
                   )}
                 >

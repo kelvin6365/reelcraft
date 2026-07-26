@@ -68,7 +68,7 @@ function assetImageHandler(kind: "character" | "location"): TaskHandler {
       kind === "character"
         ? "character reference sheet in two stacked sections: TOP HALF is one large ultra-detailed head-and-shoulders face close-up of the character; BOTTOM HALF is a row of three full-body standing views of the SAME character — front view, side profile, and back view — evenly spaced, not overlapping. Identical face, hairstyle, outfit and body in every view. Strict visual alignment: identical height, facial-feature placement and clothing folds must match perfectly across all views. Full body visible in each bottom view, both hands fully visible and relaxed naturally at the sides. Clean pure white background, flat even studio lighting, sharp focus everywhere, no cast shadows, no text, no labels, no captions anywhere, clean composition, rich detail, high quality, 4K resolution"
         : "wide establishing reference view, unified perspective with consistent vanishing points, consistent logically-motivated lighting true to the scene's time of day, logically coherent spatial layout, empty scene with no people, no characters, no text, no labels, clean composition, rich environmental detail, high quality";
-    const assetRatio = "9:16";
+    const assetRatio = kind === "location" ? "16:9" : "9:16";
     const stylePart =
       kind === "location"
         ? (style.locationPrefix ?? style.assetPrefix ?? style.prefix ?? "")
