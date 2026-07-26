@@ -9,12 +9,14 @@ import {
   Image as ImageIcon,
   LayoutGrid,
   Loader2,
+  Maximize2,
   Mic,
   MoreHorizontal,
   Pencil,
   RefreshCw,
   Trash2,
   Users,
+  ZoomIn,
   type LucideIcon,
 } from "lucide-react";
 import { api } from "@/ui/api";
@@ -31,6 +33,7 @@ import { shortModelName, isFakeModel } from "@/ui/model-format";
 import { formatUsdDisplay } from "./cost-confirm";
 import { cn } from "@/lib/utils";
 import { ConfirmDialog } from "@/components/confirm-dialog";
+import { MediaLightbox, type MediaLightboxMedia } from "@/components/media-lightbox";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -268,6 +271,7 @@ function AssetCard(props: {
   const { saved, flash } = useSavedFlash();
   const [editing, setEditing] = useState(false);
   const [promptDraft, setPromptDraft] = useState(props.prompt);
+  const [lightbox, setLightbox] = useState<MediaLightboxMedia | null>(null);
   useEffect(() => {
     if (!editing) setPromptDraft(props.prompt);
   }, [props.prompt, editing]);
@@ -372,20 +376,32 @@ function AssetCard(props: {
 
       {props.locked && props.lockedUrl ? (
         <div className="flex items-start gap-3">
-          <img
-            src={props.lockedUrl}
-            alt={props.name}
-            className="max-w-[200px] rounded-md object-cover"
-            style={{ aspectRatio: "3/4" }}
-          />
-          {props.faceUrl ? (
+          <button
+            type="button"
+            className="cursor-zoom-in"
+            onClick={() => setLightbox({ src: props.lockedUrl as string, type: "image", title: props.name })}
+          >
             <img
-              src={props.faceUrl}
-              alt={`${props.name} 近臉特寫`}
-              title="近臉特寫 — 鏡頭圖同視頻嘅身份參照"
-              className="max-w-24 rounded-md object-cover"
-              style={{ aspectRatio: "1/1" }}
+              src={props.lockedUrl}
+              alt={props.name}
+              className="max-w-[200px] rounded-md object-cover"
+              style={{ aspectRatio: "3/4" }}
             />
+          </button>
+          {props.faceUrl ? (
+            <button
+              type="button"
+              className="cursor-zoom-in"
+              onClick={() => setLightbox({ src: props.faceUrl as string, type: "image", title: `${props.name} 近臉特寫` })}
+            >
+              <img
+                src={props.faceUrl}
+                alt={`${props.name} 近臉特寫`}
+                title="近臉特寫 — 鏡頭圖同視頻嘅身份參照"
+                className="max-w-24 rounded-md object-cover"
+                style={{ aspectRatio: "1/1" }}
+              />
+            </button>
           ) : props.showFaceHint ? (
             <span className="mt-1 text-xs text-muted-foreground">近臉特寫生成中…</span>
           ) : null}
@@ -398,39 +414,52 @@ function AssetCard(props: {
             const url = props.candidateUrlById[mediaId];
             const chosen = props.chosenId === mediaId;
             return (
-              <button
-                key={mediaId}
-                type="button"
-                disabled={busy}
-                aria-pressed={chosen}
-                onClick={() => run(() => api.post(`${props.lockPath}/${props.id}/lock`, { mediaId }))}
-                title={chosen ? "已揀呢張" : "揀呢張鎖定"}
-                aria-label={chosen ? `${props.name} 已揀呢張候選圖` : `揀 ${props.name} 呢張候選圖`}
-                className={cn(
-                  "relative aspect-[3/4] overflow-hidden rounded-md border-2 transition-colors",
-                  chosen ? "border-primary ring-2 ring-primary" : "border-transparent hover:border-border",
+              <div key={mediaId} className="group relative">
+                <button
+                  type="button"
+                  disabled={busy}
+                  aria-pressed={chosen}
+                  onClick={() => run(() => api.post(`${props.lockPath}/${props.id}/lock`, { mediaId }))}
+                  title={chosen ? "已揀呢張" : "揀呢張鎖定"}
+                  aria-label={chosen ? `${props.name} 已揀呢張候選圖` : `揀 ${props.name} 呢張候選圖`}
+                  className={cn(
+                    "block w-full aspect-[3/4] overflow-hidden rounded-md border-2 transition-colors",
+                    chosen ? "border-primary ring-2 ring-primary" : "border-transparent hover:border-border",
+                  )}
+                >
+                  {url ? (
+                    <img src={url} alt="候選" className="size-full object-cover" />
+                  ) : (
+                    <span className="flex size-full items-center justify-center text-xs text-muted-foreground">
+                      無圖
+                    </span>
+                  )}
+                  {/* Non-colour indicator too (WCAG 1.4.1): the ring alone is a
+                      colour-only signal for which candidate is locked. */}
+                  {chosen && (
+                    <span className="absolute top-1 right-1 flex size-5 items-center justify-center rounded-full bg-primary text-primary-foreground">
+                      <Check className="size-3" />
+                    </span>
+                  )}
+                </button>
+                {url && (
+                  <button
+                    type="button"
+                    aria-label="放大檢視候選圖"
+                    title="放大檢視候選圖"
+                    onClick={() => setLightbox({ src: url, type: "image", title: `${props.name} 候選圖` })}
+                    className="absolute bottom-1 right-1 z-10 flex size-6 items-center justify-center rounded-md bg-black/60 text-white opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100"
+                  >
+                    <ZoomIn className="size-3.5" />
+                  </button>
                 )}
-              >
-                {url ? (
-                  <img src={url} alt="候選" className="size-full object-cover" />
-                ) : (
-                  <span className="flex size-full items-center justify-center text-xs text-muted-foreground">
-                    無圖
-                  </span>
-                )}
-                {/* Non-colour indicator too (WCAG 1.4.1): the ring alone is a
-                    colour-only signal for which candidate is locked. */}
-                {chosen && (
-                  <span className="absolute top-1 right-1 flex size-5 items-center justify-center rounded-full bg-primary text-primary-foreground">
-                    <Check className="size-3" />
-                  </span>
-                )}
-              </button>
+              </div>
             );
           })}
         </div>
       )}
       {err && <p className="text-sm text-destructive">{err}</p>}
+      <MediaLightbox open={!!lightbox} onOpenChange={(o) => !o && setLightbox(null)} media={lightbox} />
     </div>
   );
 }
@@ -951,16 +980,29 @@ function VoiceLineRow({
 
 export function ExportPanel({ view, progress }: PanelProps) {
   const url = view.episode.exportUrl;
+  const [lightbox, setLightbox] = useState<MediaLightboxMedia | null>(null);
   return (
     <Station stage="export" progress={progress}>
       {url ? (
         <div className="space-y-4 text-center">
-          <video src={url} controls className="mx-auto w-full max-w-90 rounded-lg bg-black" />
+          <div className="relative mx-auto w-full max-w-90">
+            <video src={url} controls className="w-full rounded-lg bg-black" />
+            <button
+              type="button"
+              aria-label="全螢幕檢視"
+              title="全螢幕檢視"
+              onClick={() => setLightbox({ src: url, type: "video", title: "成片" })}
+              className="absolute top-1 right-1 z-10 flex size-6 items-center justify-center rounded-md bg-black/60 text-white"
+            >
+              <Maximize2 className="size-3.5" />
+            </button>
+          </div>
           <Button asChild>
             <a href={url} download>
               下載成片 MP4
             </a>
           </Button>
+          <MediaLightbox open={!!lightbox} onOpenChange={(o) => !o && setLightbox(null)} media={lightbox} />
         </div>
       ) : (
         <EmptyState view={view} stage="export">仲未合成。完成前面各站之後，會把鏡頭、配音同字幕拼成一條 MP4。</EmptyState>

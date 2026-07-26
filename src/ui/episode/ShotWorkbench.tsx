@@ -1,11 +1,12 @@
 "use client";
 import { useEffect, useMemo, useState } from "react";
-import { Loader2 } from "lucide-react";
+import { Loader2, Maximize2 } from "lucide-react";
 import { api } from "@/ui/api";
 import { useAction } from "@/ui/planning/useAction";
 import { qk } from "@/ui/query-keys";
 import { cn } from "@/lib/utils";
 import { ConfirmDialog } from "@/components/confirm-dialog";
+import { MediaLightbox, type MediaLightboxMedia } from "@/components/media-lightbox";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import type { EpisodeView, LiveTaskMap, ShotView } from "@/ui/types";
@@ -236,6 +237,7 @@ function ShotRow({
 }) {
   const { busy, err, run } = useAction(qk.episode(episodeId));
   const [regenOpen, setRegenOpen] = useState(false);
+  const [lightbox, setLightbox] = useState<MediaLightboxMedia | null>(null);
   const url = media === "image" ? shot.imageUrl : shot.videoUrl;
   const endpoint = media === "image" ? "generate-image" : "generate-video";
   const mediaLabel = media === "image" ? "圖像" : "視頻";
@@ -268,22 +270,41 @@ function ShotRow({
       <td className="p-2 align-top">
         <div className={cn("aspect-video w-36 overflow-hidden rounded bg-muted", media === "image" && "ring-1 ring-primary/40")}>
           {shot.imageUrl ? (
-            <img src={shot.imageUrl} alt={`鏡 ${shot.shotIndex} 圖像`} className="size-full object-cover" />
+            <button
+              type="button"
+              className="block size-full cursor-zoom-in"
+              aria-label={`鏡 ${shot.shotIndex} 圖像放大檢視`}
+              onClick={() => setLightbox({ src: shot.imageUrl as string, type: "image", title: `鏡 ${shot.shotIndex} 圖像` })}
+            >
+              <img src={shot.imageUrl} alt="" className="size-full object-cover" />
+            </button>
           ) : (
             <span className="flex size-full items-center justify-center text-xs text-muted-foreground">未生成</span>
           )}
         </div>
       </td>
       <td className="p-2 align-top">
-        <div className={cn("aspect-video w-44 overflow-hidden rounded bg-muted", media === "video" && "ring-1 ring-primary/40")}>
+        <div className={cn("relative aspect-video w-44 overflow-hidden rounded bg-muted", media === "video" && "ring-1 ring-primary/40")}>
           {shot.videoUrl ? (
-            <video src={shot.videoUrl} controls preload="metadata" className="size-full object-cover" />
+            <>
+              <video src={shot.videoUrl} controls preload="metadata" className="size-full object-cover" />
+              <button
+                type="button"
+                aria-label={`鏡 ${shot.shotIndex} 視頻全螢幕檢視`}
+                title={`鏡 ${shot.shotIndex} 視頻`}
+                onClick={() => setLightbox({ src: shot.videoUrl as string, type: "video", title: `鏡 ${shot.shotIndex} 視頻` })}
+                className="absolute top-1 right-1 z-10 flex size-6 items-center justify-center rounded-md bg-black/60 text-white"
+              >
+                <Maximize2 className="size-3.5" />
+              </button>
+            </>
           ) : (
             <span className="flex size-full items-center justify-center text-xs text-muted-foreground">
               {media === "video" && !shot.imageMediaId ? "等圖像" : "未生成"}
             </span>
           )}
         </div>
+        <MediaLightbox open={!!lightbox} onOpenChange={(o) => !o && setLightbox(null)} media={lightbox} />
       </td>
       <td className="p-2 align-top text-muted-foreground">
         {shot.storyboardJson.plan?.source_text ?? "—"}
