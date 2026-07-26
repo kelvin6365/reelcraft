@@ -379,10 +379,16 @@ function AssetCard(props: {
               <LocationAngleRow
                 key={i}
                 locationId={props.id}
+                locationName={props.name}
                 angleIndex={i}
                 label={angle.label}
                 prompt={angle.prompt}
+                mediaId={angle.mediaId}
+                url={angle.url}
+                locked={props.locked}
+                disabled={disabled}
                 episodeId={props.episodeId}
+                onLightbox={setLightbox}
               />
             ))}
           </div>
@@ -525,27 +531,56 @@ function AssetCard(props: {
 // another mid-flight (same pattern as savePrompt above, one row per angle).
 function LocationAngleRow({
   locationId,
+  locationName,
   angleIndex,
   label,
   prompt,
+  mediaId,
+  url,
+  locked,
+  disabled,
   episodeId,
+  onLightbox,
 }: {
   locationId: string;
+  locationName: string;
   angleIndex: number;
   label: string;
   prompt: string;
+  mediaId: string | null;
+  url: string | null;
+  locked: boolean;
+  disabled: boolean;
   episodeId: string;
+  onLightbox: (media: MediaLightboxMedia) => void;
 }) {
-  const { run } = useAction(qk.episode(episodeId));
+  const { busy, run } = useAction(qk.episode(episodeId));
   const { text, onChange, onBlur, saved } = useAutosaveField(prompt, (v) =>
     run(() => api.patch(`/api/locations/${locationId}`, { angleIndex, anglePrompt: v })),
   );
+  const genDisabled = disabled || busy || !locked;
 
   return (
     <div className="space-y-1">
-      <Badge variant="outline">{label}</Badge>
+      <div className="flex items-center gap-2">
+        <Badge variant="outline">{label}</Badge>
+        <Button
+          variant="ghost"
+          size="sm"
+          disabled={genDisabled}
+          title={locked ? (mediaId ? "重新生成呢個視角" : "用鎖定主圖生成呢個視角") : "先鎖定主圖，視角圖會用主圖做參照保持一致"}
+          onClick={() => run(() => api.post(`/api/locations/${locationId}/regenerate`, { angle: angleIndex }))}
+        >
+          <RefreshCw /> {mediaId ? "重生" : "生成"}
+        </Button>
+      </div>
       <Textarea value={text} onChange={(e) => onChange(e.target.value)} onBlur={onBlur} rows={2} />
       <SavedHint saved={saved} />
+      {url && (
+        <button type="button" className="cursor-zoom-in" onClick={() => onLightbox({ src: url, type: "image", title: `${locationName} 視角：${label}` })}>
+          <img src={url} alt={`${locationName} 視角：${label}`} className="aspect-video max-w-[200px] rounded-md object-cover" />
+        </button>
+      )}
     </div>
   );
 }

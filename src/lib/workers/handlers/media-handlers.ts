@@ -1,6 +1,7 @@
 import { readFile, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
 import { newId } from "@/lib/ids";
 import { generateImage, generateTts, generateVideo } from "@/lib/ai/generate-media";
@@ -12,6 +13,7 @@ import type { TaskHandler } from "@/lib/workers/lifecycle";
 import { resolveTaskModels, loadEpisodeWithProject, textCallJson, promptOverridesFromTask } from "@/lib/workers/handlers/shared";
 import { mergeNegatives } from "@/lib/prompts/negatives";
 import { matchShotCharacters, pickShotLocation } from "@/lib/prompts/shot-assets";
+import { buildAngleImagePrompt, buildAngleNegativePrompt, mergeAngleMediaId, type LocationAngle } from "@/lib/prompts/location-angles";
 
 interface StylePack {
   prefix?: string;
@@ -64,6 +66,38 @@ function assetImageHandler(kind: "character" | "location"): TaskHandler {
       await prisma.character.update({ where: { id: row.id }, data: { faceImageMediaId: media.id } });
       return { face: media.id };
     }
+    if (kind === "location" && typeof (task.payload as { angle?: number }).angle === "number") {
+      const angleIndex = (task.payload as { angle: number }).angle;
+      if (!row.lockedImageMediaId) throw new TaskError("NOT_LOCKED", "lock the main image before generating an angle view", false);
+      const angles = ((row as { angles?: unknown[] }).angles ?? []) as LocationAngle[];
+      const angle = angles[angleIndex];
+      if (!angle) throw new TaskError("ANGLE_OUT_OF_RANGE", `angle ${angleIndex} out of range for location ${row.id}`, false);
+      const media = await generateImage(
+        { userId: task.userId, taskId: task.id, projectId: project.id },
+        {
+          modelKey: models.image,
+          prompt: buildAngleImagePrompt(basePrompt, angle, style),
+          negativePrompt: buildAngleNegativePrompt(style),
+          aspectRatio: "16:9",
+          keyPrefix: `projects/${project.id}/locations/${row.id}`,
+          referenceMediaIds: [row.lockedImageMediaId],
+        },
+      );
+      // Re-read before writing back — the user may have edited an angle's
+      // label/prompt mid-flight; merging into a fresh snapshot avoids clobbering that.
+      const fresh = await prisma.location.findFirst({ where: { id: row.id, userId: task.userId } });
+      if (!fresh) throw new TaskError("NOT_FOUND", `location ${row.id} not found`, false);
+      const freshAngles = ((fresh as { angles?: unknown[] }).angles ?? []) as LocationAngle[];
+      let nextAngles: LocationAngle[];
+      try {
+        nextAngles = mergeAngleMediaId(freshAngles, angleIndex, media.id);
+      } catch {
+        throw new TaskError("ANGLE_OUT_OF_RANGE", `angle ${angleIndex} out of range for location ${row.id}`, false);
+      }
+      await prisma.location.update({ where: { id: row.id }, data: { angles: nextAngles as unknown as Prisma.InputJsonValue } });
+      return { angle: angleIndex, mediaId: media.id };
+    }
+
     const refFraming =
       kind === "character"
         ? "character reference sheet in two stacked sections: TOP HALF is one large ultra-detailed head-and-shoulders face close-up of the character; BOTTOM HALF is a row of three full-body standing views of the SAME character — front view, side profile, and back view — evenly spaced, not overlapping. Identical face, hairstyle, outfit and body in every view. Strict visual alignment: identical height, facial-feature placement and clothing folds must match perfectly across all views. Full body visible in each bottom view, both hands fully visible and relaxed naturally at the sides. Clean pure white background, flat even studio lighting, sharp focus everywhere, no cast shadows, no text, no labels, no captions anywhere, clean composition, rich detail, high quality, 4K resolution"
