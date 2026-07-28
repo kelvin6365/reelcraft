@@ -5,23 +5,65 @@ import { attachMediaUrls } from "@/lib/media/service";
 import { ACTIVE_STATUSES } from "@/lib/task/types";
 import { countByStage } from "@/lib/task/stage-map";
 import { activeFailures } from "@/lib/task/superseded";
+import { humanizeTaskError } from "@/lib/task/error-copy";
 import { resolveModelDefaults } from "@/lib/model-defaults/resolve";
 import { effectiveImageModelKey } from "@/lib/ai/generate-media";
 import { getCapabilities } from "@/lib/ai/capabilities";
 
 const CONFIRMED_STATUSES = ["images", "videos", "export", "done"];
 
+export interface PropTerminalTask {
+  status: string;
+  errorCode: string | null;
+  errorMessage: string | null;
+  finishedAt: Date | null;
+}
+
+export interface PropTerminalTaskRow {
+  type: string;
+  targetId: string;
+  status: string;
+  errorCode: string | null;
+  errorMessage: string | null;
+  queuedAt: Date | string;
+  finishedAt: Date | string | null;
+}
+
+// 由一批 project-scoped terminal task（IMAGE_PROP／VIDEO_PROP 混埋）計返每件道具嘅
+// 「目前未解決嘅失敗」。重用 activeFailures（同 FailureDrawer 嘅 unresolvedFailures
+// 一致嘅邏輯）——一個 (type, targetId) 嘅失敗如果之後有更新嘅同型 task 成功咗就唔算
+// 數（例如 VIDEO_PROP 完成咗唔應該蓋住一個仍未解決嘅 IMAGE_PROP 失敗，反之亦然）。
+// 一件道具可能同時有 IMAGE_PROP 同 VIDEO_PROP 兩個未解決失敗，卡片顯示揀最新嗰個。
+// Pure（唔碰 DB）方便單元測試。
+export function pickPropLastError(tasks: PropTerminalTaskRow[]): Record<string, PropTerminalTask> {
+  const unresolved = activeFailures(
+    tasks.filter((t) => t.status === "failed"),
+    tasks.filter((t) => t.status === "completed"),
+  );
+  const latest: Record<string, PropTerminalTask> = {};
+  for (const t of unresolved) {
+    const time = new Date(t.finishedAt ?? t.queuedAt).getTime();
+    const prev = latest[t.targetId];
+    if (!prev || time > new Date(prev.finishedAt ?? 0).getTime()) {
+      latest[t.targetId] = { status: t.status, errorCode: t.errorCode, errorMessage: t.errorMessage, finishedAt: t.finishedAt ? new Date(t.finishedAt) : null };
+    }
+  }
+  return latest;
+}
+
 export async function buildEpisodeSnapshot(
   episode: { id: string; projectId: string; rawText: string; scriptText: string; status: string; exportMediaId: string | null },
   inputType: string,
-): Promise<{ snapshot: EpisodeSnapshot; characters: Awaited<ReturnType<typeof prisma.character.findMany>>; locations: Awaited<ReturnType<typeof prisma.location.findMany>>; shots: Awaited<ReturnType<typeof prisma.shot.findMany>>; voiceLines: Awaited<ReturnType<typeof prisma.voiceLine.findMany>>; activeTasks: { id: string; type: string; targetId: string; status: string; progress: number; queuedAt: Date; heartbeatAt: Date | null }[]; failedTaskTypes: string[] }> {
+): Promise<{ snapshot: EpisodeSnapshot; characters: Awaited<ReturnType<typeof prisma.character.findMany>>; locations: Awaited<ReturnType<typeof prisma.location.findMany>>; props: Awaited<ReturnType<typeof prisma.prop.findMany>>; propLatestTerminal: Record<string, PropTerminalTask>; shots: Awaited<ReturnType<typeof prisma.shot.findMany>>; voiceLines: Awaited<ReturnType<typeof prisma.voiceLine.findMany>>; activeTasks: { id: string; type: string; targetId: string; status: string; progress: number; queuedAt: Date; heartbeatAt: Date | null }[]; failedTaskTypes: string[] }> {
   const episodeId = episode.id;
-  const [characters, locations, scenes, shots, voiceLines, activeTasks, terminalTasks] = await Promise.all([
+  const [characters, locations, props, scenes, shots, voiceLines, activeTasks, terminalTasks, propTerminalTasks] = await Promise.all([
     // id is UUID v7 (time-ordered) → creation/extraction order. Without an
     // orderBy, Postgres reorders rows after UPDATEs (lock/regen), making the
     // asset cards jump around in the UI.
     prisma.character.findMany({ where: { projectId: episode.projectId }, orderBy: { id: "asc" } }),
     prisma.location.findMany({ where: { projectId: episode.projectId }, orderBy: { id: "asc" } }),
+    // 唔屬於 autorun 資產 gate（手動觸發），但同一個 project-level 資產庫，UI 需要一齊顯示。
+    prisma.prop.findMany({ where: { projectId: episode.projectId }, orderBy: { id: "asc" } }),
     prisma.scene.count({ where: { episodeId } }),
     prisma.shot.findMany({ where: { episodeId }, orderBy: { shotIndex: "asc" } }),
     prisma.voiceLine.findMany({ where: { episodeId }, orderBy: { lineIndex: "asc" } }),
@@ -30,7 +72,16 @@ export async function buildEpisodeSnapshot(
       where: { episodeId, status: { in: ["failed", "completed"] } },
       select: { type: true, targetId: true, status: true, queuedAt: true, finishedAt: true },
     }),
+    // Prop 生圖 task（IMAGE_PROP／VIDEO_PROP）同 Location/Character 一致，唔綁 episodeId
+    // 只綁 projectId（project-level 資產）——上面嗰條 episodeId-scoped terminalTasks
+    // 永遠攞唔到道具嘅失敗記錄，要獨立一條 projectId-scoped query。
+    prisma.task.findMany({
+      where: { projectId: episode.projectId, targetType: "prop", status: { in: ["failed", "completed"] } },
+      select: { type: true, targetId: true, status: true, errorCode: true, errorMessage: true, queuedAt: true, finishedAt: true },
+    }),
   ]);
+
+  const propLatestTerminal = pickPropLastError(propTerminalTasks);
 
   // Outstanding failures, one per target: drop those a later success fixed, then
   // collapse repeated failures on the same shot to the latest. See superseded.ts.
@@ -68,7 +119,7 @@ export async function buildEpisodeSnapshot(
     runningTaskTypes: activeTasks.map((t) => t.type),
     failedTasks: unresolvedFailures.length,
   };
-  return { snapshot, characters, locations, shots, voiceLines, activeTasks, failedTaskTypes: unresolvedFailures.map((t) => t.type) };
+  return { snapshot, characters, locations, props, propLatestTerminal, shots, voiceLines, activeTasks, failedTaskTypes: unresolvedFailures.map((t) => t.type) };
 }
 
 export async function buildEpisodeView(userId: string, episodeId: string) {
@@ -78,7 +129,7 @@ export async function buildEpisodeView(userId: string, episodeId: string) {
   });
   if (!episode) throw new ApiError("NOT_FOUND", 404, "episode not found");
 
-  const { snapshot, characters, locations, shots, voiceLines, activeTasks, failedTaskTypes } = await buildEpisodeSnapshot(episode, episode.project.inputType);
+  const { snapshot, characters, locations, props, propLatestTerminal, shots, voiceLines, activeTasks, failedTaskTypes } = await buildEpisodeSnapshot(episode, episode.project.inputType);
   const failedTasks = snapshot.failedTasks;
   const autorunCfg = (episode.autorunConfig ?? {}) as { mode?: "batch" | "assisted"; moneyAuthorized?: boolean };
 
@@ -100,9 +151,10 @@ export async function buildEpisodeView(userId: string, episodeId: string) {
     ? 0
     : activeTasks.filter((t) => !t.heartbeatAt && now - new Date(t.queuedAt).getTime() > STUCK_MS).length;
 
-  const [charactersWithUrls, locationsWithUrls, shotsWithUrls, voiceLinesWithUrls, episodeWithUrl] = await Promise.all([
+  const [charactersWithUrls, locationsWithUrls, propsWithUrls, shotsWithUrls, voiceLinesWithUrls, episodeWithUrl] = await Promise.all([
     attachMediaUrls(characters, ["lockedImageMediaId", "faceImageMediaId", "refFaceMediaId"]),
     attachMediaUrls(locations, ["lockedImageMediaId"]),
+    attachMediaUrls(props, ["lockedImageMediaId", "refVideoMediaId"]),
     attachMediaUrls(shots, ["imageMediaId", "videoMediaId"]),
     attachMediaUrls(voiceLines, ["audioMediaId"]),
     attachMediaUrls([episode], ["exportMediaId"]),
@@ -121,8 +173,11 @@ export async function buildEpisodeView(userId: string, episodeId: string) {
   type LocationAngle = { label: string; prompt: string; mediaId: string | null };
   const allCandidateIds = [
     ...characters.flatMap((c) => c.candidates as string[]),
+    ...characters.flatMap((c) => (c.views as LocationAngle[]).map((v) => v.mediaId).filter((id): id is string => !!id)),
     ...locations.flatMap((l) => l.candidates as string[]),
     ...locations.flatMap((l) => (l.angles as LocationAngle[]).map((a) => a.mediaId).filter((id): id is string => !!id)),
+    ...props.flatMap((p) => p.candidates as string[]),
+    ...props.flatMap((p) => (p.views as LocationAngle[]).map((v) => v.mediaId).filter((id): id is string => !!id)),
   ];
   const candidateMedia = allCandidateIds.length
     ? await prisma.mediaObject.findMany({ where: { id: { in: allCandidateIds } } })
@@ -157,6 +212,10 @@ export async function buildEpisodeView(userId: string, episodeId: string) {
     characters: charactersWithUrls.map((c) => ({
       ...c,
       activeTask: activeByKey.get(`IMAGE_CHARACTER:${(c as { id: string }).id}`) ?? null,
+      views: ((c as { views: unknown }).views as LocationAngle[]).map((v) => ({
+        ...v,
+        url: v.mediaId ? (candidateUrlById[v.mediaId] ?? null) : null,
+      })),
     })),
     locations: locationsWithUrls.map((l) => ({
       ...l,
@@ -166,6 +225,28 @@ export async function buildEpisodeView(userId: string, episodeId: string) {
         url: a.mediaId ? (candidateUrlById[a.mediaId] ?? null) : null,
       })),
     })),
+    props: propsWithUrls.map((p) => {
+      const id = (p as { id: string }).id;
+      const terminal = propLatestTerminal[id];
+      const lastError =
+        terminal && terminal.status === "failed"
+          ? {
+              code: terminal.errorCode,
+              message: terminal.errorMessage,
+              humanized: humanizeTaskError(terminal.errorCode, terminal.errorMessage).message,
+              failedAt: terminal.finishedAt ? terminal.finishedAt.toISOString() : null,
+            }
+          : null;
+      return {
+        ...p,
+        activeTask: activeByKey.get(`IMAGE_PROP:${id}`) ?? activeByKey.get(`VIDEO_PROP:${id}`) ?? null,
+        lastError,
+        views: ((p as { views: unknown }).views as LocationAngle[]).map((v) => ({
+          ...v,
+          url: v.mediaId ? (candidateUrlById[v.mediaId] ?? null) : null,
+        })),
+      };
+    }),
     shots: shotsWithUrls.map((sh) => ({
       ...sh,
       activeImageTask: activeByKey.get(`IMAGE_SHOT:${(sh as { id: string }).id}`) ?? null,

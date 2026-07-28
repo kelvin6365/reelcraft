@@ -116,6 +116,8 @@ export interface CharacterView {
   refFaceNote: string;
   locked: boolean;
   activeTask?: ActiveTaskView | null;
+  // 側面/背面視角 — mediaId/url 要鎖定主圖之後先會有值
+  views: { label: string; prompt: string; mediaId: string | null; url: string | null }[];
 }
 
 export interface LocationView {
@@ -130,6 +132,30 @@ export interface LocationView {
   activeTask?: ActiveTaskView | null;
   // AI 建議視角 (extract_assets v3) — mediaId/url 要到 PR3 先會有值
   angles: { label: string; prompt: string; mediaId: string | null; url: string | null }[];
+}
+
+export interface PropView {
+  id: string;
+  name: string;
+  tier: "key" | "scene" | "effect" | string;
+  summary: string;
+  prompt: string;
+  material: string;
+  dimensions: string;
+  physicalParams: string;
+  candidates: string[];
+  lockedImageMediaId: string | null;
+  lockedImageUrl: string | null;
+  locked: boolean;
+  locationId: string | null;
+  refVideoMediaId: string | null;
+  refVideoUrl: string | null;
+  activeTask?: ActiveTaskView | null;
+  // 呢件道具最新一次生成 attempt 嘅失敗記錄（DB 查返嚟，唔靠 SSE）——最新一次係
+  // completed 就係 null。撳「重試」just 重新提交 regenerate，唔係 retry-by-taskId。
+  lastError: { code: string | null; message: string | null; humanized: string; failedAt: string | null } | null;
+  // 多視圖（key tier 四視圖：正/反/側/細節特寫；effect tier 靜態關鍵幀；scene tier 通常 0-1 個）
+  views: { label: string; prompt: string; mediaId: string | null; url: string | null }[];
 }
 
 export interface StoryboardJson {
@@ -210,6 +236,7 @@ export interface EpisodeView {
   };
   characters: CharacterView[];
   locations: LocationView[];
+  props: PropView[];
   shots: ShotView[];
   voiceLines: VoiceLineView[];
   stages: StageState[];

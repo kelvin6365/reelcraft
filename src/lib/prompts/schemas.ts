@@ -78,6 +78,30 @@ export const ExtractAssetsOutput = z.object({
 });
 export type ExtractAssetsOutput = z.infer<typeof ExtractAssetsOutput>;
 
+// extract_props — independent from extract_assets (retry isolation: a props
+// parse failure must not force-retry the already-stable characters/locations
+// pass). target_name lets the caller ask for one specific prop (手動補抽);
+// the conditional instruction lives in the prompt template itself, not here.
+export const ExtractPropsOutput = z.object({
+  props: z.array(
+    z.object({
+      name: z.string().min(1),
+      tier: z.enum(["key", "scene", "effect"]).default("key"),
+      description: z.string(),
+      material: optionalText,
+      dimensions: optionalText,
+      note: optionalText,
+      sceneName: optionalText,
+      physicalParams: optionalText,
+      views: z
+        .array(z.object({ label: z.string().min(1), prompt: z.string().min(1) }))
+        .nullish()
+        .transform((v) => v ?? []),
+    }),
+  ).nullish().transform((v) => v ?? []),
+});
+export type ExtractPropsOutput = z.infer<typeof ExtractPropsOutput>;
+
 // build_scenes — anchors only, code locates them in the original text.
 export const ScenesOutput = z.object({
   scenes: z
@@ -233,6 +257,7 @@ export type ImagePromptShotOutput = z.infer<typeof ImagePromptShotOutput>;
 export const outputSchemas = {
   episode_split: EpisodeSplitOutput,
   extract_assets: ExtractAssetsOutput,
+  extract_props: ExtractPropsOutput,
   build_scenes: ScenesOutput,
   storyboard_plan: StoryboardPlanOutput,
   storyboard_photography: PhotographyOutput,

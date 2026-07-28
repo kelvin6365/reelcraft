@@ -4,6 +4,7 @@ export const TASK_TYPE = {
   // text queue
   EPISODE_SPLIT: "EPISODE_SPLIT",
   EXTRACT_ASSETS: "EXTRACT_ASSETS",
+  EXTRACT_PROPS: "EXTRACT_PROPS",
   REWRITE_SCRIPT: "REWRITE_SCRIPT",
   SCRIPT_REVIEW: "SCRIPT_REVIEW",
   BUILD_SCENES: "BUILD_SCENES",
@@ -13,9 +14,11 @@ export const TASK_TYPE = {
   // image queue
   IMAGE_CHARACTER: "IMAGE_CHARACTER",
   IMAGE_LOCATION: "IMAGE_LOCATION",
+  IMAGE_PROP: "IMAGE_PROP",
   IMAGE_SHOT: "IMAGE_SHOT",
   // video queue
   VIDEO_SHOT: "VIDEO_SHOT",
+  VIDEO_PROP: "VIDEO_PROP",
   COMPOSE_EPISODE: "COMPOSE_EPISODE",
   // voice queue
   TTS_LINE: "TTS_LINE",
@@ -36,6 +39,7 @@ export function getQueueForTaskType(type: TaskType): QueueName {
   switch (type) {
     case TASK_TYPE.EPISODE_SPLIT:
     case TASK_TYPE.EXTRACT_ASSETS:
+    case TASK_TYPE.EXTRACT_PROPS:
     case TASK_TYPE.REWRITE_SCRIPT:
     case TASK_TYPE.SCRIPT_REVIEW:
     case TASK_TYPE.BUILD_SCENES:
@@ -46,9 +50,11 @@ export function getQueueForTaskType(type: TaskType): QueueName {
       return "rc-text";
     case TASK_TYPE.IMAGE_CHARACTER:
     case TASK_TYPE.IMAGE_LOCATION:
+    case TASK_TYPE.IMAGE_PROP:
     case TASK_TYPE.IMAGE_SHOT:
       return "rc-image";
     case TASK_TYPE.VIDEO_SHOT:
+    case TASK_TYPE.VIDEO_PROP:
     case TASK_TYPE.COMPOSE_EPISODE:
       return "rc-video";
     case TASK_TYPE.TTS_LINE:

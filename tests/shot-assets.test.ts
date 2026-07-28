@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { buildShotRefAssets, matchShotCharacters, pickShotLocation, type RefCharacter, type RefLocation } from "@/lib/prompts/shot-assets";
+import { buildShotRefAssets, matchShotCharacters, matchShotProps, pickShotLocation, type RefCharacter, type RefLocation, type RefProp } from "@/lib/prompts/shot-assets";
 
 const chars: RefCharacter[] = [
   { name: "林知夏", aliases: ["知夏", "夏夏"] },
@@ -51,6 +51,72 @@ describe("pickShotLocation (⑥)", () => {
   });
 });
 
+const propsFixture: RefProp[] = [
+  { name: "玉佩", lockedImageMediaId: "jade-main" },
+  { name: "信物", lockedImageMediaId: null },
+];
+
+describe("matchShotProps", () => {
+  it("matches a prop mentioned in blocking.keyProps", () => {
+    expect(matchShotProps(["玉佩"], propsFixture).map((p) => p.name)).toEqual(["玉佩"]);
+  });
+
+  it("returns no props when keyProps is empty (was: risk of dumping whole prop library)", () => {
+    expect(matchShotProps([], propsFixture)).toEqual([]);
+  });
+
+  it("fuzzy-matches substrings both ways", () => {
+    expect(matchShotProps(["桌上的玉佩"], propsFixture).map((p) => p.name)).toEqual(["玉佩"]);
+  });
+
+  it("drops blank keyProps without matching everything", () => {
+    expect(matchShotProps(["", "  "], propsFixture)).toEqual([]);
+  });
+});
+
+describe("buildShotRefAssets — props (Prop asset design)", () => {
+  it("appends a locked prop's main view after location, skipping unlocked props", () => {
+    const shotLocation = { name: "咖啡店", prompt: "咖啡店描述", lockedImageMediaId: "coffee-main" };
+    const shotProps: RefProp[] = [
+      { name: "玉佩", prompt: "玉佩描述", lockedImageMediaId: "jade-main" },
+      { name: "信物", prompt: "信物描述", lockedImageMediaId: null },
+    ];
+    const result = buildShotRefAssets([], shotLocation, shotProps);
+    expect(result).toEqual([
+      { mediaId: "coffee-main", label: "咖啡店（場景主視角）", prompt: "咖啡店描述" },
+      { mediaId: "jade-main", label: "玉佩（道具主視角）", prompt: "玉佩描述" },
+    ]);
+  });
+
+  it("includes non-null prop views after the prop's main image", () => {
+    const shotProps: RefProp[] = [
+      {
+        name: "玉佩",
+        prompt: "玉佩描述",
+        lockedImageMediaId: "jade-main",
+        views: [
+          { label: "正面", prompt: "正面描述", mediaId: "jade-front" },
+          { label: "反面", prompt: "反面描述", mediaId: null },
+        ],
+      },
+    ];
+    const result = buildShotRefAssets([], undefined, shotProps);
+    expect(result).toEqual([
+      { mediaId: "jade-main", label: "玉佩（道具主視角）", prompt: "玉佩描述" },
+      { mediaId: "jade-front", label: "玉佩（道具視角：正面）", prompt: "正面描述" },
+    ]);
+  });
+
+  it("still truncates to MAX_SHOT_REFS(6) when props push it over", () => {
+    const char = (name: string) => ({ name, appearancePrompt: `${name} 外貌`, lockedImageMediaId: `${name}-body`, faceImageMediaId: `${name}-face` });
+    const shotCharacters = [char("甲"), char("乙"), char("丙")];
+    const shotProps: RefProp[] = [{ name: "玉佩", prompt: "玉佩描述", lockedImageMediaId: "jade-main" }];
+    const result = buildShotRefAssets(shotCharacters, undefined, shotProps);
+    expect(result).toHaveLength(6);
+    expect(result.map((a) => a.mediaId)).not.toContain("jade-main");
+  });
+});
+
 describe("buildShotRefAssets (PR4)", () => {
   const char = (name: string, opts: Partial<{ lockedImageMediaId: string | null; faceImageMediaId: string | null }> = {}) => ({
     name,
@@ -64,9 +130,9 @@ describe("buildShotRefAssets (PR4)", () => {
     const shotLocation = { name: "咖啡店", prompt: "咖啡店描述", lockedImageMediaId: "coffee-main" };
     const result = buildShotRefAssets(shotCharacters, shotLocation);
     expect(result).toEqual([
-      { mediaId: "林知夏-body", label: "林知夏（角色全身多視角）", prompt: "林知夏 外貌" },
+      { mediaId: "林知夏-body", label: "林知夏（角色全身正面）", prompt: "林知夏 外貌" },
       { mediaId: "林知夏-face", label: "林知夏（面部特寫）", prompt: "面部身份參照" },
-      { mediaId: "陳沉-body", label: "陳沉（角色全身多視角）", prompt: "陳沉 外貌" },
+      { mediaId: "陳沉-body", label: "陳沉（角色全身正面）", prompt: "陳沉 外貌" },
       { mediaId: "陳沉-face", label: "陳沉（面部特寫）", prompt: "面部身份參照" },
       { mediaId: "coffee-main", label: "咖啡店（場景主視角）", prompt: "咖啡店描述" },
     ]);
@@ -75,8 +141,18 @@ describe("buildShotRefAssets (PR4)", () => {
   it("handles undefined shotLocation like current behavior (characters only)", () => {
     const result = buildShotRefAssets([char("林知夏")], undefined);
     expect(result).toEqual([
-      { mediaId: "林知夏-body", label: "林知夏（角色全身多視角）", prompt: "林知夏 外貌" },
+      { mediaId: "林知夏-body", label: "林知夏（角色全身正面）", prompt: "林知夏 外貌" },
       { mediaId: "林知夏-face", label: "林知夏（面部特寫）", prompt: "面部身份參照" },
+    ]);
+  });
+
+  it("includes a character's non-null views after its front image and face close-up", () => {
+    const withViews = { ...char("林知夏"), views: [{ label: "側面", prompt: "", mediaId: "m-side" }] };
+    const result = buildShotRefAssets([withViews], undefined);
+    expect(result).toEqual([
+      { mediaId: "林知夏-body", label: "林知夏（角色全身正面）", prompt: "林知夏 外貌" },
+      { mediaId: "林知夏-face", label: "林知夏（面部特寫）", prompt: "面部身份參照" },
+      { mediaId: "m-side", label: "林知夏（側面）", prompt: "同一角色的其他視角參照" },
     ]);
   });
 

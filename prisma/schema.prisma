@@ -30,6 +30,7 @@ model User {
   shots      Shot[]
   characters Character[]
   locations  Location[]
+  props      Prop[]
   voiceLines VoiceLine[]
   media      MediaObject[]
   tasks      Task[]
@@ -118,6 +119,7 @@ model Project {
   episodes   Episode[]
   characters Character[]
   locations  Location[]
+  props      Prop[]
 
   @@index([userId, lastAccessedAt])
   @@map("projects")
@@ -230,6 +232,8 @@ model Character {
   candidates         Json    @default("[]")
   voiceId            String?
   locked             Boolean @default(false)
+  // 側面/背面視角 [{label, prompt, mediaId}] — 鎖定主圖後由 lock route seed，逐個由 IMAGE_CHARACTER view 分支寫入
+  views              Json    @default("[]")
 
   voiceLines VoiceLine[]
 
@@ -253,8 +257,44 @@ model Location {
   // 額外視角建議 [{label, prompt, mediaId}] — extract_assets v3 產出；mediaId 由 IMAGE_LOCATION angle 分支寫入（PR3）
   angles             Json    @default("[]")
 
+  props Prop[] @relation("LocationProps")
+
   @@index([projectId])
   @@map("locations")
+}
+
+// 道具資產（Prop）— 三級分類：key=關鍵敘事道具／scene=場景填充道具／effect=動態特效道具
+// project-level 共用（冇 episodeId），同 Character/Location 一樣跨集鎖圖複用。
+model Prop {
+  id                 String  @id
+  userId             String
+  user               User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  projectId          String
+  project            Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  name               String
+  tier               String  @default("key") // key=關鍵敘事道具／scene=場景填充道具／effect=動態特效道具
+  summary            String  @default("")
+  prompt             String  @default("")
+  // 元數據齊全 — 結構化材質/尺寸，唔淨係塞入自由文本 prompt，方便資產管理同未來檢索
+  material           String  @default("")
+  dimensions         String  @default("")
+  lockedImageMediaId String?
+  lockedImageMedia   MediaObject? @relation("PropLockedImage", fields: [lockedImageMediaId], references: [id])
+  candidates         Json    @default("[]")
+  locked             Boolean @default(false)
+  // 多視圖 [{label, prompt, mediaId}] — key tier 至少 4 個（正/反/側/細節特寫）；effect tier 用嚟做靜態關鍵幀參考；scene tier 通常 0-1 個
+  views              Json    @default("[]")
+  // 場景填充道具所屬場景（可空）— 生圖時以該 Location 嘅 lockedImage 做參考，統一光影/材質/透視
+  locationId         String?
+  location           Location? @relation("LocationProps", fields: [locationId], references: [id], onDelete: SetNull)
+  // 動態特效道具專用：綁定嘅物理參數描述（強度/顏色/持續時間），純文字備註，唔係模擬引擎
+  physicalParams     String  @default("")
+  refVideoMediaId    String?
+  refVideoMedia      MediaObject? @relation("PropEffectVideo", fields: [refVideoMediaId], references: [id])
+
+  @@index([projectId])
+  @@index([locationId])
+  @@map("props")
 }
 
 model VoiceLine {
@@ -305,6 +345,8 @@ model MediaObject {
   characterFaceImages   Character[] @relation("CharacterFaceImage")
   characterRefFaces     Character[] @relation("CharacterRefFace")
   locationLockedImages  Location[]  @relation("LocationLockedImage")
+  propLockedImages      Prop[]      @relation("PropLockedImage")
+  propEffectVideos      Prop[]      @relation("PropEffectVideo")
   voiceLineAudios       VoiceLine[] @relation("VoiceLineAudio")
 
   @@index([userId])

@@ -12,31 +12,17 @@ import { TaskError } from "@/lib/task/types";
 import type { TaskHandler } from "@/lib/workers/lifecycle";
 import { resolveTaskModels, loadEpisodeWithProject, textCallJson, promptOverridesFromTask } from "@/lib/workers/handlers/shared";
 import { mergeNegatives } from "@/lib/prompts/negatives";
-import { buildShotRefAssets, matchShotCharacters, pickShotLocation } from "@/lib/prompts/shot-assets";
+import { buildShotRefAssets, matchShotCharacters, matchShotProps, pickShotLocation } from "@/lib/prompts/shot-assets";
 import { buildAngleImagePrompt, buildAngleNegativePrompt, mergeAngleMediaId, type LocationAngle } from "@/lib/prompts/location-angles";
-
-interface StylePack {
-  prefix?: string;
-  assetPrefix?: string;
-  locationPrefix?: string;
-  negativePrompt?: string;
-  bannedWords?: string[];
-}
-
-async function loadStyle(stylePackId: string): Promise<StylePack> {
-  try {
-    const raw = await readFile(join(process.cwd(), "prompts", "styles", stylePackId, "style.json"), "utf8");
-    return JSON.parse(raw) as StylePack;
-  } catch {
-    return {};
-  }
-}
+import { buildPropMainPrompt, buildPropViewPrompt, buildPropNegativePrompt, type PropTier } from "@/lib/prompts/prop-views";
+import { buildCharacterMainPrompt, buildCharacterViewPrompt, buildCharacterNegativePrompt } from "@/lib/prompts/character-views";
+import { loadStyle } from "@/lib/prompts/style-pack";
 
 const CANDIDATE_COUNT = 3;
 
-function assetImageHandler(kind: "character" | "location"): TaskHandler {
+function assetImageHandler(kind: "character" | "location" | "prop"): TaskHandler {
   return async ({ task, reportProgress }) => {
-    const model = kind === "character" ? prisma.character : prisma.location;
+    const model = kind === "character" ? prisma.character : kind === "location" ? prisma.location : prisma.prop;
     const row = await (model as typeof prisma.character).findFirst({ where: { id: task.targetId, userId: task.userId } });
     if (!row) throw new TaskError("NOT_FOUND", `${kind} ${task.targetId} not found`, false);
     const project = await prisma.project.findUniqueOrThrow({ where: { id: row.projectId } });
@@ -45,8 +31,75 @@ function assetImageHandler(kind: "character" | "location"): TaskHandler {
 
     const basePrompt = "appearancePrompt" in row && row.appearancePrompt ? row.appearancePrompt : ((row as { prompt?: string }).prompt ?? "");
 
+    // Prop 生圖同 character/location 嘅框景邏輯差太遠（一律純白背景、tier 分支、
+    // scene tier 帶場景鎖圖做參考）——早分支獨立處理，唔夾埋落面 character/location 嘅通用路徑。
+    if (kind === "prop") {
+      const propRow = row as unknown as { tier: string; material: string; dimensions: string; locationId: string | null; lockedImageMediaId: string | null; views: unknown[] };
+      const tier = propRow.tier as PropTier;
+
+      if (typeof (task.payload as { view?: number }).view === "number") {
+        const viewIndex = (task.payload as { view: number }).view;
+        if (!propRow.lockedImageMediaId) throw new TaskError("NOT_LOCKED", "lock the main image before generating a view", false);
+        const views = (propRow.views ?? []) as LocationAngle[];
+        const view = views[viewIndex];
+        if (!view) throw new TaskError("ANGLE_OUT_OF_RANGE", `view ${viewIndex} out of range for prop ${row.id}`, false);
+        const media = await generateImage(
+          { userId: task.userId, taskId: task.id, projectId: project.id },
+          {
+            modelKey: models.image,
+            prompt: buildPropViewPrompt(basePrompt, view, tier, style),
+            negativePrompt: buildPropNegativePrompt(style),
+            aspectRatio: "1:1",
+            resolution: "4K",
+            keyPrefix: `projects/${project.id}/props/${row.id}`,
+            referenceMediaIds: [propRow.lockedImageMediaId],
+          },
+        );
+        const fresh = await prisma.prop.findFirst({ where: { id: row.id, userId: task.userId } });
+        if (!fresh) throw new TaskError("NOT_FOUND", `prop ${row.id} not found`, false);
+        const freshViews = ((fresh as { views?: unknown[] }).views ?? []) as LocationAngle[];
+        let nextViews: LocationAngle[];
+        try {
+          nextViews = mergeAngleMediaId(freshViews, viewIndex, media.id);
+        } catch {
+          throw new TaskError("ANGLE_OUT_OF_RANGE", `view ${viewIndex} out of range for prop ${row.id}`, false);
+        }
+        await prisma.prop.update({ where: { id: row.id }, data: { views: nextViews as unknown as Prisma.InputJsonValue } });
+        return { view: viewIndex, mediaId: media.id };
+      }
+
+      // tier=scene 帶所屬場景嘅鎖圖做參考，統一材質/光影邏輯——但輸出構圖照樣強制純白背景。
+      const sceneRef =
+        tier === "scene" && propRow.locationId
+          ? (await prisma.location.findFirst({ where: { id: propRow.locationId } }))?.lockedImageMediaId
+          : null;
+
+      const mediaIds: string[] = [];
+      for (let i = 0; i < CANDIDATE_COUNT; i++) {
+        const media = await generateImage(
+          { userId: task.userId, taskId: task.id, projectId: project.id },
+          {
+            modelKey: models.image,
+            prompt: buildPropMainPrompt(basePrompt, propRow.material, propRow.dimensions, tier, style),
+            negativePrompt: buildPropNegativePrompt(style),
+            aspectRatio: "1:1",
+            resolution: "4K",
+            keyPrefix: `projects/${project.id}/props/${row.id}`,
+            referenceMediaIds: sceneRef ? [sceneRef] : undefined,
+          },
+        );
+        mediaIds.push(media.id);
+        reportProgress(((i + 1) / CANDIDATE_COUNT) * 95);
+      }
+      await prisma.prop.update({ where: { id: row.id }, data: { candidates: mediaIds } });
+      return { candidates: mediaIds.length };
+    }
+
+    // character = 一張正面全身，location/prop 保持 3 張候選任揀。
+    const candidateCount = kind === "character" ? 1 : CANDIDATE_COUNT;
+
     if (kind === "character" && (task.payload as { face?: boolean }).face === true) {
-      if (!row.lockedImageMediaId) throw new TaskError("NOT_LOCKED", "lock the turnaround before generating the face close-up", false);
+      if (!row.lockedImageMediaId) throw new TaskError("NOT_LOCKED", "lock the front view before generating the face close-up", false);
       const facePrompt = [
         style.assetPrefix ?? style.prefix ?? "",
         basePrompt,
@@ -59,6 +112,7 @@ function assetImageHandler(kind: "character" | "location"): TaskHandler {
           prompt: facePrompt,
           negativePrompt: style.negativePrompt,
           aspectRatio: "1:1",
+          resolution: "4K",
           keyPrefix: `projects/${project.id}/characters/${row.id}`,
           referenceMediaIds: [row.lockedImageMediaId],
         },
@@ -79,6 +133,7 @@ function assetImageHandler(kind: "character" | "location"): TaskHandler {
           prompt: buildAngleImagePrompt(basePrompt, angle, style),
           negativePrompt: buildAngleNegativePrompt(style),
           aspectRatio: "16:9",
+          resolution: "4K",
           keyPrefix: `projects/${project.id}/locations/${row.id}`,
           referenceMediaIds: [row.lockedImageMediaId],
         },
@@ -98,37 +153,63 @@ function assetImageHandler(kind: "character" | "location"): TaskHandler {
       return { angle: angleIndex, mediaId: media.id };
     }
 
+    if (kind === "character" && typeof (task.payload as { view?: number }).view === "number") {
+      const viewIndex = (task.payload as { view: number }).view;
+      if (!row.lockedImageMediaId) throw new TaskError("NOT_LOCKED", "lock the front view before generating a view", false);
+      const views = ((row as { views?: unknown[] }).views ?? []) as LocationAngle[];
+      const view = views[viewIndex];
+      if (!view) throw new TaskError("ANGLE_OUT_OF_RANGE", `view ${viewIndex} out of range for character ${row.id}`, false);
+      const media = await generateImage(
+        { userId: task.userId, taskId: task.id, projectId: project.id },
+        {
+          modelKey: models.image,
+          prompt: buildCharacterViewPrompt(basePrompt, view, style),
+          negativePrompt: buildCharacterNegativePrompt(style),
+          aspectRatio: "9:16",
+          resolution: "4K",
+          keyPrefix: `projects/${project.id}/characters/${row.id}`,
+          referenceMediaIds: [row.lockedImageMediaId],
+        },
+      );
+      const fresh = await prisma.character.findFirst({ where: { id: row.id, userId: task.userId } });
+      if (!fresh) throw new TaskError("NOT_FOUND", `character ${row.id} not found`, false);
+      const freshViews = ((fresh as { views?: unknown[] }).views ?? []) as LocationAngle[];
+      let nextViews: LocationAngle[];
+      try {
+        nextViews = mergeAngleMediaId(freshViews, viewIndex, media.id);
+      } catch {
+        throw new TaskError("ANGLE_OUT_OF_RANGE", `view ${viewIndex} out of range for character ${row.id}`, false);
+      }
+      await prisma.character.update({ where: { id: row.id }, data: { views: nextViews as unknown as Prisma.InputJsonValue } });
+      return { view: viewIndex, mediaId: media.id };
+    }
+
     const refFraming =
-      kind === "character"
-        ? "character reference sheet in two stacked sections: TOP HALF is one large ultra-detailed head-and-shoulders face close-up of the character; BOTTOM HALF is a row of three full-body standing views of the SAME character — front view, side profile, and back view — evenly spaced, not overlapping. Identical face, hairstyle, outfit and body in every view. Strict visual alignment: identical height, facial-feature placement and clothing folds must match perfectly across all views. Full body visible in each bottom view, both hands fully visible and relaxed naturally at the sides. Clean pure white background, flat even studio lighting, sharp focus everywhere, no cast shadows, no text, no labels, no captions anywhere, clean composition, rich detail, high quality, 4K resolution"
-        : "wide establishing reference view, unified perspective with consistent vanishing points, consistent logically-motivated lighting true to the scene's time of day, logically coherent spatial layout, empty scene with no people, no characters, no text, no labels, clean composition, rich environmental detail, high quality";
+      "wide establishing reference view, unified perspective with consistent vanishing points, consistent logically-motivated lighting true to the scene's time of day, logically coherent spatial layout, empty scene with no people, no characters, no text, no labels, clean composition, rich environmental detail, high quality";
     const assetRatio = kind === "location" ? "16:9" : "9:16";
     const stylePart =
       kind === "location"
         ? (style.locationPrefix ?? style.assetPrefix ?? style.prefix ?? "")
         : (style.assetPrefix ?? style.prefix ?? "");
     // 墊臉 — user-uploaded reference face, only relevant to characters. Feeding
-    // it alongside keepIdentity's lockedImage lets the model lock the face while
-    // varying pose/outfit/style; see ref-face route for upload/removal.
+    // it as a reference lets the model lock the face while generating the front
+    // view; see ref-face route for upload/removal.
     const refFace = kind === "character" ? row.refFaceMediaId : null;
-    const keepIdentity = (task.payload as { keepIdentity?: boolean }).keepIdentity === true;
-    const identityRef = keepIdentity && row.lockedImageMediaId ? row.lockedImageMediaId : null;
-    const refs = [refFace, identityRef].filter((v): v is string => Boolean(v));
+    const refs = [refFace].filter((v): v is string => Boolean(v));
 
-    const refFacePrompt = refFace
-      ? refs.length > 1
-        ? "The character's face MUST exactly match the face in the first reference image; outfit and overall style follow the second reference image."
-        : "The character's face MUST exactly match the face in the reference image."
-      : "";
+    const refFacePrompt = refFace ? "The character's face MUST exactly match the face in the reference image." : "";
     const refFaceNote = kind === "character" ? row.refFaceNote : "";
-    const fullPrompt = [stylePart, basePrompt, refFraming, refFacePrompt, refFaceNote].filter(Boolean).join(". ").trim();
+    const fullPrompt =
+      kind === "character"
+        ? buildCharacterMainPrompt(basePrompt, style, [refFacePrompt, refFaceNote].filter(Boolean))
+        : [stylePart, basePrompt, refFraming].filter(Boolean).join(". ").trim();
     const negativePrompt =
       kind === "location"
         ? [style.negativePrompt, "people, person, human figure, crowd, silhouette of a person"].filter(Boolean).join(", ")
         : style.negativePrompt;
 
     const mediaIds: string[] = [];
-    for (let i = 0; i < CANDIDATE_COUNT; i++) {
+    for (let i = 0; i < candidateCount; i++) {
       const media = await generateImage(
         { userId: task.userId, taskId: task.id, projectId: project.id },
         {
@@ -136,12 +217,13 @@ function assetImageHandler(kind: "character" | "location"): TaskHandler {
           prompt: fullPrompt,
           negativePrompt,
           aspectRatio: assetRatio,
+          resolution: "4K",
           keyPrefix: `projects/${project.id}/${kind}s/${row.id}`,
           referenceMediaIds: refs.length ? refs : undefined,
         },
       );
       mediaIds.push(media.id);
-      reportProgress(((i + 1) / CANDIDATE_COUNT) * 95);
+      reportProgress(((i + 1) / candidateCount) * 95);
     }
 
     await (model as typeof prisma.character).update({ where: { id: row.id }, data: { candidates: mediaIds } });
@@ -151,6 +233,34 @@ function assetImageHandler(kind: "character" | "location"): TaskHandler {
 
 export const imageCharacterHandler = assetImageHandler("character");
 export const imageLocationHandler = assetImageHandler("location");
+export const imagePropHandler = assetImageHandler("prop");
+
+// tier=effect 專屬：先鎖定靜態白底參考圖，再合成一段動態參考片段（physicalParams 描述強度/顏色/持續時間）。
+export const propEffectVideoHandler: TaskHandler = async ({ task }) => {
+  const row = await prisma.prop.findFirst({ where: { id: task.targetId, userId: task.userId } });
+  if (!row) throw new TaskError("NOT_FOUND", `prop ${task.targetId} not found`, false);
+  // Handler-level re-check, not just the API route — same pattern as ANGLE_OUT_OF_RANGE
+  // being re-validated in the handler even though the route also checks range.
+  if (row.tier !== "effect") throw new TaskError("NOT_EFFECT_TIER", `prop ${row.id} is tier=${row.tier}, not effect`, false);
+  if (!row.lockedImageMediaId) throw new TaskError("NOT_LOCKED", "lock the reference image before generating the effect clip", false);
+  const project = await prisma.project.findUniqueOrThrow({ where: { id: row.projectId } });
+  const models = await resolveTaskModels(task, project);
+
+  const videoPrompt = [row.prompt, row.physicalParams].filter(Boolean).join(". ").trim();
+  const media = await generateVideo(
+    { userId: task.userId, taskId: task.id, projectId: project.id },
+    {
+      modelKey: models.video,
+      prompt: videoPrompt,
+      sourceImageMediaId: row.lockedImageMediaId,
+      durationSec: 3,
+      aspectRatio: "1:1",
+      keyPrefix: `projects/${project.id}/props/${row.id}`,
+    },
+  );
+  await prisma.prop.update({ where: { id: row.id }, data: { refVideoMediaId: media.id } });
+  return { mediaId: media.id };
+};
 
 function formatBlocking(raw: unknown): string {
   const b = (raw ?? {}) as {
@@ -184,6 +294,7 @@ export const imageShotHandler: TaskHandler = async ({ task, reportProgress }) =>
 
   const lockedCharacters = await prisma.character.findMany({ where: { projectId: project.id, locked: true } });
   const lockedLocations = await prisma.location.findMany({ where: { projectId: project.id, locked: true } });
+  const lockedProps = await prisma.prop.findMany({ where: { projectId: project.id, locked: true } });
 
   const plan = (shot.storyboardJson as { plan?: { characters?: string[] } }).plan;
   const shotCharNames = plan?.characters ?? [];
@@ -192,8 +303,13 @@ export const imageShotHandler: TaskHandler = async ({ task, reportProgress }) =>
     lockedCharacters.map((c) => ({ name: c.name, aliases: c.aliases as string[] })),
   ).map((m) => lockedCharacters.find((c) => c.name === m.name)!);
   const shotLocation = pickShotLocation(`${scene?.summary ?? ""}\n${scene?.content ?? ""}`, lockedLocations);
+  const blockingKeyProps = ((scene?.blocking as { keyProps?: string[] } | null)?.keyProps ?? []) as string[];
+  const shotProps = matchShotProps(
+    blockingKeyProps,
+    lockedProps.map((p) => ({ name: p.name, prompt: p.prompt, lockedImageMediaId: p.lockedImageMediaId, views: p.views })),
+  );
 
-  const refAssets = buildShotRefAssets(shotCharacters, shotLocation);
+  const refAssets = buildShotRefAssets(shotCharacters, shotLocation, shotProps);
   const referenceMediaIds = refAssets.map((a) => a.mediaId);
   const referenceLegend = refAssets.map((a, i) => `图片${i + 1}=${a.label}`).join("；") || "（無參考圖）";
   const lockedAssets = refAssets.map((a, i) => `图片${i + 1}（${a.label}）: ${a.prompt}`).join("\n") || "（無鎖定資產）";

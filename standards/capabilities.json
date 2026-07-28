@@ -8,7 +8,7 @@
         "16:9",
         "1:1"
       ],
-        "supportsReferenceImages": true
+      "supportsReferenceImages": true
     },
     "pricing": {
       "mode": "flat",
@@ -29,7 +29,12 @@
         "16:9",
         "1:1"
       ],
-        "supportsReferenceImages": true
+      "supportsReferenceImages": true,
+      "resolutions": [
+        "1K",
+        "2K",
+        "4K"
+      ]
     },
     "pricing": {
       "mode": "flat",
@@ -48,7 +53,12 @@
         "16:9",
         "1:1"
       ],
-        "supportsReferenceImages": true
+      "supportsReferenceImages": true,
+      "resolutions": [
+        "1K",
+        "2K",
+        "4K"
+      ]
     },
     "pricing": {
       "mode": "flat",
@@ -67,7 +77,12 @@
         "16:9",
         "1:1"
       ],
-        "supportsReferenceImages": false
+      "supportsReferenceImages": false,
+      "resolutions": [
+        "1K",
+        "2K",
+        "4K"
+      ]
     },
     "pricing": {
       "mode": "flat",
@@ -88,7 +103,12 @@
         "16:9",
         "1:1"
       ],
-        "supportsReferenceImages": true
+      "supportsReferenceImages": true,
+      "resolutions": [
+        "1K",
+        "2K",
+        "4K"
+      ]
     },
     "pricing": {
       "mode": "flat",
@@ -109,7 +129,12 @@
         "16:9",
         "1:1"
       ],
-        "supportsReferenceImages": false
+      "supportsReferenceImages": false,
+      "resolutions": [
+        "1K",
+        "2K",
+        "4K"
+      ]
     },
     "pricing": {
       "mode": "flat",
@@ -275,7 +300,7 @@
     "capabilities": {},
     "pricing": {
       "mode": "flat",
-      "perUnit": 0.00005,
+      "perUnit": 5e-05,
       "unit": "character",
       "currency": "USD"
     },
@@ -287,7 +312,7 @@
     "capabilities": {},
     "pricing": {
       "mode": "flat",
-      "perUnit": 0.00005,
+      "perUnit": 5e-05,
       "unit": "character",
       "currency": "USD"
     },
@@ -302,7 +327,7 @@
         "16:9",
         "1:1"
       ],
-        "supportsReferenceImages": false
+      "supportsReferenceImages": false
     },
     "pricing": {
       "mode": "flat",
@@ -387,7 +412,7 @@
         "9:16",
         "16:9"
       ],
-        "supportsReferenceImages": true
+      "supportsReferenceImages": true
     },
     "pricing": {
       "mode": "flat",

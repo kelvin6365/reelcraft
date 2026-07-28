@@ -73,6 +73,7 @@ export interface AtlasImageArgs {
   prompt: string;
   negativePrompt?: string;
   aspectRatio: string;
+  resolution?: string; // "1K" | "2K" | "4K" — pre-validated against capabilities upstream
   apiKey: string;
   // Edit-family models (…/edit) take input images via `images` (1-14 URLs).
   // AtlasCloud documents URLs only — data URIs (local-dev storage) are rejected
@@ -86,6 +87,22 @@ export async function atlasImage(args: AtlasImageArgs): Promise<{ url: string; p
     prompt: args.prompt,
     aspect_ratio: args.aspectRatio,
   };
+  if (args.resolution) {
+    // Field shape per model family (verified 2026-07 on atlascloud.ai model pages):
+    // nano-banana-2 takes a lowercase `resolution` enum ("1k"|"2k"|"4k");
+    // seedream-v5.0-pro takes `size: "WIDTH*HEIGHT"`.
+    if (args.modelId.includes("nano-banana")) {
+      body.resolution = args.resolution.toLowerCase();
+    } else if (args.modelId.includes("seedream-v5")) {
+      const long = { "1K": 1024, "2K": 2048, "4K": 4096 }[args.resolution];
+      const m = /^(\d+):(\d+)$/.exec(args.aspectRatio);
+      if (long && m) {
+        const [w, h] = [Number(m[1]), Number(m[2])];
+        const short = Math.round((long * Math.min(w, h)) / Math.max(w, h) / 8) * 8;
+        body.size = w >= h ? `${long}*${short}` : `${short}*${long}`;
+      }
+    }
+  }
   if (args.negativePrompt) body.negative_prompt = args.negativePrompt;
   if (args.referenceImages?.length) {
     if (args.referenceImages.some((u) => u.startsWith("data:"))) {

@@ -36,6 +36,48 @@ const canned: Record<string, unknown> = {
     ],
     locations: [{ name: "咖啡店", timeOfDay: "夜", description: "昏黃燈光的小咖啡店，窗外有雨", note: "" }],
   },
+  extract_props: {
+    props: [
+      {
+        name: "玉佩",
+        tier: "key",
+        description: "溫潤羊脂白玉雕成的圓形玉佩，邊緣刻有纏枝紋，繫著暗紅色絲繩",
+        material: "羊脂白玉",
+        dimensions: "直徑約5公分",
+        note: "阿媽留低嘅信物",
+        sceneName: "",
+        physicalParams: "",
+        views: [
+          { label: "正面", prompt: "玉佩正面，纏枝紋清晰可見，暗紅絲繩自然垂落" },
+          { label: "反面", prompt: "玉佩反面，光滑無紋，可見輕微天然瑕紋" },
+          { label: "側面", prompt: "玉佩側面，展示厚度與弧度" },
+          { label: "細節特寫", prompt: "邊緣纏枝紋雕工特寫，質感通透" },
+        ],
+      },
+      {
+        name: "咖啡杯",
+        tier: "scene",
+        description: "白瓷咖啡杯連碟，杯身簡約無花紋",
+        material: "白瓷",
+        dimensions: "口徑約8公分",
+        note: "",
+        sceneName: "咖啡店",
+        physicalParams: "",
+        views: [],
+      },
+      {
+        name: "能量光球",
+        tier: "effect",
+        description: "掌心浮現嘅藍白色球狀能量光效，邊緣有細碎光粒散落",
+        material: "",
+        dimensions: "直徑約15公分",
+        note: "",
+        sceneName: "",
+        physicalParams: "亮度高、藍白色漸層、持續約2秒、由掌心中心向外擴散並伴隨光粒飄散",
+        views: [{ label: "靜態關鍵幀", prompt: "掌心懸浮嘅藍白色能量球，中心最亮，邊緣光粒逐漸消散" }],
+      },
+    ],
+  },
   build_scenes: {
     scenes: [
       { index: 1, startAnchor: "@@s1@@", endAnchor: "@@e1@@", summary: "開場相遇", location: "咖啡店", timeOfDay: "夜" },

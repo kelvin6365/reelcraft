@@ -43,9 +43,14 @@ export interface ImageGenRequest {
   prompt: string;
   negativePrompt?: string;
   aspectRatio: string;
+  // 目標解像度層級——模型能力表（capabilities.resolutions）冇聲明支援嘅話會被靜默剝走，
+  // 交由 provider 預設輸出，唔會令任務失敗。
+  resolution?: ImageResolution;
   keyPrefix: string;
   referenceMediaIds?: string[];
 }
+
+export type ImageResolution = "1K" | "2K" | "4K";
 
 export interface VideoGenRequest {
   modelKey: string;
@@ -136,6 +141,9 @@ export async function generateImage(ctx: CallContext, req: ImageGenRequest): Pro
     );
   }
 
+  const resolution =
+    req.resolution && getCapabilities(modelKey)?.resolutions?.includes(req.resolution) ? req.resolution : undefined;
+
   return generate(ctx, "image", modelKey, async ({ provider, modelId }) => {
     if (provider === "fake") {
       const { buffer, mimeType } = await fakeImage(req.prompt, req.aspectRatio);
@@ -150,6 +158,7 @@ export async function generateImage(ctx: CallContext, req: ImageGenRequest): Pro
           prompt: req.prompt,
           negativePrompt: req.negativePrompt,
           aspectRatio: req.aspectRatio,
+          resolution,
           apiKey,
           referenceImages,
         });
@@ -161,6 +170,7 @@ export async function generateImage(ctx: CallContext, req: ImageGenRequest): Pro
         prompt: req.prompt,
         negativePrompt: req.negativePrompt,
         aspectRatio: req.aspectRatio,
+        resolution,
         apiKey,
         referenceImages,
       });

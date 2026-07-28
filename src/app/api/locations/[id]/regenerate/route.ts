@@ -20,6 +20,8 @@ export const POST = withAuth(
       if (!Number.isInteger(body.angle) || body.angle < 0 || body.angle >= angles.length) {
         throw new ApiError("INVALID_ANGLE", 400, "視角編號無效");
       }
+    } else if (location.locked) {
+      throw new ApiError("LOCKED", 400, "已鎖定——想重生請先解鎖（重新揀圖）");
     }
     return ok(
       await submitTask({

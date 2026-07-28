@@ -91,3 +91,13 @@ M1 落地後再迭代出以下機制，均圍繞「令參考圖更準」呢個�
 - **`MAX_SHOT_REFS = 6` 顯式截斷**：因應下游 provider 對參考圖數量有硬上限，在 legend 編號前截斷，避免圖例與實際送出圖片錯位。
 
 詳細機制見 `docs/tech/06-prompts.md`（鏡頭參考圖組裝、prompt 版本）同 `docs/tech/01-data-model.md`（`refFaceMediaId`/`angles` 欄位）。
+
+## 7. 角色資產圖改版（2026-07-28）
+
+角色生圖原本一次過生成「多角度設定表（turnaround sheet：正面／側面／背面 + 面部特寫拼一張）」候選圖，改為與 `Location.angles` / `Prop.views` 一致的模式：
+
+- 角色生成只出**一張**全身正面候選圖（`Character.candidates` 長度由 3 變 1），使用者揀圖鎖定後即為主圖。
+- 鎖定主圖後，新增 `Character.views`（`[{label, prompt, mediaId}]`，同 `Location.angles`/`Prop.views` 同一形狀），預設含「側面」「背面」兩個空位，各自按需要逐張手動生成，以鎖定嘅正面圖做參考圖鎖定身份。
+- 已鎖定嘅角色不能再重生主圖，需先解鎖（同 Location/Prop 一致的 `LOCKED` guard）。
+- 鏡頭參考圖組裝（`buildShotRefAssets`）依序帶入：正面全身 → 面部特寫 → 已生成嘅側面/背面視角，圖例標籤相應由「角色全身多視角」改為「角色全身正面」。
+- `image_prompt_shot` prompt（v8）措辭配合更新：角色參考圖唔再係單一設定表，而係一批獨立圖（正面／側面／背面／面部特寫），AI 需按本鏡頭機位揀最貼合嗰張。

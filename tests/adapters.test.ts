@@ -47,15 +47,26 @@ describe("fal adapter — Queue submit→poll→completed", () => {
     expect(out.url).toBe("https://cdn.fal/out.png");
     expect(out.providerRequestId).toBe("req-123");
 
-    // submit call: correct queue URL + `Key` auth header + mapped image_size
+    // submit call: correct queue URL + `Key` auth header. nano-banana family
+    // takes aspect_ratio (image_size is a Seedream/generic field it ignores).
     const [submitUrl, submitInit] = fetchMock.mock.calls[0];
     expect(String(submitUrl)).toBe("https://queue.fal.run/fal-ai/nano-banana");
     expect(submitInit?.method).toBe("POST");
     expect((submitInit?.headers as Record<string, string>).Authorization).toBe("Key k");
-    expect(JSON.parse(submitInit?.body as string)).toMatchObject({
-      prompt: "a cat",
-      image_size: "portrait_16_9",
-    });
+    const submitBody = JSON.parse(submitInit?.body as string);
+    expect(submitBody).toMatchObject({ prompt: "a cat", aspect_ratio: "9:16" });
+    expect(submitBody.image_size).toBeUndefined();
+    expect(submitBody.resolution).toBeUndefined(); // not requested → provider default
+  });
+
+  it("falImage maps resolution per family: enum for nano-banana-pro, pixels for Seedream", async () => {
+    let fetchMock = stubFalQueue({ result: { images: [{ url: "https://cdn.fal/o.png" }] } });
+    await falImage({ modelId: "fal-ai/nano-banana-pro", prompt: "x", aspectRatio: "16:9", resolution: "4K", apiKey: "k" });
+    expect(JSON.parse(fetchMock.mock.calls[0][1]?.body as string)).toMatchObject({ aspect_ratio: "16:9", resolution: "4K" });
+
+    fetchMock = stubFalQueue({ result: { images: [{ url: "https://cdn.fal/o.png" }] } });
+    await falImage({ modelId: "fal-ai/bytedance/seedream/v4/text-to-image", prompt: "x", aspectRatio: "9:16", resolution: "4K", apiKey: "k" });
+    expect(JSON.parse(fetchMock.mock.calls[0][1]?.body as string).image_size).toEqual({ width: 2304, height: 4096 });
   });
 
   it("falVideo sends a motion negative prompt and cfg_scale for Kling", async () => {

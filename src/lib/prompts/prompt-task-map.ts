@@ -15,6 +15,7 @@ export interface PromptTaskEntry {
 
 export const PROMPT_TASK: Record<string, PromptTaskEntry> = {
   extract_assets: { taskType: TASK_TYPE.EXTRACT_ASSETS, stage: "assets", scope: "episode" },
+  extract_props: { taskType: TASK_TYPE.EXTRACT_PROPS, stage: "assets", scope: "episode" },
   rewrite_script: { taskType: TASK_TYPE.REWRITE_SCRIPT, stage: "script", scope: "episode" },
   script_review: { taskType: TASK_TYPE.SCRIPT_REVIEW, stage: "script", scope: "episode" },
   build_scenes: { taskType: TASK_TYPE.BUILD_SCENES, stage: "storyboard", scope: "episode" },

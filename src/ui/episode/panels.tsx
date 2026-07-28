@@ -17,6 +17,7 @@ import {
   Trash2,
   Upload,
   Users,
+  Video,
   X,
   ZoomIn,
   type LucideIcon,
@@ -26,7 +27,7 @@ import { useAction } from "@/ui/planning/useAction";
 import { qk } from "@/ui/query-keys";
 import { useAdvancedMode } from "@/ui/prompts/useAdvancedMode";
 import { StationPromptSheet } from "@/ui/prompts/StationPromptSheet";
-import type { EpisodeView, LiveTaskMap, LocationView, StageKey, ShotView, ScriptReviewView, VoiceLineView } from "@/ui/types";
+import type { EpisodeView, LiveTaskMap, LocationView, PropView, StageKey, ShotView, ScriptReviewView, VoiceLineView } from "@/ui/types";
 import { STATION_BY_KEY } from "./stations";
 import { useStationNav } from "./station-nav";
 import { SavedHint, useAutosaveField, useSavedFlash } from "./SavedHint";
@@ -195,11 +196,11 @@ export function InputPanel({ view }: PanelProps) {
 }
 
 export function AssetsPanel({ view, progress, live }: PanelProps) {
-  const { characters, locations, candidateUrlById } = view;
+  const { characters, locations, props, candidateUrlById } = view;
   const episodeId = view.episode.id;
   const empty = characters.length === 0 && locations.length === 0;
   return (
-    <Station stage="assets" progress={progress} episodeId={episodeId} promptIds={["extract_assets"]}>
+    <Station stage="assets" progress={progress} episodeId={episodeId} promptIds={["extract_assets", "extract_props"]}>
       {empty ? (
         <EmptyState view={view} stage="assets">仲未抽到角色／場景，系統會由劇本讀出人物同地點。</EmptyState>
       ) : (
@@ -222,6 +223,11 @@ export function AssetsPanel({ view, progress, live }: PanelProps) {
               refFaceUrl={c.refFaceUrl}
               refFaceNote={c.refFaceNote}
               imageRefSupported={view.imageRefSupported}
+              angles={c.views}
+              viewBasePath="/api/characters"
+              viewIndexParam="viewIndex"
+              viewPromptParam="viewPrompt"
+              viewRegenParam="view"
               locked={c.locked}
               lockPath="/api/characters"
               liveState={live?.[`IMAGE_CHARACTER:${c.id}`] ?? c.activeTask ?? null}
@@ -252,7 +258,92 @@ export function AssetsPanel({ view, progress, live }: PanelProps) {
           ))}
         </div>
       )}
+      <PropsSection view={view} live={live} />
     </Station>
+  );
+}
+
+const PROP_TIER_LABEL: Record<string, string> = { key: "關鍵敘事道具", scene: "場景填充道具", effect: "動態特效道具" };
+const PROP_TIER_ORDER = ["key", "scene", "effect"];
+
+// 三個 tier 分組顯示；「重抽道具」（全量）同「補抽」（帶 targetName 嘅專注版本）都打同一個
+// endpoint，唯一分別係 body 有冇 targetName（見 extractPropsHandler）。
+function PropsSection({ view, live }: { view: EpisodeView; live?: LiveTaskMap }) {
+  const { props, candidateUrlById } = view;
+  const episodeId = view.episode.id;
+  const { busy, err, run } = useAction(qk.episode(episodeId));
+  const [targetName, setTargetName] = useState("");
+
+  const grouped = PROP_TIER_ORDER.map((tier) => ({
+    tier,
+    items: props.filter((p) => p.tier === tier),
+  })).filter((g) => g.items.length > 0);
+
+  return (
+    <div className="space-y-4 border-t pt-4">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p className="text-sm font-medium">道具資產</p>
+        <div className="flex flex-wrap items-center gap-2">
+          <Button variant="outline" size="sm" disabled={busy} onClick={() => run(() => api.post(`/api/episodes/${episodeId}/extract-props`, {}))}>
+            <RefreshCw /> 重抽道具
+          </Button>
+          <Input
+            value={targetName}
+            onChange={(e) => setTargetName(e.target.value)}
+            placeholder="漏抽咗？打道具名補抽"
+            className="h-8 w-48"
+          />
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={busy || !targetName.trim()}
+            onClick={() => run(() => api.post(`/api/episodes/${episodeId}/extract-props`, { targetName: targetName.trim() })).then((ok) => ok && setTargetName(""))}
+          >
+            補抽
+          </Button>
+        </div>
+      </div>
+      {err && <p className="text-sm text-destructive">{err}</p>}
+      {props.length === 0 ? (
+        <p className="text-sm text-muted-foreground">仲未有道具資產。撳「重抽道具」由劇本判斷值得入庫嘅道具。</p>
+      ) : (
+        grouped.map((g) => (
+          <div key={g.tier} className="space-y-3">
+            <p className="text-xs font-medium text-muted-foreground">{PROP_TIER_LABEL[g.tier] ?? g.tier}</p>
+            {g.items.map((p) => (
+              <AssetCard
+                key={p.id}
+                id={p.id}
+                kind={`道具・${PROP_TIER_LABEL[p.tier] ?? p.tier}`}
+                name={p.name}
+                desc={p.summary}
+                prompt={p.prompt}
+                promptField="prompt"
+                candidates={p.candidates}
+                chosenId={p.lockedImageMediaId}
+                lockedUrl={p.lockedImageUrl}
+                isProp
+                angles={p.views}
+                viewBasePath="/api/props"
+                viewIndexParam="viewIndex"
+                viewPromptParam="viewPrompt"
+                viewRegenParam="view"
+                metaLine={[p.material && `材質：${p.material}`, p.dimensions && `尺寸：${p.dimensions}`].filter(Boolean).join(" ・ ")}
+                isEffectTier={p.tier === "effect"}
+                physicalParams={p.physicalParams}
+                refVideoUrl={p.refVideoUrl}
+                lastError={p.lastError}
+                locked={p.locked}
+                lockPath="/api/props"
+                liveState={live?.[`IMAGE_PROP:${p.id}`] ?? live?.[`VIDEO_PROP:${p.id}`] ?? p.activeTask ?? null}
+                candidateUrlById={candidateUrlById}
+                episodeId={episodeId}
+              />
+            ))}
+          </div>
+        ))
+      )}
+    </div>
   );
 }
 
@@ -270,10 +361,24 @@ function AssetCard(props: {
   showFaceHint?: boolean;
   isCharacter?: boolean;
   isLocation?: boolean;
+  isProp?: boolean;
   refFaceUrl?: string | null;
   refFaceNote?: string;
   imageRefSupported?: boolean;
   angles?: LocationView["angles"];
+  // 道具視圖 API 走 /api/props（唔同 location 嘅 /api/locations），欄位名亦唔同
+  // （viewIndex/viewPrompt/view 對 angleIndex/anglePrompt/angle）——見 AssetViewRow。
+  viewBasePath?: string;
+  viewIndexParam?: string;
+  viewPromptParam?: string;
+  viewRegenParam?: string;
+  // 元數據齊全（材質／尺寸）顯示行，只限道具
+  metaLine?: string;
+  isEffectTier?: boolean;
+  physicalParams?: string;
+  refVideoUrl?: string | null;
+  // 由 DB 查返嚟嘅最新一次失敗記錄（見 episode-snapshot.ts）——同 inFlight 互斥顯示。
+  lastError?: { code: string | null; message: string | null; humanized: string; failedAt: string | null } | null;
   locked: boolean;
   lockPath: string;
   liveState: { progress?: number } | null;
@@ -285,6 +390,7 @@ function AssetCard(props: {
   const [editing, setEditing] = useState(false);
   const [promptDraft, setPromptDraft] = useState(props.prompt);
   const [lightbox, setLightbox] = useState<MediaLightboxMedia | null>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
   useEffect(() => {
     if (!editing) setPromptDraft(props.prompt);
   }, [props.prompt, editing]);
@@ -292,6 +398,8 @@ function AssetCard(props: {
   const inFlight = props.liveState !== null;
   const pct = props.liveState?.progress;
   const disabled = busy || inFlight;
+  // 揀圖 ≠ 鎖定：得一張候選圖時自動預揀，唔使強逼撳多一次
+  const effectiveSelected = selectedId ?? (props.candidates.length === 1 ? props.candidates[0] : null);
 
   async function savePrompt() {
     if (promptDraft === props.prompt) return;
@@ -328,22 +436,19 @@ function AssetCard(props: {
           <Button
             variant="ghost"
             size="sm"
-            disabled={disabled}
+            disabled={disabled || props.locked}
             title={
-              props.candidates.length === 0 && !props.locked
-                ? "生成 3 張候選圖"
-                : props.locked && props.isCharacter
-                  ? "保留身份重生候選圖"
-                  : "重新生成候選圖"
+              props.locked
+                ? "已鎖定唔可以重生——想重生請先撳「重新揀圖」解鎖"
+                : props.candidates.length === 0
+                  ? props.isCharacter
+                    ? "生成一張全身正面圖"
+                    : "生成 3 張候選圖"
+                  : props.isCharacter
+                    ? "重新生成一張全身正面圖取代而家嗰張"
+                    : "重新生成候選圖"
             }
-            onClick={() =>
-              run(() =>
-                api.post(
-                  `${props.lockPath}/${props.id}/regenerate`,
-                  props.locked && props.isCharacter ? { keepIdentity: true } : {},
-                ),
-              )
-            }
+            onClick={() => run(() => api.post(`${props.lockPath}/${props.id}/regenerate`, {}))}
           >
             <RefreshCw /> {props.candidates.length === 0 && !props.locked ? "生成" : "重生"}
           </Button>
@@ -370,17 +475,34 @@ function AssetCard(props: {
           )}
         </div>
       </div>
+      {!inFlight && props.lastError && (
+        <div className="flex flex-wrap items-center gap-2 rounded-md border border-destructive/40 bg-destructive/5 px-2 py-1.5">
+          <Badge variant="destructive">{props.lastError.humanized}</Badge>
+          <Button
+            variant="ghost"
+            size="sm"
+            disabled={disabled}
+            title="重新提交生成（同撳「重生」一樣）"
+            onClick={() => run(() => api.post(`${props.lockPath}/${props.id}/regenerate`, {}))}
+          >
+            <RefreshCw /> 重試
+          </Button>
+        </div>
+      )}
       {props.desc && <p className="text-sm text-muted-foreground">{props.desc}</p>}
-      {props.isLocation && props.angles && props.angles.length > 0 && (
+      {props.isProp && props.metaLine && <p className="text-xs text-muted-foreground">{props.metaLine}</p>}
+      {props.isProp && <PropPromptPreview propId={props.id} promptDraft={promptDraft} />}
+      {(props.isLocation || props.isProp || props.isCharacter) && props.angles && props.angles.length > 0 && (
         <div className="space-y-2 rounded-md border border-dashed p-3">
-          <p className="text-xs font-medium text-muted-foreground">AI 建議視角</p>
+          <p className="text-xs font-medium text-muted-foreground">{props.isProp ? "道具視圖" : props.isCharacter ? "側面／背面視圖" : "AI 建議視角"}</p>
           <div className="space-y-2">
             {props.angles.map((angle, i) => (
-              <LocationAngleRow
+              <AssetViewRow
                 key={i}
-                locationId={props.id}
-                locationName={props.name}
-                angleIndex={i}
+                basePath={props.viewBasePath ?? "/api/locations"}
+                parentId={props.id}
+                parentName={props.name}
+                viewIndex={i}
                 label={angle.label}
                 prompt={angle.prompt}
                 mediaId={angle.mediaId}
@@ -389,11 +511,28 @@ function AssetCard(props: {
                 disabled={disabled}
                 episodeId={props.episodeId}
                 onLightbox={setLightbox}
+                indexParam={props.viewIndexParam ?? "angleIndex"}
+                promptParam={props.viewPromptParam ?? "anglePrompt"}
+                regenParam={props.viewRegenParam ?? "angle"}
+                propIdForPreview={props.isProp ? props.id : undefined}
               />
             ))}
           </div>
-          <p className="text-xs text-muted-foreground">鎖定主圖後可以逐個生成視角圖</p>
+          <p className="text-xs text-muted-foreground">
+            {props.isCharacter ? "鎖定正面圖後可以逐個生成側面／背面視圖" : "鎖定主圖後可以逐個生成視角圖"}
+          </p>
         </div>
+      )}
+      {props.isEffectTier && (
+        <EffectClipSlot
+          propId={props.id}
+          name={props.name}
+          physicalParams={props.physicalParams ?? ""}
+          refVideoUrl={props.refVideoUrl ?? null}
+          locked={props.locked}
+          disabled={disabled}
+          episodeId={props.episodeId}
+        />
       )}
       {/* disabled gates on busy only, NOT inFlight: a running generation task
           already read the old row, so swapping the reference face mid-flight is
@@ -439,9 +578,9 @@ function AssetCard(props: {
               alt={props.name}
               className={cn(
                 "rounded-md",
-                props.isLocation ? "max-w-[320px] object-contain" : "max-w-[200px] object-cover",
+                props.isLocation ? "max-w-[320px] object-contain" : props.isProp ? "max-w-[200px] object-contain" : "max-w-[200px] object-cover",
               )}
-              style={props.isLocation ? undefined : { aspectRatio: "3/4" }}
+              style={props.isLocation ? undefined : props.isProp ? { aspectRatio: "1/1" } : { aspectRatio: "3/4" }}
             />
           </button>
           {props.faceUrl ? (
@@ -463,61 +602,79 @@ function AssetCard(props: {
           ) : null}
         </div>
       ) : props.candidates.length === 0 ? (
-        <p className="text-sm text-muted-foreground">未有候選圖。撳上面「生成」生成 3 張候選，或喺「下一步」一次過生成全部資產圖。</p>
+        <p className="text-sm text-muted-foreground">
+          {props.isCharacter
+            ? "未有圖。撳上面「生成」出一張全身正面圖，或喺「下一步」一次過生成全部資產圖。"
+            : "未有候選圖。撳上面「生成」生成 3 張候選，或喺「下一步」一次過生成全部資產圖。"}
+        </p>
       ) : (
-        <div
-          className={cn(
-            "grid gap-3",
-            props.isLocation ? "grid-cols-2 sm:grid-cols-3" : "grid-cols-3 sm:grid-cols-4",
-          )}
-        >
-          {props.candidates.map((mediaId) => {
-            const url = props.candidateUrlById[mediaId];
-            const chosen = props.chosenId === mediaId;
-            return (
-              <div key={mediaId} className="group relative">
-                <button
-                  type="button"
-                  disabled={busy}
-                  aria-pressed={chosen}
-                  onClick={() => run(() => api.post(`${props.lockPath}/${props.id}/lock`, { mediaId }))}
-                  title={chosen ? "已揀呢張" : "揀呢張鎖定"}
-                  aria-label={chosen ? `${props.name} 已揀呢張候選圖` : `揀 ${props.name} 呢張候選圖`}
-                  className={cn(
-                    "block w-full overflow-hidden rounded-md border-2 transition-colors",
-                    props.isLocation ? "aspect-video" : "aspect-[3/4]",
-                    chosen ? "border-primary ring-2 ring-primary" : "border-transparent hover:border-border",
-                  )}
-                >
-                  {url ? (
-                    <img src={url} alt="候選" className="size-full object-cover" />
-                  ) : (
-                    <span className="flex size-full items-center justify-center text-xs text-muted-foreground">
-                      無圖
-                    </span>
-                  )}
-                  {/* Non-colour indicator too (WCAG 1.4.1): the ring alone is a
-                      colour-only signal for which candidate is locked. */}
-                  {chosen && (
-                    <span className="absolute top-1 right-1 flex size-5 items-center justify-center rounded-full bg-primary text-primary-foreground">
-                      <Check className="size-3" />
-                    </span>
-                  )}
-                </button>
-                {url && (
+        <div className="space-y-3">
+          <div
+            className={cn(
+              "grid gap-3",
+              props.isLocation ? "grid-cols-2 sm:grid-cols-3" : props.isProp ? "grid-cols-3 sm:grid-cols-3" : "grid-cols-3 sm:grid-cols-4",
+            )}
+          >
+            {props.candidates.map((mediaId) => {
+              const url = props.candidateUrlById[mediaId];
+              const selected = effectiveSelected === mediaId;
+              return (
+                <div key={mediaId} className="group relative">
                   <button
                     type="button"
-                    aria-label="放大檢視候選圖"
-                    title="放大檢視候選圖"
-                    onClick={() => setLightbox({ src: url, type: "image", title: `${props.name} 候選圖` })}
-                    className="absolute bottom-1 right-1 z-10 flex size-6 items-center justify-center rounded-md bg-black/60 text-white opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100"
+                    disabled={busy}
+                    aria-pressed={selected}
+                    onClick={() => setSelectedId(mediaId)}
+                    title={selected ? "已揀" : "揀呢張"}
+                    aria-label={selected ? `${props.name} 已揀呢張候選圖` : `揀 ${props.name} 呢張候選圖`}
+                    className={cn(
+                      "block w-full overflow-hidden rounded-md border-2 transition-colors",
+                      props.isLocation ? "aspect-video" : props.isProp ? "aspect-square" : "aspect-[3/4]",
+                      selected ? "border-primary ring-2 ring-primary" : "border-transparent hover:border-border",
+                    )}
                   >
-                    <ZoomIn className="size-3.5" />
+                    {url ? (
+                      <img src={url} alt="候選" className="size-full object-cover" />
+                    ) : (
+                      <span className="flex size-full items-center justify-center text-xs text-muted-foreground">
+                        無圖
+                      </span>
+                    )}
+                    {/* Non-colour indicator too (WCAG 1.4.1): the ring alone is a
+                        colour-only signal for which candidate is selected. */}
+                    {selected && (
+                      <span className="absolute top-1 right-1 flex size-5 items-center justify-center rounded-full bg-primary text-primary-foreground">
+                        <Check className="size-3" />
+                      </span>
+                    )}
                   </button>
-                )}
-              </div>
-            );
-          })}
+                  {url && (
+                    <button
+                      type="button"
+                      aria-label="放大檢視候選圖"
+                      title="放大檢視候選圖"
+                      onClick={() => setLightbox({ src: url, type: "image", title: `${props.name} 候選圖` })}
+                      className="absolute bottom-1 right-1 z-10 flex size-6 items-center justify-center rounded-md bg-black/60 text-white opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100"
+                    >
+                      <ZoomIn className="size-3.5" />
+                    </button>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+          <Button
+            size="sm"
+            disabled={!effectiveSelected || busy || inFlight}
+            title={effectiveSelected ? "鎖定選中嗰張做正式圖" : "先揀一張候選圖"}
+            onClick={() =>
+              run(() => api.post(`${props.lockPath}/${props.id}/lock`, { mediaId: effectiveSelected })).then((ok) => {
+                if (ok) setSelectedId(null);
+              })
+            }
+          >
+            🔒 鎖定
+          </Button>
         </div>
       )}
       {err && <p className="text-sm text-destructive">{err}</p>}
@@ -529,10 +686,14 @@ function AssetCard(props: {
 // One AI-suggested angle's prompt, editable independent of the other angles'
 // drafts — each row owns its own autosave state so editing one doesn't clobber
 // another mid-flight (same pattern as savePrompt above, one row per angle).
-function LocationAngleRow({
-  locationId,
-  locationName,
-  angleIndex,
+// 通用多視圖 row — location 嘅角度（/api/locations, angleIndex/anglePrompt/angle）
+// 同 prop 嘅視圖（/api/props, viewIndex/viewPrompt/view）共用同一組 UI，
+// 只係 basePath 同欄位名唔同（見 AssetCard 嘅 viewBasePath/viewIndexParam 等）。
+function AssetViewRow({
+  basePath,
+  parentId,
+  parentName,
+  viewIndex,
   label,
   prompt,
   mediaId,
@@ -541,10 +702,15 @@ function LocationAngleRow({
   disabled,
   episodeId,
   onLightbox,
+  indexParam,
+  promptParam,
+  regenParam,
+  propIdForPreview,
 }: {
-  locationId: string;
-  locationName: string;
-  angleIndex: number;
+  basePath: string;
+  parentId: string;
+  parentName: string;
+  viewIndex: number;
   label: string;
   prompt: string;
   mediaId: string | null;
@@ -553,10 +719,16 @@ function LocationAngleRow({
   disabled: boolean;
   episodeId: string;
   onLightbox: (media: MediaLightboxMedia) => void;
+  indexParam: string;
+  promptParam: string;
+  regenParam: string;
+  // 得道具（Prop）先有 preview-prompt endpoint——Location 冇，所以呢個 prop 淨係
+  // isProp 嘅 call site 先會傳值，唔傳就唔顯示「查看實際 Prompt」toggle。
+  propIdForPreview?: string;
 }) {
   const { busy, run } = useAction(qk.episode(episodeId));
   const { text, onChange, onBlur, saved } = useAutosaveField(prompt, (v) =>
-    run(() => api.patch(`/api/locations/${locationId}`, { angleIndex, anglePrompt: v })),
+    run(() => api.patch(`${basePath}/${parentId}`, { [indexParam]: viewIndex, [promptParam]: v })),
   );
   const genDisabled = disabled || busy || !locked;
 
@@ -569,17 +741,141 @@ function LocationAngleRow({
           size="sm"
           disabled={genDisabled}
           title={locked ? (mediaId ? "重新生成呢個視角" : "用鎖定主圖生成呢個視角") : "先鎖定主圖，視角圖會用主圖做參照保持一致"}
-          onClick={() => run(() => api.post(`/api/locations/${locationId}/regenerate`, { angle: angleIndex }))}
+          onClick={() => run(() => api.post(`${basePath}/${parentId}/regenerate`, { [regenParam]: viewIndex }))}
         >
           <RefreshCw /> {mediaId ? "重生" : "生成"}
         </Button>
       </div>
       <Textarea value={text} onChange={(e) => onChange(e.target.value)} onBlur={onBlur} rows={2} />
       <SavedHint saved={saved} />
+      {propIdForPreview && <PropPromptPreview propId={propIdForPreview} view={{ label, prompt: text }} />}
       {url && (
-        <button type="button" className="cursor-zoom-in" onClick={() => onLightbox({ src: url, type: "image", title: `${locationName} 視角：${label}` })}>
-          <img src={url} alt={`${locationName} 視角：${label}`} className="aspect-video max-w-[200px] rounded-md object-cover" />
+        <button type="button" className="cursor-zoom-in" onClick={() => onLightbox({ src: url, type: "image", title: `${parentName} 視角：${label}` })}>
+          <img src={url} alt={`${parentName} 視角：${label}`} className="aspect-video max-w-[200px] rounded-md object-cover" />
         </button>
+      )}
+    </div>
+  );
+}
+
+// 「查看實際 Prompt」——生成前即時預覽，call POST /api/props/[id]/preview-prompt
+// 重用返嗰幾個 pure builder（buildPropMainPrompt/buildPropViewPrompt/...），保證
+// 預覽同實際生成用緊同一份邏輯，唔會兩邊飄散。摺疊區預設關閉，展開先 fetch，
+// 之後 draft 變動 debounce 500ms 自動重新 call。
+function PropPromptPreview({
+  propId,
+  promptDraft,
+  view,
+  effectVideo,
+  physicalParams,
+}: {
+  propId: string;
+  promptDraft?: string;
+  view?: { label: string; prompt: string };
+  effectVideo?: boolean;
+  physicalParams?: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const [result, setResult] = useState<{ mainPrompt?: string; viewPrompt?: string; videoPrompt?: string; negativePrompt?: string; sceneRefName?: string | null } | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    setLoading(true);
+    setErr(null);
+    const timer = setTimeout(() => {
+      const body = effectVideo ? { effectVideo: true, physicalParams } : view ? { view } : { prompt: promptDraft };
+      api
+        .post<{ mainPrompt?: string; viewPrompt?: string; videoPrompt?: string; negativePrompt?: string; sceneRefName?: string | null }>(
+          `/api/props/${propId}/preview-prompt`,
+          body,
+        )
+        .then(setResult)
+        .catch((e) => setErr(e instanceof Error ? e.message : "預覽失敗"))
+        .finally(() => setLoading(false));
+    }, 500);
+    return () => clearTimeout(timer);
+  }, [open, propId, promptDraft, view?.prompt, effectVideo, physicalParams]);
+
+  const text = result?.mainPrompt ?? result?.viewPrompt ?? result?.videoPrompt ?? "";
+
+  return (
+    <div className="space-y-1">
+      <button
+        type="button"
+        className="text-xs text-muted-foreground underline underline-offset-2 hover:text-foreground"
+        onClick={() => setOpen((v) => !v)}
+      >
+        {open ? "收起 Prompt 預覽" : "查看實際 Prompt"}
+      </button>
+      {open && (
+        <div className="space-y-1 rounded-md border border-dashed bg-muted/30 p-2 text-xs">
+          {loading && <p className="text-muted-foreground">計緊…</p>}
+          {err && <p className="text-destructive">{err}</p>}
+          {!loading && !err && result && (
+            <>
+              {result.sceneRefName && <p className="text-muted-foreground">呢張圖會以場景「{result.sceneRefName}」嘅鎖定圖做參考</p>}
+              <pre className="whitespace-pre-wrap break-words font-mono">{text}</pre>
+              {result.negativePrompt && <p className="text-muted-foreground">Negative：{result.negativePrompt}</p>}
+            </>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// tier=effect 專屬：編輯 physicalParams（強度/顏色/持續時間）+ 觸發／顯示動態參考片段。
+function EffectClipSlot({
+  propId,
+  name,
+  physicalParams,
+  refVideoUrl,
+  locked,
+  disabled,
+  episodeId,
+}: {
+  propId: string;
+  name: string;
+  physicalParams: string;
+  refVideoUrl: string | null;
+  locked: boolean;
+  disabled: boolean;
+  episodeId: string;
+}) {
+  const { busy, run } = useAction(qk.episode(episodeId));
+  const { text, onChange, onBlur, saved } = useAutosaveField(physicalParams, (v) =>
+    run(() => api.patch(`/api/props/${propId}`, { physicalParams: v })),
+  );
+  const genDisabled = disabled || busy || !locked;
+
+  return (
+    <div className="space-y-2 rounded-md border border-dashed p-3">
+      <p className="text-xs font-medium text-muted-foreground">動態特效參數</p>
+      <Textarea
+        value={text}
+        onChange={(e) => onChange(e.target.value)}
+        onBlur={onBlur}
+        rows={2}
+        placeholder="強度／顏色／持續時間／擴散方式"
+      />
+      <SavedHint saved={saved} />
+      <div className="flex items-center gap-2">
+        <Button
+          variant="ghost"
+          size="sm"
+          disabled={genDisabled}
+          title={locked ? "用鎖定嘅靜態參考圖生成動態片段" : "先鎖定靜態參考圖先可以生成動態片段"}
+          onClick={() => run(() => api.post(`/api/props/${propId}/regenerate`, { effectVideo: true }))}
+        >
+          <Video /> {refVideoUrl ? "重生動態參考片段" : "生成動態參考片段"}
+        </Button>
+      </div>
+      <PropPromptPreview propId={propId} effectVideo physicalParams={text} />
+      {refVideoUrl && (
+        // eslint-disable-next-line jsx-a11y/media-has-caption -- 內部資產參考片段，非公開內容
+        <video src={refVideoUrl} controls className="max-w-[200px] rounded-md" title={`${name} 動態參考`} />
       )}
     </div>
   );

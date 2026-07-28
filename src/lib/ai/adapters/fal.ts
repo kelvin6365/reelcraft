@@ -40,6 +40,20 @@ function imageSizeFor(aspectRatio: string): string | { width: number; height: nu
   return IMAGE_SIZE[aspectRatio] ?? "portrait_16_9";
 }
 
+// Seedream takes explicit pixel dimensions (960²–4096² total pixels, per its
+// OpenAPI schema) instead of a resolution enum — map the tier to a long side and
+// derive the short side from the aspect ratio, clamped to the documented minimum.
+const RESOLUTION_LONG_SIDE: Record<string, number> = { "1K": 1024, "2K": 2048, "4K": 4096 };
+
+function imageSizeForResolution(aspectRatio: string, resolution: string): { width: number; height: number } | null {
+  const long = RESOLUTION_LONG_SIDE[resolution];
+  const m = /^(\d+):(\d+)$/.exec(aspectRatio);
+  if (!long || !m) return null;
+  const [w, h] = [Number(m[1]), Number(m[2])];
+  const short = Math.max(960, Math.round((long * Math.min(w, h)) / Math.max(w, h) / 8) * 8);
+  return w >= h ? { width: long, height: short } : { width: short, height: long };
+}
+
 // Submit uses the full model path (`fal-ai/index-tts-2/text-to-speech`), but
 // status/result URLs must use the APP ROOT only (`fal-ai/index-tts-2`) —
 // polling with the subpath returns 405. Verified against the live API.
@@ -135,6 +149,7 @@ export interface FalImageArgs {
   prompt: string;
   negativePrompt?: string;
   aspectRatio: string;
+  resolution?: string; // "1K" | "2K" | "4K" — pre-validated against capabilities upstream
   apiKey: string;
   referenceImages?: string[]; // data-URIs; when present → image-to-image (character consistency)
 }
@@ -154,11 +169,23 @@ export async function falImage(args: FalImageArgs): Promise<{ url: string; provi
   const refs = args.referenceImages ?? [];
   const hasRefs = refs.length > 0;
 
+  // Size fields differ per family (verified against fal's OpenAPI schemas):
+  // nano-banana* take `aspect_ratio` (+ `resolution` enum on -pro, both t2i and
+  // /edit paths); Seedream and the generic rest take `image_size`. Sending
+  // image_size to nano-banana is silently ignored — aspect_ratio is mandatory.
+  const isNanoBanana = args.modelId.includes("nano-banana");
+  const sizeInput: Record<string, unknown> = isNanoBanana
+    ? { aspect_ratio: args.aspectRatio, ...(args.resolution ? { resolution: args.resolution } : {}) }
+    : {
+        image_size:
+          (args.resolution ? imageSizeForResolution(args.aspectRatio, args.resolution) : null) ??
+          imageSizeFor(args.aspectRatio),
+      };
+
   const input: Record<string, unknown> = {
     prompt: args.prompt,
-    ...(hasRefs
-      ? { image_urls: refs } // edit/reference path — model conditions on these images
-      : { image_size: imageSizeFor(args.aspectRatio) }), // text-to-image path
+    ...sizeInput,
+    ...(hasRefs ? { image_urls: refs } : {}), // edit/reference path — model conditions on these images
   };
   if (args.negativePrompt) input.negative_prompt = args.negativePrompt;
 

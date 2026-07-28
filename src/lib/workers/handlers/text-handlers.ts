@@ -15,7 +15,8 @@ import {
   textCallJson,
   promptOverridesFromTask,
 } from "@/lib/workers/handlers/shared";
-import type { Character } from "@prisma/client";
+import type { Character, Prisma } from "@prisma/client";
+import { DEFAULT_CHARACTER_VIEWS } from "@/lib/prompts/character-views";
 
 interface CharacterBioJson { age?: string; occupation?: string; personality?: string; painPoint?: string; backstory?: string }
 function formatCharacterBios(characters: Character[]): string {
@@ -132,6 +133,7 @@ export const extractAssetsHandler: TaskHandler = async ({ task, reportProgress }
           profile: c.appearance,
           appearancePrompt: `${c.appearance} ${c.wardrobe}`.trim(),
           bio,
+          views: DEFAULT_CHARACTER_VIEWS as unknown as Prisma.InputJsonValue,
         },
       });
       created++;
@@ -158,6 +160,73 @@ export const extractAssetsHandler: TaskHandler = async ({ task, reportProgress }
   }
   reportProgress(95);
   return { characters: out.characters.length, locations: out.locations.length, created };
+};
+
+// key tier 要求剛好 4 個 view label（正/反/側/細節特寫）——views 數量直接影響下游 UI
+// 顯示格數，唔可以好似 characters 嘅外貌字數量化咁靠 prompt 自律，要 app 層兜底補齊。
+// prompt 留空——固定嘅角度指示（front/back/side/detail）喺 prop-views.ts 嘅
+// VIEW_ANGLE_HINTS 憑 label 提供，唔使靠呢度重複塞一次；view.prompt 淨係用嚟裝
+// AI／用戶額外補充嘅具體細節（例如「反面刻有龍紋」），真係有需要先打，唔打都唔會
+// 冇咗「呢個係邊個角度」嘅核心指示。
+const KEY_TIER_VIEW_LABELS = ["正面", "反面", "側面", "細節特寫"];
+
+export const extractPropsHandler: TaskHandler = async ({ task, reportProgress }) => {
+  const { episode, project } = await loadEpisodeWithProject(task);
+  const source = episode.scriptText || episode.rawText;
+  if (!source) throw new TaskError("NO_SOURCE", "episode has no script/raw text", false);
+  const models = await resolveTaskModels(task, project);
+
+  const targetName = (task.payload as { targetName?: string }).targetName?.trim() || "";
+
+  reportProgress(10);
+  const out = await textCallJson(
+    { userId: task.userId, taskId: task.id, projectId: project.id, episodeId: episode.id, oneOff: promptOverridesFromTask(task) },
+    models.text,
+    "extract_props",
+    { script_text: source.slice(0, 30_000), target_name: targetName },
+  );
+
+  if (targetName && out.props.length === 0) {
+    throw new TaskError("PROP_NOT_FOUND", `劇本入面搵唔到「${targetName}」嘅相關描述`, false);
+  }
+
+  reportProgress(60);
+  // orderBy: 場景名相同、唔同時段（「咖啡店·夜」／「咖啡店·日」）先揀邊個要穩定，
+  // 唔可以靠 DB 未指定排序嘅隱含順序（會隨查詢執行方式變動）。
+  const locations = await prisma.location.findMany({ where: { projectId: project.id }, select: { id: true, name: true }, orderBy: { id: "asc" } });
+
+  let created = 0;
+  for (const p of out.props) {
+    const existing = await prisma.prop.findFirst({ where: { projectId: project.id, name: p.name } });
+    if (existing) continue; // skip — 唔覆寫用戶已改嘅 views／已生成圖（同 locations 一致）
+
+    let views = p.views.map((v) => ({ ...v, mediaId: null as string | null }));
+    if (p.tier === "key" && views.length < 4) {
+      views = KEY_TIER_VIEW_LABELS.map((label, i) => views[i] ?? { label, prompt: "", mediaId: null });
+    }
+
+    const matchedLocation = p.sceneName ? locations.find((l) => l.name.startsWith(p.sceneName)) : undefined;
+
+    await prisma.prop.create({
+      data: {
+        id: newId(),
+        userId: task.userId,
+        projectId: project.id,
+        name: p.name,
+        tier: p.tier,
+        summary: p.description,
+        prompt: p.description,
+        material: p.material,
+        dimensions: p.dimensions,
+        physicalParams: p.physicalParams,
+        locationId: matchedLocation?.id,
+        views,
+      },
+    });
+    created++;
+  }
+  reportProgress(95);
+  return { props: out.props.length, created };
 };
 
 export const buildScenesHandler: TaskHandler = async ({ task, reportProgress }) => {

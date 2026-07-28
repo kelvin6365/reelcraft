@@ -22,6 +22,16 @@
       "description": "從劇本抽角色與場景資產，含去重與外貌字數量化規則（JSON）。"
     },
     {
+      "id": "extract_props",
+      "path": "pipeline/extract_props.zh.txt",
+      "version": "3",
+      "variables": [
+        "script_text",
+        "target_name"
+      ],
+      "description": "從劇本抽道具資產，AI 判斷三級分類（關鍵敘事/場景填充/動態特效），支援指定單一道具名補抽（JSON）。"
+    },
+    {
       "id": "script_review",
       "path": "pipeline/script_review.zh.txt",
       "version": "1",
@@ -101,7 +111,7 @@
     {
       "id": "image_prompt_shot",
       "path": "pipeline/image_prompt_shot.zh.txt",
-      "version": "7",
+      "version": "8",
       "variables": [
         "shot_json",
         "scene_blocking",

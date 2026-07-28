@@ -71,9 +71,16 @@ export async function estimateTaskCost(
     case TASK_TYPE.IMAGE_CHARACTER:
     case TASK_TYPE.IMAGE_LOCATION:
       return flatUnitPrice(models.image, "image") * ASSET_CANDIDATE_COUNT;
+    case TASK_TYPE.IMAGE_PROP:
+      // view/effect-reference regen only produces one image, not a 3-candidate batch —
+      // reserve the batch ceiling anyway (worst case is the initial 3-candidate call).
+      return typeof payload.view === "number"
+        ? flatUnitPrice(models.image, "image")
+        : flatUnitPrice(models.image, "image") * ASSET_CANDIDATE_COUNT;
     case TASK_TYPE.IMAGE_SHOT:
       return flatUnitPrice(models.image, "image");
     case TASK_TYPE.VIDEO_SHOT:
+    case TASK_TYPE.VIDEO_PROP:
       return flatUnitPrice(models.video, "second") * worstVideoSeconds(models.video);
     case TASK_TYPE.TTS_LINE:
       return flatUnitPrice(models.tts, "character") * ttsCharCount(payload);
