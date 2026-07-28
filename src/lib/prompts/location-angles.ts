@@ -21,6 +21,11 @@ const ANGLE_REF_FRAMING =
 const ANGLE_CONSISTENCY_NOTE =
   "same location as the reference image — identical architecture, furniture, materials and lighting logic, viewed from a different camera position";
 
+export function buildLocationMainPrompt(basePrompt: string, style: AngleStyle): string {
+  const stylePart = style.locationPrefix ?? style.assetPrefix ?? style.prefix ?? "";
+  return [stylePart, basePrompt, ANGLE_REF_FRAMING].filter(Boolean).join(". ").trim();
+}
+
 export function buildAngleImagePrompt(basePrompt: string, angle: Pick<LocationAngle, "prompt">, style: AngleStyle): string {
   const stylePart = style.locationPrefix ?? style.assetPrefix ?? style.prefix ?? "";
   return [stylePart, basePrompt, angle.prompt ?? "", ANGLE_CONSISTENCY_NOTE, ANGLE_REF_FRAMING]

@@ -13,9 +13,9 @@ import type { TaskHandler } from "@/lib/workers/lifecycle";
 import { resolveTaskModels, loadEpisodeWithProject, textCallJson, promptOverridesFromTask } from "@/lib/workers/handlers/shared";
 import { mergeNegatives } from "@/lib/prompts/negatives";
 import { buildShotRefAssets, matchShotCharacters, matchShotProps, pickShotLocation } from "@/lib/prompts/shot-assets";
-import { buildAngleImagePrompt, buildAngleNegativePrompt, mergeAngleMediaId, type LocationAngle } from "@/lib/prompts/location-angles";
+import { buildAngleImagePrompt, buildAngleNegativePrompt, buildLocationMainPrompt, mergeAngleMediaId, type LocationAngle } from "@/lib/prompts/location-angles";
 import { buildPropMainPrompt, buildPropViewPrompt, buildPropNegativePrompt, type PropTier } from "@/lib/prompts/prop-views";
-import { buildCharacterMainPrompt, buildCharacterViewPrompt, buildCharacterNegativePrompt } from "@/lib/prompts/character-views";
+import { buildCharacterMainPrompt, buildCharacterViewPrompt, buildCharacterNegativePrompt, buildCharacterFacePrompt, REF_FACE_MATCH_PROMPT } from "@/lib/prompts/character-views";
 import { loadStyle } from "@/lib/prompts/style-pack";
 
 const CANDIDATE_COUNT = 3;
@@ -100,11 +100,7 @@ function assetImageHandler(kind: "character" | "location" | "prop"): TaskHandler
 
     if (kind === "character" && (task.payload as { face?: boolean }).face === true) {
       if (!row.lockedImageMediaId) throw new TaskError("NOT_LOCKED", "lock the front view before generating the face close-up", false);
-      const facePrompt = [
-        style.assetPrefix ?? style.prefix ?? "",
-        basePrompt,
-        "close-up head-and-shoulders portrait of the SAME character as the reference image — identical face, hairstyle and features. Front-facing, neutral calm expression, eyes looking at camera, clean pure white background, flat even studio lighting, sharp focus, no text, no labels, rich facial detail, high quality, 4K resolution",
-      ].filter(Boolean).join(". ").trim();
+      const facePrompt = buildCharacterFacePrompt(basePrompt, style);
       const media = await generateImage(
         { userId: task.userId, taskId: task.id, projectId: project.id },
         {
@@ -184,29 +180,20 @@ function assetImageHandler(kind: "character" | "location" | "prop"): TaskHandler
       return { view: viewIndex, mediaId: media.id };
     }
 
-    const refFraming =
-      "wide establishing reference view, unified perspective with consistent vanishing points, consistent logically-motivated lighting true to the scene's time of day, logically coherent spatial layout, empty scene with no people, no characters, no text, no labels, clean composition, rich environmental detail, high quality";
     const assetRatio = kind === "location" ? "16:9" : "9:16";
-    const stylePart =
-      kind === "location"
-        ? (style.locationPrefix ?? style.assetPrefix ?? style.prefix ?? "")
-        : (style.assetPrefix ?? style.prefix ?? "");
     // 墊臉 — user-uploaded reference face, only relevant to characters. Feeding
     // it as a reference lets the model lock the face while generating the front
     // view; see ref-face route for upload/removal.
     const refFace = kind === "character" ? row.refFaceMediaId : null;
     const refs = [refFace].filter((v): v is string => Boolean(v));
 
-    const refFacePrompt = refFace ? "The character's face MUST exactly match the face in the reference image." : "";
+    const refFacePrompt = refFace ? REF_FACE_MATCH_PROMPT : "";
     const refFaceNote = kind === "character" ? row.refFaceNote : "";
     const fullPrompt =
       kind === "character"
         ? buildCharacterMainPrompt(basePrompt, style, [refFacePrompt, refFaceNote].filter(Boolean))
-        : [stylePart, basePrompt, refFraming].filter(Boolean).join(". ").trim();
-    const negativePrompt =
-      kind === "location"
-        ? [style.negativePrompt, "people, person, human figure, crowd, silhouette of a person"].filter(Boolean).join(", ")
-        : style.negativePrompt;
+        : buildLocationMainPrompt(basePrompt, style);
+    const negativePrompt = kind === "location" ? buildAngleNegativePrompt(style) : style.negativePrompt;
 
     const mediaIds: string[] = [];
     for (let i = 0; i < candidateCount; i++) {

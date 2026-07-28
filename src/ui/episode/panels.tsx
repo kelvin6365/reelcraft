@@ -491,7 +491,7 @@ function AssetCard(props: {
       )}
       {props.desc && <p className="text-sm text-muted-foreground">{props.desc}</p>}
       {props.isProp && props.metaLine && <p className="text-xs text-muted-foreground">{props.metaLine}</p>}
-      {props.isProp && <PropPromptPreview propId={props.id} promptDraft={promptDraft} />}
+      <PromptPreview previewUrl={`${props.lockPath}/${props.id}/preview-prompt`} promptDraft={promptDraft} />
       {(props.isLocation || props.isProp || props.isCharacter) && props.angles && props.angles.length > 0 && (
         <div className="space-y-2 rounded-md border border-dashed p-3">
           <p className="text-xs font-medium text-muted-foreground">{props.isProp ? "道具視圖" : props.isCharacter ? "側面／背面視圖" : "AI 建議視角"}</p>
@@ -514,7 +514,7 @@ function AssetCard(props: {
                 indexParam={props.viewIndexParam ?? "angleIndex"}
                 promptParam={props.viewPromptParam ?? "anglePrompt"}
                 regenParam={props.viewRegenParam ?? "angle"}
-                propIdForPreview={props.isProp ? props.id : undefined}
+                previewBasePath={props.lockPath}
               />
             ))}
           </div>
@@ -705,7 +705,7 @@ function AssetViewRow({
   indexParam,
   promptParam,
   regenParam,
-  propIdForPreview,
+  previewBasePath,
 }: {
   basePath: string;
   parentId: string;
@@ -722,9 +722,9 @@ function AssetViewRow({
   indexParam: string;
   promptParam: string;
   regenParam: string;
-  // 得道具（Prop）先有 preview-prompt endpoint——Location 冇，所以呢個 prop 淨係
-  // isProp 嘅 call site 先會傳值，唔傳就唔顯示「查看實際 Prompt」toggle。
-  propIdForPreview?: string;
+  // 三種資產（character/location/prop）而家都有 preview-prompt endpoint——
+  // 傳入父資產嘅 API base（例如 "/api/characters"）先會顯示「查看實際 Prompt」toggle。
+  previewBasePath?: string;
 }) {
   const { busy, run } = useAction(qk.episode(episodeId));
   const { text, onChange, onBlur, saved } = useAutosaveField(prompt, (v) =>
@@ -748,7 +748,7 @@ function AssetViewRow({
       </div>
       <Textarea value={text} onChange={(e) => onChange(e.target.value)} onBlur={onBlur} rows={2} />
       <SavedHint saved={saved} />
-      {propIdForPreview && <PropPromptPreview propId={propIdForPreview} view={{ label, prompt: text }} />}
+      {previewBasePath && <PromptPreview previewUrl={`${previewBasePath}/${parentId}/preview-prompt`} view={{ label, prompt: text }} />}
       {url && (
         <button type="button" className="cursor-zoom-in" onClick={() => onLightbox({ src: url, type: "image", title: `${parentName} 視角：${label}` })}>
           <img src={url} alt={`${parentName} 視角：${label}`} className="aspect-video max-w-[200px] rounded-md object-cover" />
@@ -758,25 +758,33 @@ function AssetViewRow({
   );
 }
 
-// 「查看實際 Prompt」——生成前即時預覽，call POST /api/props/[id]/preview-prompt
-// 重用返嗰幾個 pure builder（buildPropMainPrompt/buildPropViewPrompt/...），保證
-// 預覽同實際生成用緊同一份邏輯，唔會兩邊飄散。摺疊區預設關閉，展開先 fetch，
-// 之後 draft 變動 debounce 500ms 自動重新 call。
-function PropPromptPreview({
-  propId,
+// 「查看實際 Prompt」——生成前即時預覽，call POST <previewUrl>（三種資產各有
+// 自己嘅 /api/{characters,locations,props}/[id]/preview-prompt route）。全部
+// 重用返生成 handler 果幾個 pure builder，保證預覽同實際生成用緊同一份邏輯，
+// 唔會兩邊飄散。摺疊區預設關閉，展開先 fetch，之後 draft 變動 debounce 500ms 自動重新 call。
+function PromptPreview({
+  previewUrl,
   promptDraft,
   view,
   effectVideo,
   physicalParams,
 }: {
-  propId: string;
+  previewUrl: string;
   promptDraft?: string;
   view?: { label: string; prompt: string };
   effectVideo?: boolean;
   physicalParams?: string;
 }) {
   const [open, setOpen] = useState(false);
-  const [result, setResult] = useState<{ mainPrompt?: string; viewPrompt?: string; videoPrompt?: string; negativePrompt?: string; sceneRefName?: string | null } | null>(null);
+  const [result, setResult] = useState<{
+    mainPrompt?: string;
+    viewPrompt?: string;
+    videoPrompt?: string;
+    facePrompt?: string;
+    negativePrompt?: string;
+    sceneRefName?: string | null;
+    hasRefFace?: boolean;
+  } | null>(null);
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
@@ -787,18 +795,23 @@ function PropPromptPreview({
     const timer = setTimeout(() => {
       const body = effectVideo ? { effectVideo: true, physicalParams } : view ? { view } : { prompt: promptDraft };
       api
-        .post<{ mainPrompt?: string; viewPrompt?: string; videoPrompt?: string; negativePrompt?: string; sceneRefName?: string | null }>(
-          `/api/props/${propId}/preview-prompt`,
-          body,
-        )
+        .post<{
+          mainPrompt?: string;
+          viewPrompt?: string;
+          videoPrompt?: string;
+          facePrompt?: string;
+          negativePrompt?: string;
+          sceneRefName?: string | null;
+          hasRefFace?: boolean;
+        }>(previewUrl, body)
         .then(setResult)
         .catch((e) => setErr(e instanceof Error ? e.message : "預覽失敗"))
         .finally(() => setLoading(false));
     }, 500);
     return () => clearTimeout(timer);
-  }, [open, propId, promptDraft, view?.prompt, effectVideo, physicalParams]);
+  }, [open, previewUrl, promptDraft, view?.prompt, effectVideo, physicalParams]);
 
-  const text = result?.mainPrompt ?? result?.viewPrompt ?? result?.videoPrompt ?? "";
+  const text = result?.mainPrompt ?? result?.viewPrompt ?? result?.facePrompt ?? result?.videoPrompt ?? "";
 
   return (
     <div className="space-y-1">
@@ -816,6 +829,7 @@ function PropPromptPreview({
           {!loading && !err && result && (
             <>
               {result.sceneRefName && <p className="text-muted-foreground">呢張圖會以場景「{result.sceneRefName}」嘅鎖定圖做參考</p>}
+              {result.hasRefFace && <p className="text-muted-foreground">會附上墊臉參考圖，face 會鎖住呢張臉</p>}
               <pre className="whitespace-pre-wrap break-words font-mono">{text}</pre>
               {result.negativePrompt && <p className="text-muted-foreground">Negative：{result.negativePrompt}</p>}
             </>
@@ -872,7 +886,7 @@ function EffectClipSlot({
           <Video /> {refVideoUrl ? "重生動態參考片段" : "生成動態參考片段"}
         </Button>
       </div>
-      <PropPromptPreview propId={propId} effectVideo physicalParams={text} />
+      <PromptPreview previewUrl={`/api/props/${propId}/preview-prompt`} effectVideo physicalParams={text} />
       {refVideoUrl && (
         // eslint-disable-next-line jsx-a11y/media-has-caption -- 內部資產參考片段，非公開內容
         <video src={refVideoUrl} controls className="max-w-[200px] rounded-md" title={`${name} 動態參考`} />

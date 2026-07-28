@@ -33,6 +33,20 @@ export const DEFAULT_CHARACTER_VIEWS: LocationAngle[] = [
   { label: "背面", prompt: "", mediaId: null },
 ];
 
+export const REF_FACE_MATCH_PROMPT = "The character's face MUST exactly match the face in the reference image.";
+
+export function buildCharacterFacePrompt(basePrompt: string, style: CharacterViewStyle): string {
+  const stylePart = style.assetPrefix ?? style.prefix ?? "";
+  return [
+    stylePart,
+    basePrompt,
+    "close-up head-and-shoulders portrait of the SAME character as the reference image — identical face, hairstyle and features. Front-facing, neutral calm expression, eyes looking at camera, clean pure white background, flat even studio lighting, sharp focus, no text, no labels, rich facial detail, high quality, 4K resolution",
+  ]
+    .filter(Boolean)
+    .join(". ")
+    .trim();
+}
+
 export function buildCharacterMainPrompt(basePrompt: string, style: CharacterViewStyle, extra: string[] = []): string {
   const stylePart = style.assetPrefix ?? style.prefix ?? "";
   return [stylePart, basePrompt, CHARACTER_FRONT_FRAMING, ...extra].filter(Boolean).join(". ").trim();
