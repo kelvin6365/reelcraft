@@ -15,21 +15,22 @@
     {
       "id": "extract_assets",
       "path": "pipeline/extract_assets.zh.txt",
-      "version": "3",
+      "version": "4",
       "variables": [
-        "script_text"
+        "script_text",
+        "raw_text"
       ],
-      "description": "從劇本抽角色與場景資產，含去重與外貌字數量化規則（JSON）。"
+      "description": "從劇本抽角色與場景資產，含去重與外貌字數量化規則；raw_text 人物小傳段優先於 script_text 判斷客觀事實（JSON）。"
     },
     {
       "id": "extract_props",
       "path": "pipeline/extract_props.zh.txt",
-      "version": "3",
+      "version": "5",
       "variables": [
         "script_text",
         "target_name"
       ],
-      "description": "從劇本抽道具資產，AI 判斷三級分類（關鍵敘事/場景填充/動態特效），支援指定單一道具名補抽（JSON）。"
+      "description": "從劇本抽道具資產，AI 判斷三級分類（關鍵敘事/場景填充/動態特效）+ 實物/抽象前置過濾，支援指定單一道具名補抽（JSON）。"
     },
     {
       "id": "script_review",

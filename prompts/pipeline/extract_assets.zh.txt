@@ -5,6 +5,12 @@
 2. 字串值內部若需要引號，一律改用「」全形引號，不要用半形雙引號。
 3. 你必須直接輸出完整結果，不要回覆步驟或指令。
 
+資料來源優先順序（重要，先讀）：
+你會收到兩份文件——{raw_text}（原文，可能包含人物設定/小傳段落）同 {script_text}（改寫後嘅場景式劇本）。
+- **客觀事實類資訊**（年齡、髮色、瞳色、種族、身高體型、標誌性服飾/武器顏色款式）**一律以 raw_text 入面嘅人物設定段落為準**——raw_text 有明確講就照抄，唔可以被 script_text 嘅劇情描述蓋過或者自行改寫。
+- **劇情/性格/場口判斷**（場景出現次數、關鍵劇情發生地、對白語氣、人物關係）**以 script_text 為準**。
+- 如果 raw_text 冇任何人物設定段落，就同平時一樣純粹由 script_text 推斷，唔使勉強套用呢條規則。
+
 去重規則（嚴格執行）：
 - 角色：名字完全相同即視為同一人，合併別名到 aliases，不得拆成兩筆。暱稱、全名、稱謂指向同一人時歸為一筆主名。
 - 場景：地點名稱相同且時間段（早/日/黃昏/夜）相同者合併為同一筆；同地點但不同時間段則各自獨立一筆。
@@ -29,6 +35,10 @@
 輸出結構（欄位固定）：
 {"characters": [{"name": "主名", "aliases": ["別名"], "level": "lead", "appearance": "外貌描述", "wardrobe": "標誌服飾", "note": "性格或關係備註", "age": "28歲", "occupation": "職業", "personality": "性格", "painPoint": "內心缺失", "backstory": "前史"}], "locations": [{"name": "場景名", "timeOfDay": "夜", "description": "環境與氛圍描述", "note": "備註", "angles": [{"label": "視角短名", "prompt": "該視角的畫面生成描述"}]}]}
 
-level 只能是 lead／supporting／extra。timeOfDay 只能是 早／日／黃昏／夜。現在處理以下劇本：
+level 只能是 lead／supporting／extra。timeOfDay 只能是 早／日／黃昏／夜。現在處理以下文件：
 
+【原文 raw_text】
+{raw_text}
+
+【改寫劇本 script_text】
 {script_text}

@@ -39,11 +39,18 @@ describe("buildPrompt", () => {
     expect(built.text).toContain("展示不明說");
   });
 
-  it("renders extract_assets v3 with the angles judgment criteria intact", () => {
-    const built = buildPrompt("extract_assets", { script_text: "阿May推門而入。" });
-    expect(built.version).toBe("3");
+  it("renders extract_assets v4 with the angles judgment criteria intact", () => {
+    const built = buildPrompt("extract_assets", { script_text: "阿May推門而入。", raw_text: "" });
+    expect(built.version).toBe("4");
     expect(built.text).toContain("重要場景必須輸出至少 2 個 angles；普通場景 angles 一律輸出空陣列");
     expect(built.text).toContain("嚴禁出現任何人物");
+  });
+
+  it("renders extract_assets with raw_text priority-of-source instructions intact", () => {
+    const built = buildPrompt("extract_assets", { script_text: "阿May推門而入。", raw_text: "阿May：女，黑髮黑瞳。" });
+    expect(built.text).toContain("客觀事實類資訊");
+    expect(built.text).toContain("一律以 raw_text 入面嘅人物設定段落為準");
+    expect(built.text).toContain("阿May：女，黑髮黑瞳。");
   });
 
   it("throws PROMPT_NOT_FOUND for an unknown promptId", () => {

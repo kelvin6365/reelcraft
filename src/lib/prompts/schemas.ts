@@ -93,8 +93,11 @@ export const ExtractPropsOutput = z.object({
       note: optionalText,
       sceneName: optionalText,
       physicalParams: optionalText,
+      // prompt 允許空字串——extract_props.zh.txt 明確要求「冇具體細節就留空,唔可以
+      // 自己作猜測性描述」,固定角度指示由 prop-views.ts 嘅 VIEW_ANGLE_HINTS 憑
+      // label 提供,view.prompt 淨係做額外補充,唔強制要求有內容。
       views: z
-        .array(z.object({ label: z.string().min(1), prompt: z.string().min(1) }))
+        .array(z.object({ label: z.string().min(1), prompt: optionalText }))
         .nullish()
         .transform((v) => v ?? []),
     }),

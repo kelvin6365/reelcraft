@@ -109,7 +109,7 @@ export const extractAssetsHandler: TaskHandler = async ({ task, reportProgress }
     { userId: task.userId, taskId: task.id, projectId: project.id, episodeId: episode.id, oneOff: promptOverridesFromTask(task) },
     models.text,
     "extract_assets",
-    { script_text: source.slice(0, 30_000) },
+    { script_text: source.slice(0, 30_000), raw_text: episode.rawText.slice(0, 30_000) },
   );
 
   reportProgress(60);
