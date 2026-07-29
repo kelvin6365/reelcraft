@@ -40,22 +40,33 @@ describe("mergeAngleMediaId (PR3 角度圖寫回)", () => {
 });
 
 describe("buildAngleImagePrompt", () => {
-  it("includes the style prefix, base prompt, angle prompt and consistency note", () => {
-    const prompt = buildAngleImagePrompt("a cozy tea house", { prompt: "from the entrance looking in" }, { locationPrefix: "cinematic style" });
-    expect(prompt).toContain("cinematic style");
-    expect(prompt).toContain("a cozy tea house");
-    expect(prompt).toContain("from the entrance looking in");
+  it("keeps the base env description (mood/lighting the reference image may not carry) but drops the style prefix (reference image already shows the art style)", () => {
+    const prompt = buildAngleImagePrompt("a cozy tea house, warm evening light", { label: "entrance looking toward the counter", prompt: "" });
+    expect(prompt).toContain("a cozy tea house, warm evening light");
     expect(prompt).toContain("same location as the reference image");
   });
 
-  it("falls back through locationPrefix -> assetPrefix -> prefix", () => {
-    expect(buildAngleImagePrompt("base", { prompt: "" }, { assetPrefix: "asset style" })).toContain("asset style");
-    expect(buildAngleImagePrompt("base", { prompt: "" }, { prefix: "generic style" })).toContain("generic style");
+  it("carries the label into the prompt as the actual camera-direction instruction — the bug this test guards: label used to be silently dropped, leaving the model no clue which way to point the camera", () => {
+    const prompt = buildAngleImagePrompt("base", { label: "巢穴入口望向光照区域", prompt: "" });
+    expect(prompt).toContain("巢穴入口望向光照区域");
+    expect(prompt).toContain("camera repositioned to this new viewpoint");
+  });
+
+  it("still includes angle.prompt (the physical-detail delta) when present, alongside the label", () => {
+    const prompt = buildAngleImagePrompt("base", { label: "牆邊望向入口", prompt: "牆上掛住一幅畫" });
+    expect(prompt).toContain("牆邊望向入口");
+    expect(prompt).toContain("牆上掛住一幅畫");
   });
 
   it("omits blank segments cleanly", () => {
-    const prompt = buildAngleImagePrompt("base", { prompt: "" }, {});
+    const prompt = buildAngleImagePrompt("base", { label: "", prompt: "" });
     expect(prompt.startsWith("base")).toBe(true);
+  });
+
+  it("starts with the consistency note when basePrompt, label and angle.prompt are all empty", () => {
+    const prompt = buildAngleImagePrompt("", { label: "", prompt: "" });
+    expect(prompt.startsWith("same location as the reference image")).toBe(true);
+    expect(prompt).toContain("viewed from a different camera position");
   });
 });
 

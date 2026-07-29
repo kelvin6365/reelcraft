@@ -24,7 +24,7 @@ export const POST = withAuth(
 
     if (body.view) {
       return ok({
-        viewPrompt: buildAngleImagePrompt(basePrompt, body.view, style),
+        viewPrompt: buildAngleImagePrompt(basePrompt, body.view),
         negativePrompt: buildAngleNegativePrompt(style),
       });
     }

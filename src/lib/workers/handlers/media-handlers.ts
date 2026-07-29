@@ -126,7 +126,7 @@ function assetImageHandler(kind: "character" | "location" | "prop"): TaskHandler
         { userId: task.userId, taskId: task.id, projectId: project.id },
         {
           modelKey: models.image,
-          prompt: buildAngleImagePrompt(basePrompt, angle, style),
+          prompt: buildAngleImagePrompt(basePrompt, angle),
           negativePrompt: buildAngleNegativePrompt(style),
           aspectRatio: "16:9",
           resolution: "4K",

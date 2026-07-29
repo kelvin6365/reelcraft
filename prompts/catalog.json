@@ -15,7 +15,7 @@
     {
       "id": "extract_assets",
       "path": "pipeline/extract_assets.zh.txt",
-      "version": "9",
+      "version": "10",
       "variables": [
         "script_text",
         "raw_text"
