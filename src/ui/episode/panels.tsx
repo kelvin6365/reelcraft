@@ -505,6 +505,7 @@ function AssetCard(props: {
                 viewIndex={i}
                 label={angle.label}
                 prompt={angle.prompt}
+                reason={angle.reason}
                 mediaId={angle.mediaId}
                 url={angle.url}
                 locked={props.locked}
@@ -696,6 +697,7 @@ function AssetViewRow({
   viewIndex,
   label,
   prompt,
+  reason,
   mediaId,
   url,
   locked,
@@ -713,6 +715,7 @@ function AssetViewRow({
   viewIndex: number;
   label: string;
   prompt: string;
+  reason?: string;
   mediaId: string | null;
   url: string | null;
   locked: boolean;
@@ -746,6 +749,7 @@ function AssetViewRow({
           <RefreshCw /> {mediaId ? "重生" : "生成"}
         </Button>
       </div>
+      {reason && <p className="text-xs text-muted-foreground">AI 判斷依據：{reason}</p>}
       <Textarea value={text} onChange={(e) => onChange(e.target.value)} onBlur={onBlur} rows={2} />
       <SavedHint saved={saved} />
       {previewBasePath && <PromptPreview previewUrl={`${previewBasePath}/${parentId}/preview-prompt`} view={{ label, prompt: text }} />}

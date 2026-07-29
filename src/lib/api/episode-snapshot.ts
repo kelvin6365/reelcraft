@@ -170,7 +170,7 @@ export async function buildEpisodeView(userId: string, episodeId: string) {
 
   const { getStorage } = await import("@/lib/storage");
   const storage = getStorage();
-  type LocationAngle = { label: string; prompt: string; mediaId: string | null };
+  type LocationAngle = { label: string; prompt: string; mediaId: string | null; reason?: string };
   const allCandidateIds = [
     ...characters.flatMap((c) => c.candidates as string[]),
     ...characters.flatMap((c) => (c.views as LocationAngle[]).map((v) => v.mediaId).filter((id): id is string => !!id)),

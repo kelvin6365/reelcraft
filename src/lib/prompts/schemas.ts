@@ -69,8 +69,10 @@ export const ExtractAssetsOutput = z.object({
       description: z.string(),
       note: optionalText,
       // AI 建議視角 (S2) — 重要場景（出現 ≥2 場戲或關鍵劇情發生地）至少 2 個，普通場景為空陣列
+      // prompt 允許空字串——圖生圖以已鎖定主圖做參考，冇具體細節就留空，唔可以自己作
+      // 猜測性描述；reason 記低判斷依據（點解值得建呢個角度），純文字唔係畫面描述。
       angles: z
-        .array(z.object({ label: z.string().min(1), prompt: z.string().min(1) }))
+        .array(z.object({ label: z.string().min(1), prompt: optionalText, reason: optionalText }))
         .nullish()
         .transform((v) => v ?? []),
     }),

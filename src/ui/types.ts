@@ -130,8 +130,9 @@ export interface LocationView {
   lockedImageUrl: string | null;
   locked: boolean;
   activeTask?: ActiveTaskView | null;
-  // AI 建議視角 (extract_assets v3) — mediaId/url 要到 PR3 先會有值
-  angles: { label: string; prompt: string; mediaId: string | null; url: string | null }[];
+  // AI 建議視角 (extract_assets v3) — mediaId/url 要到 PR3 先會有值；reason 係
+  // AI 判斷依據 (extract_assets v6)，純文字唔係畫面描述
+  angles: { label: string; prompt: string; mediaId: string | null; url: string | null; reason?: string }[];
 }
 
 export interface PropView {

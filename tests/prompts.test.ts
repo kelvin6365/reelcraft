@@ -39,11 +39,20 @@ describe("buildPrompt", () => {
     expect(built.text).toContain("展示不明說");
   });
 
-  it("renders extract_assets v5 with the angles judgment criteria intact", () => {
+  it("renders extract_assets v9 with the angles judgment criteria intact", () => {
     const built = buildPrompt("extract_assets", { script_text: "阿May推門而入。", raw_text: "" });
-    expect(built.version).toBe("5");
+    expect(built.version).toBe("9");
     expect(built.text).toContain("重要場景必須輸出至少 2 個 angles；普通場景 angles 一律輸出空陣列");
-    expect(built.text).toContain("嚴禁出現任何人物");
+  });
+
+  it("renders extract_assets with the angle-is-spatial-only-no-plot-events instruction intact", () => {
+    const built = buildPrompt("extract_assets", { script_text: "阿May推門而入。", raw_text: "" });
+    expect(built.text).toContain("唔可以用場口事件或劇情動作命名");
+    expect(built.text).toContain("亦唔可以出現任何指涉人物嘅字眼");
+    expect(built.text).toContain("prompt 預設留空");
+    expect(built.text).toContain("圖生圖");
+    expect(built.text).toContain("反面例子");
+    expect(built.text).toContain("填 reason");
   });
 
   it("renders extract_assets with raw_text priority-of-source instructions intact", () => {
@@ -201,18 +210,23 @@ describe("schema parsing", () => {
     expect(out.locations[0].angles).toEqual([]);
   });
 
-  it("rejects an extract_assets angle with an empty label or prompt", () => {
+  it("rejects an extract_assets angle with an empty label", () => {
     const badLabel = JSON.stringify({
       characters: [],
       locations: [{ name: "天台", timeOfDay: "夜", description: "天台", angles: [{ label: "", prompt: "細節描述" }] }],
     });
     expect(() => parseWithSchema(badLabel, ExtractAssetsOutput)).toThrow();
+  });
 
-    const badPrompt = JSON.stringify({
+  it("allows an extract_assets angle with an empty prompt/reason — img2img needs no redundant description", () => {
+    const raw = JSON.stringify({
       characters: [],
-      locations: [{ name: "天台", timeOfDay: "夜", description: "天台", angles: [{ label: "遠望", prompt: "" }] }],
+      locations: [{ name: "天台", timeOfDay: "夜", description: "天台", angles: [{ label: "遠望", prompt: "", reason: "" }] }],
     });
-    expect(() => parseWithSchema(badPrompt, ExtractAssetsOutput)).toThrow();
+    const out = parseWithSchema(raw, ExtractAssetsOutput);
+    const angles = out.locations[0]?.angles ?? [];
+    expect(angles[0]?.prompt).toBe("");
+    expect(angles[0]?.reason).toBe("");
   });
 
   it("parses a valid build_scenes output", () => {

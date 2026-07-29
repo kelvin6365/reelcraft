@@ -6,6 +6,9 @@ export interface LocationAngle {
   label: string;
   prompt: string;
   mediaId: string | null;
+  // 呢個角度點解值得生成——AI 判斷依據（例：「出現於3場戲」「衝突爆發嘅高潮場口」），
+  // 淨係 location angles 有；character/prop views 用返呢個 type 但無呢個概念，留空。
+  reason?: string;
 }
 
 export interface AngleStyle {
