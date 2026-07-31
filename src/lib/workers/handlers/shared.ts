@@ -62,11 +62,13 @@ export async function textCallJson<Id extends OutputSchemaId>(
     const content = attempt === 1 ? p.text : `${p.text}\n\n【上次輸出無效，錯誤：${lastError.slice(0, 300)}。請只輸出合法 JSON。】`;
     const result = await callModel(
       { ...ctx, promptId, promptVersion: p.version, promptSource: p.source, renderedPrompt: content },
-      // maxTokens: without an explicit cap the provider's own default applies,
-      // which can be too small for the heaviest schema (extract_assets on a
-      // many-character script) and truncate mid-object into invalid JSON.
-      // 8192 covers it comfortably at negligible cost.
-      { modelKey: modelKey as `${string}::${string}`, messages: [{ role: "user", content }], jsonMode: true, maxTokens: 8192 },
+      // No maxTokens cap — this path also covers episode_split (long-novel
+      // multi-episode splitting, 第 2 站 · 劇本 "整部規劃" mode), whose output
+      // legitimately scales with source length. A blanket cap tuned for
+      // extract_assets would silently truncate that. Left uncapped (provider
+      // default applies) since it turned out not to be the fix for the
+      // extract_assets flakiness anyway — see the attempt-count bump above.
+      { modelKey: modelKey as `${string}::${string}`, messages: [{ role: "user", content }], jsonMode: true },
     );
     try {
       const parsed = schema.safeParse(safeParseJson(result.text));
