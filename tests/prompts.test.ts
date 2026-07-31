@@ -39,10 +39,16 @@ describe("buildPrompt", () => {
     expect(built.text).toContain("展示不明說");
   });
 
-  it("renders extract_assets v12 with the angles judgment criteria intact", () => {
+  it("renders extract_assets v15 with the angles judgment criteria intact", () => {
     const built = buildPrompt("extract_assets", { script_text: "阿May推門而入。", raw_text: "" });
-    expect(built.version).toBe("12");
+    expect(built.version).toBe("15");
     expect(built.text).toContain("重要場景必須輸出至少 2 個 angles；普通場景 angles 一律輸出空陣列");
+  });
+
+  it("renders extract_assets with the character-as-spatial-anchor ban intact — real-browser QA caught 王楚所在位置望向其他队员 leaking a character name straight into the image-gen prompt via label. Kept deliberately minimal (extends the existing enumerated list + existing reverse-example sentence) after a heavier first draft reproducibly destabilized gemini-2.5-flash-lite into malformed JSON on this exact 6-character script — verified via real A/B: v12 baseline succeeded twice, the heavier draft failed twice, this minimal version succeeded", () => {
+    const built = buildPrompt("extract_assets", { script_text: "阿May推門而入。", raw_text: "" });
+    expect(built.text).toContain("用角色個人或者隊伍做參照點都算");
+    expect(built.text).toContain("王楚所在位置望向其他队员");
   });
 
   it("renders extract_assets with the angle-is-spatial-only-no-plot-events instruction intact", () => {
@@ -58,7 +64,7 @@ describe("buildPrompt", () => {
   it("renders extract_assets with the label-feeds-directly-into-generateImage warning and dedicated label self-check intact — real-browser QA caught 眾人 leaking through reposition the camera to: {label}", () => {
     const built = buildPrompt("extract_assets", { script_text: "阿May推門而入。", raw_text: "" });
     expect(built.text).toContain("reposition the camera to");
-    expect(built.text).toContain("巨龍消亡后，眾人所在區域");
+    expect(built.text).toContain("眾人所在區域");
     expect(built.text).toContain("label 同 prompt 各自逐個檢查一次");
   });
 
