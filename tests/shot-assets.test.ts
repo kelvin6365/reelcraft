@@ -33,21 +33,51 @@ const locs: RefLocation[] = [
   { name: "天台" },
 ];
 
-describe("pickShotLocation (⑥)", () => {
-  it("returns the single locked location without scanning", () => {
-    expect(pickShotLocation("任何文字", [locs[0]])?.name).toBe("咖啡店");
-  });
+const suffixedLocs: RefLocation[] = [
+  { name: "陳琳娜家客廳·日" },
+  { name: "大地亚龙巢穴·日" },
+];
 
+describe("pickShotLocation (⑥)", () => {
   it("picks the location the scene actually mentions (was: always index 0)", () => {
     expect(pickShotLocation("兩人走上天台，風很大", locs)?.name).toBe("天台");
   });
 
-  it("falls back to the first when the scene mentions none", () => {
-    expect(pickShotLocation("室內某處", locs)?.name).toBe("咖啡店");
+  it("returns undefined when the scene matches nothing (was: silently returned index 0 → wrong location image)", () => {
+    expect(pickShotLocation("室內某處", locs)).toBeUndefined();
+  });
+
+  it("returns undefined for a lone locked location the scene does not match (was: handed it over unchecked)", () => {
+    expect(pickShotLocation("任何文字", [locs[0]])).toBeUndefined();
+  });
+
+  it("still returns the lone locked location when it does match", () => {
+    expect(pickShotLocation("兩人坐喺咖啡店", [locs[0]])?.name).toBe("咖啡店");
+  });
+
+  it("matches scene.location against the ·時段 suffix on locked names", () => {
+    expect(pickShotLocation("", suffixedLocs, "大地亚龙巢穴")?.name).toBe("大地亚龙巢穴·日");
+  });
+
+  it("matches when the script writes 巢穴外 but the locked name has no 外 (the 37/37 regression)", () => {
+    expect(pickShotLocation("陳琳娜家客廳裡的燈亮著", suffixedLocs, "大地亚龙巢穴外")?.name).toBe("大地亚龙巢穴·日");
+  });
+
+  it("prefers scene.location over whatever the script text happens to mention", () => {
+    expect(pickShotLocation("提到咖啡店三個字", [...locs, { name: "天台·夜" }], "天台")?.name).toBe("天台");
+  });
+
+  it("falls back to script text when scene.location is empty (legacy rows)", () => {
+    expect(pickShotLocation("兩人走上天台·夜色下風很大", suffixedLocs, "")).toBeUndefined();
+    expect(pickShotLocation("鏡頭掃過大地亚龙巢穴", suffixedLocs, "")?.name).toBe("大地亚龙巢穴·日");
   });
 
   it("returns undefined when there are no locked locations", () => {
     expect(pickShotLocation("天台", [])).toBeUndefined();
+  });
+
+  it("ignores blank locked names", () => {
+    expect(pickShotLocation("天台", [{ name: "  " }])).toBeUndefined();
   });
 });
 

@@ -170,6 +170,12 @@ model Scene {
   // 空間契約 (spatial blocking): 每角色畫面左右位/面向 + 180° 軸 + 關鍵道具，
   // storyboard_plan 一次過鎖定，之後每鏡生圖必守 — 連戲唔靠彩數
   blocking    Json    @default("{}")
+  // build_scenes 直接輸出嘅場景地點／時段（見 prompts/pipeline/build_scenes.zh.txt）。
+  // 呢兩個欄位係「每鏡生圖揀邊張場景參考圖」嘅權威來源 —— pickShotLocation
+  // 拎 location 同鎖定 Location（名為 `地點·時段`）做正規化比對，唔再靠劇本原文估。
+  // 空字串 = 舊資料或模型冇輸出，會退回劇本原文 substring；仍然撞唔到就唔畀場景參考圖。
+  location    String  @default("")
+  timeOfDay   String  @default("")
 
   shots Shot[]
 

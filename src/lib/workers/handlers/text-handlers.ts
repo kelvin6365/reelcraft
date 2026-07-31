@@ -258,6 +258,9 @@ export const buildScenesHandler: TaskHandler = async ({ task, reportProgress }) 
         content: slices[i].content,
         anchorStart: slices[i].anchorStart,
         anchorEnd: slices[i].anchorEnd,
+        // 模型輸出嘅地點／時段——落 DB 做每鏡揀場景參考圖嘅權威來源（Scene.location 註釋）
+        location: meta?.location ?? "",
+        timeOfDay: meta?.timeOfDay ?? "",
       },
     });
   }

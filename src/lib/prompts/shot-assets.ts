@@ -32,10 +32,53 @@ export function matchShotCharacters(shotCharNames: string[], locked: RefCharacte
   });
 }
 
-export function pickShotLocation(sceneText: string, locked: RefLocation[]): RefLocation | undefined {
-  if (locked.length <= 1) return locked[0];
-  const hay = norm(sceneText);
-  return locked.find((l) => l.name.trim() !== "" && hay.includes(norm(l.name))) ?? locked[0];
+// 鎖定 Location 嘅名係 extract_assets 砌出嚟嘅 `地點·時段`（text-handlers.ts:143），
+// 但劇本原文／build_scenes 嘅 scene.location 唔會帶時段後綴。兩邊都剝走先可以比。
+const stripTimeOfDay = (s: string) => s.replace(/[·・‧](?:早|日|黃昏|黄昏|夜)\s*$/u, "");
+const baseName = (s: string) => norm(stripTimeOfDay(s));
+// 單字地點（「屋」「山」）做 substring 會亂咬，只准整名相等
+const MIN_FUZZY_LEN = 2;
+
+// 揀呢個鏡頭要用邊個鎖定場景嘅參考圖。
+// 優先用 build_scenes 寫入 DB 嘅 scene.location（權威來源），撞唔到先退回劇本原文 substring。
+// 兩者都撞唔到 → 返 undefined（唔畀場景參考圖）。畀錯場景圖比冇場景圖差好多：
+// 冇圖模型會照 prompt 文字描述畫，畀錯圖就會成個鏡頭畫咗喺第二個地方。
+export function pickShotLocation(
+  sceneText: string,
+  locked: RefLocation[],
+  sceneLocation?: string | null,
+  ctx?: { episodeId?: string; sceneId?: string },
+): RefLocation | undefined {
+  const candidates = locked.filter((l) => l.name.trim() !== "");
+  if (candidates.length === 0) return undefined;
+
+  const wanted = baseName(sceneLocation ?? "");
+  if (wanted !== "") {
+    const exact = candidates.find((l) => baseName(l.name) === wanted);
+    if (exact) return exact;
+    // 「大地亚龙巢穴外」vs 鎖定「大地亚龙巢穴·日」——兩邊互相包含都算命中，取最長名嗰個
+    const contained = candidates
+      .filter((l) => {
+        const nm = baseName(l.name);
+        return nm.length >= MIN_FUZZY_LEN && wanted.length >= MIN_FUZZY_LEN && (nm.includes(wanted) || wanted.includes(nm));
+      })
+      .sort((a, b) => baseName(b.name).length - baseName(a.name).length)[0];
+    if (contained) return contained;
+  }
+
+  const hay = baseName(sceneText);
+  const inScript = candidates.find((l) => {
+    const nm = baseName(l.name);
+    return nm.length >= MIN_FUZZY_LEN && hay.includes(nm);
+  });
+  if (inScript) return inScript;
+
+  console.warn(
+    `[pickShotLocation] no location match — episode=${ctx?.episodeId ?? "?"} scene=${ctx?.sceneId ?? "?"} ` +
+      `scene.location=${JSON.stringify(sceneLocation ?? "")} locked=[${candidates.map((l) => l.name).join(", ")}] ` +
+      "→ 唔畀場景參考圖",
+  );
+  return undefined;
 }
 
 // keyProps 係 storyboard_plan 產出嘅自由文本道具字串（SceneBlocking.keyProps），

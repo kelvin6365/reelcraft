@@ -273,7 +273,7 @@ export const imageShotHandler: TaskHandler = async ({ task, reportProgress }) =>
   }
   const scene = await prisma.scene.findUnique({
     where: { id: shot.sceneId },
-    select: { blocking: true, summary: true, content: true },
+    select: { blocking: true, summary: true, content: true, location: true },
   });
   const { episode, project } = await loadEpisodeWithProject({ ...task, episodeId: shot.episodeId });
   const models = await resolveTaskModels(task, project);
@@ -289,7 +289,12 @@ export const imageShotHandler: TaskHandler = async ({ task, reportProgress }) =>
     shotCharNames,
     lockedCharacters.map((c) => ({ name: c.name, aliases: c.aliases as string[] })),
   ).map((m) => lockedCharacters.find((c) => c.name === m.name)!);
-  const shotLocation = pickShotLocation(`${scene?.summary ?? ""}\n${scene?.content ?? ""}`, lockedLocations);
+  const shotLocation = pickShotLocation(
+    `${scene?.summary ?? ""}\n${scene?.content ?? ""}`,
+    lockedLocations,
+    scene?.location,
+    { episodeId: shot.episodeId, sceneId: shot.sceneId },
+  );
   const blockingKeyProps = ((scene?.blocking as { keyProps?: string[] } | null)?.keyProps ?? []) as string[];
   const shotProps = matchShotProps(
     blockingKeyProps,
