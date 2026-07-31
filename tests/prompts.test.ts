@@ -39,9 +39,9 @@ describe("buildPrompt", () => {
     expect(built.text).toContain("展示不明說");
   });
 
-  it("renders extract_assets v11 with the angles judgment criteria intact", () => {
+  it("renders extract_assets v12 with the angles judgment criteria intact", () => {
     const built = buildPrompt("extract_assets", { script_text: "阿May推門而入。", raw_text: "" });
-    expect(built.version).toBe("11");
+    expect(built.version).toBe("12");
     expect(built.text).toContain("重要場景必須輸出至少 2 個 angles；普通場景 angles 一律輸出空陣列");
   });
 
@@ -55,9 +55,9 @@ describe("buildPrompt", () => {
     expect(built.text).toContain("填 reason");
   });
 
-  it("renders extract_assets with the label-feeds-directly-into-generateImage warning and dedicated label self-check intact — real-browser QA caught 眾人 leaking through camera repositioned to: {label}", () => {
+  it("renders extract_assets with the label-feeds-directly-into-generateImage warning and dedicated label self-check intact — real-browser QA caught 眾人 leaking through reposition the camera to: {label}", () => {
     const built = buildPrompt("extract_assets", { script_text: "阿May推門而入。", raw_text: "" });
-    expect(built.text).toContain("camera repositioned to this new viewpoint");
+    expect(built.text).toContain("reposition the camera to");
     expect(built.text).toContain("巨龍消亡后，眾人所在區域");
     expect(built.text).toContain("label 同 prompt 各自逐個檢查一次");
   });
@@ -65,7 +65,7 @@ describe("buildPrompt", () => {
   it("renders extract_assets with the location description no-people instruction intact — description feeds directly into every image gen call as basePrompt", () => {
     const built = buildPrompt("extract_assets", { script_text: "阿May推門而入。", raw_text: "" });
     expect(built.text).toContain("場景 description 判斷準則");
-    expect(built.text).toContain("呢個欄位會直接原封不動傳落去生圖做 base prompt");
+    expect(built.text).toContain("呢個欄位會直接原封不動傳落去生圖做主圖嘅 base prompt");
     expect(built.text).toContain("陈琳娜站在窗边，后有敲门声");
   });
 

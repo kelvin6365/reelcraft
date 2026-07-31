@@ -40,33 +40,31 @@ describe("mergeAngleMediaId (PR3 角度圖寫回)", () => {
 });
 
 describe("buildAngleImagePrompt", () => {
-  it("keeps the base env description (mood/lighting the reference image may not carry) but drops the style prefix (reference image already shows the art style)", () => {
-    const prompt = buildAngleImagePrompt("a cozy tea house, warm evening light", { label: "entrance looking toward the counter", prompt: "" });
-    expect(prompt).toContain("a cozy tea house, warm evening light");
-    expect(prompt).toContain("same location as the reference image");
-  });
+  // 圖生圖用緊已鎖定主圖做參考（generateImage 見到 referenceMediaIds 就自動轉用
+  // provider 嘅 /edit 端點），所以呢個 builder 唔再重複成段環境描述——淨係一句
+  // 編輯指令，畫風/光線/佈局由參考圖本身帶。
 
   it("carries the label into the prompt as the actual camera-direction instruction — the bug this test guards: label used to be silently dropped, leaving the model no clue which way to point the camera", () => {
-    const prompt = buildAngleImagePrompt("base", { label: "巢穴入口望向光照区域", prompt: "" });
+    const prompt = buildAngleImagePrompt({ label: "巢穴入口望向光照区域", prompt: "" });
     expect(prompt).toContain("巢穴入口望向光照区域");
-    expect(prompt).toContain("camera repositioned to this new viewpoint");
+    expect(prompt).toContain("reposition the camera to");
   });
 
   it("still includes angle.prompt (the physical-detail delta) when present, alongside the label", () => {
-    const prompt = buildAngleImagePrompt("base", { label: "牆邊望向入口", prompt: "牆上掛住一幅畫" });
+    const prompt = buildAngleImagePrompt({ label: "牆邊望向入口", prompt: "牆上掛住一幅畫" });
     expect(prompt).toContain("牆邊望向入口");
     expect(prompt).toContain("牆上掛住一幅畫");
   });
 
-  it("omits blank segments cleanly", () => {
-    const prompt = buildAngleImagePrompt("base", { label: "", prompt: "" });
-    expect(prompt.startsWith("base")).toBe(true);
+  it("omits blank segments cleanly and falls back to a generic viewpoint when label is empty", () => {
+    const prompt = buildAngleImagePrompt({ label: "", prompt: "" });
+    expect(prompt).toContain("a different viewpoint");
+    expect(prompt).toContain("keep the same architecture, furniture, materials and lighting logic");
   });
 
-  it("starts with the consistency note when basePrompt, label and angle.prompt are all empty", () => {
-    const prompt = buildAngleImagePrompt("", { label: "", prompt: "" });
-    expect(prompt.startsWith("same location as the reference image")).toBe(true);
-    expect(prompt).toContain("viewed from a different camera position");
+  it("always includes the no-people guard regardless of label/prompt content", () => {
+    const prompt = buildAngleImagePrompt({ label: "窗邊", prompt: "" });
+    expect(prompt).toContain("no people, no characters, no text, no labels");
   });
 });
 
