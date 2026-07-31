@@ -38,8 +38,12 @@ export async function loadEpisodeWithProject(task: Task): Promise<{ episode: Epi
   return { episode: rest as Episode, project };
 }
 
-// resolvePrompt → callModel → parse → zod validate, with one corrective retry
-// on bad JSON/schema (the retry appends the error so the model can fix itself).
+// resolvePrompt → callModel → parse → zod validate, with corrective retries on
+// bad JSON/schema (each retry appends the error so the model can fix itself).
+// 3 attempts, not 2 — real QA on a 6-character stress-test script showed
+// gemini-2.5-flash-lite occasionally drops an entire top-level key (e.g.
+// "locations") even on the corrective 2nd attempt, so a 3rd chance measurably
+// improves the odds without materially raising cost (cheap "lite" tier).
 export async function textCallJson<Id extends OutputSchemaId>(
   ctx: { userId: string; taskId: string; projectId?: string; episodeId?: string; oneOff?: Record<string, string> },
   modelKey: string,
@@ -54,11 +58,15 @@ export async function textCallJson<Id extends OutputSchemaId>(
   });
 
   let lastError = "";
-  for (let attempt = 1; attempt <= 2; attempt++) {
+  for (let attempt = 1; attempt <= 3; attempt++) {
     const content = attempt === 1 ? p.text : `${p.text}\n\n【上次輸出無效，錯誤：${lastError.slice(0, 300)}。請只輸出合法 JSON。】`;
     const result = await callModel(
       { ...ctx, promptId, promptVersion: p.version, promptSource: p.source, renderedPrompt: content },
-      { modelKey: modelKey as `${string}::${string}`, messages: [{ role: "user", content }], jsonMode: true },
+      // maxTokens: without an explicit cap the provider's own default applies,
+      // which can be too small for the heaviest schema (extract_assets on a
+      // many-character script) and truncate mid-object into invalid JSON.
+      // 8192 covers it comfortably at negligible cost.
+      { modelKey: modelKey as `${string}::${string}`, messages: [{ role: "user", content }], jsonMode: true, maxTokens: 8192 },
     );
     try {
       const parsed = schema.safeParse(safeParseJson(result.text));
