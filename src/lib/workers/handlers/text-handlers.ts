@@ -18,6 +18,19 @@ import {
 import type { Character, Prisma } from "@prisma/client";
 import { DEFAULT_CHARACTER_VIEWS } from "@/lib/prompts/character-views";
 
+// 分鏡三個補完階段（攝影／表演／細節）各自獨立呼叫，逐鏡對應 plan 嘅 index。
+// 模型少交鏡時下面會寫入 null，該鏡就冇布光／表演／景別依據 —— 生圖階段唯有自己作，
+// 成集光影唔連戲。呢種缺口一直係完全靜默嘅，起碼要喺 worker log 見到。
+function warnIncompleteStages(sceneId: string, planned: number, stages: [string, number][]): void {
+  for (const [name, covered] of stages) {
+    if (covered >= planned) continue;
+    console.warn(
+      `[storyboard] scene=${sceneId} ${name} 只覆蓋 ${covered}/${planned} 鏡 — ` +
+        `欠嗰 ${planned - covered} 鏡會寫入 null，生圖冇依據`,
+    );
+  }
+}
+
 interface CharacterBioJson { age?: string; occupation?: string; personality?: string; painPoint?: string; backstory?: string }
 function formatCharacterBios(characters: Character[]): string {
   return characters
@@ -321,6 +334,15 @@ export const storyboardRunHandler: TaskHandler = async ({ task, reportProgress }
     const photoByIdx = new Map(photo.shots.map((x) => [x.index, x]));
     const actingByIdx = new Map(acting.shots.map((x) => [x.index, x]));
     const detailByIdx = new Map(detail.shots.map((x) => [x.index, x]));
+
+    // 三個階段各自獨立呼叫，模型有機會少交鏡（觀察過：26 鏡嘅場景 photography 只返 6 鏡）。
+    // 少交嘅鏡下面會寫入 null，生圖階段就冇布光／表演依據，靠模型自己作 —— 成集光影唔連戲。
+    // adapter 而家會擋截斷，所以行到呢度嘅缺口係模型真係少交，唔會自己好返：一定要留痕。
+    warnIncompleteStages(scene.id, plan.shots.length, [
+      ["photography", photoByIdx.size],
+      ["acting", actingByIdx.size],
+      ["detail", detailByIdx.size],
+    ]);
 
     for (const shot of plan.shots) {
       globalIndex++;

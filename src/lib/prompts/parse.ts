@@ -36,7 +36,18 @@ export function safeParseJson(raw: string): unknown {
       // close a truncated tail (the model hit max_tokens mid-array/object). Better
       // a slightly-shorter valid structure than failing the whole storyboard.
       try {
-        return JSON.parse(repairTruncatedJson(escaped));
+        const repaired = repairTruncatedJson(escaped);
+        const value = JSON.parse(repaired);
+        // Reaching here means the model's output was cut mid-structure and we
+        // silently closed it. The result parses, but is missing however much the
+        // model never emitted — so it must leave a trace (this fallback used to
+        // be completely invisible; whole storyboard passes went missing with
+        // zero log). The adapter now rejects finish_reason=length upstream, so
+        // anything landing here is a truncation the provider did not report.
+        console.warn(
+          `[json-repair] repaired an unparseable LLM JSON output (truncated tail and/or dangling comma): raw=${raw.length} chars, repaired=${repaired.length} chars, tail=${JSON.stringify(raw.slice(-120))}`,
+        );
+        return value;
       } catch (err) {
         throw new JsonParseError(`output is not valid JSON: ${String(err)}`, raw);
       }

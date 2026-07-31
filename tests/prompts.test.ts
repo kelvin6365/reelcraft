@@ -1,7 +1,16 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { buildPrompt, clearPromptCache, PromptError } from "@/lib/prompts/build-prompt";
 import { safeParseJson, parseWithSchema, JsonParseError, restoreCjkQuotes } from "@/lib/prompts/parse";
-import { VoiceAnalyzeOutput, ScenesOutput, ScriptReviewOutput, ExtractAssetsOutput } from "@/lib/prompts/schemas";
+import {
+  VoiceAnalyzeOutput,
+  ScenesOutput,
+  ScriptReviewOutput,
+  ExtractAssetsOutput,
+  PhotographyOutput,
+  ActingOutput,
+  DetailOutput,
+  ImagePromptShotOutput,
+} from "@/lib/prompts/schemas";
 
 describe("buildPrompt", () => {
   beforeEach(() => clearPromptCache());
@@ -254,5 +263,38 @@ describe("schema parsing", () => {
     const out = parseWithSchema(raw, ScenesOutput);
     expect(out.scenes).toHaveLength(1);
     expect(out.scenes[0].startAnchor).toBe("阿May推門");
+  });
+});
+
+// A truncated response that repairTruncatedJson closes can come back as an empty
+// or short-tailed structure. These schemas are the layer that must reject it —
+// previously `{"shots":[]}` validated and every shot got a null pass written.
+describe("truncation guards in the per-shot schemas", () => {
+  const photoShot = { index: 1, lighting: "窗光", dof: "shallow", tone: "冷" };
+  const actingShot = { index: 1, expression: "冷笑", bodyAction: "轉身" };
+  const detailShot = { index: 1, shotSize: "中景", angle: "平視", camera: "固定" };
+
+  it("rejects an empty shots array on photography / acting / detail", () => {
+    expect(PhotographyOutput.safeParse({ shots: [] }).success).toBe(false);
+    expect(ActingOutput.safeParse({ shots: [] }).success).toBe(false);
+    expect(DetailOutput.safeParse({ shots: [] }).success).toBe(false);
+  });
+
+  it("still accepts a one-shot output on all three", () => {
+    expect(PhotographyOutput.safeParse({ shots: [photoShot] }).success).toBe(true);
+    expect(ActingOutput.safeParse({ shots: [actingShot] }).success).toBe(true);
+    expect(DetailOutput.safeParse({ shots: [detailShot] }).success).toBe(true);
+  });
+
+  it("rejects an image prompt too short to still carry its mandated tail", () => {
+    // 491 chars was the longest real truncated prompt observed in production.
+    expect(ImagePromptShotOutput.safeParse({ prompt: "a".repeat(491) }).success).toBe(false);
+  });
+
+  it("accepts a full-length image prompt", () => {
+    // 790 chars was the shortest complete prompt in the same episode.
+    const out = ImagePromptShotOutput.parse({ prompt: "a".repeat(790) });
+    expect(out.prompt).toHaveLength(790);
+    expect(out.referencedAssets).toEqual([]);
   });
 });

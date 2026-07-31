@@ -345,6 +345,43 @@ describe("openrouter adapter — real cost + token detail", () => {
     expect(out.usage.providerCostUsd).toBe(0);
   });
 
+  it("throws a retryable AiError when the response was cut at the token limit", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        res(200, {
+          id: "gen-1",
+          choices: [{ message: { content: '{"shots":[{"index":1,"lighting":"窗' }, finish_reason: "length" }],
+          usage: { prompt_tokens: 1, completion_tokens: 1 },
+        }),
+      ),
+    );
+    // Silent truncation used to flow straight into repairTruncatedJson and land
+    // in the DB as a half-empty pass. Retryable → textCallJson re-rolls it.
+    await expect(openrouterAdapter.complete(OR_REQ, "k")).rejects.toMatchObject({
+      code: "OUTPUT_TRUNCATED",
+      retryable: true,
+    });
+    await expect(openrouterAdapter.complete(OR_REQ, "k")).rejects.toBeInstanceOf(AiError);
+  });
+
+  it("also catches the upstream spelling (Gemini native_finish_reason MAX_TOKENS)", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        res(200, { id: "g", choices: [{ message: { content: "{" }, native_finish_reason: "MAX_TOKENS" }], usage: {} }),
+      ),
+    );
+    await expect(openrouterAdapter.complete(OR_REQ, "k")).rejects.toMatchObject({ code: "OUTPUT_TRUNCATED" });
+  });
+
+  it("does not treat a normal stop or a missing finish_reason as truncation", async () => {
+    for (const choice of [{ message: { content: "ok" }, finish_reason: "stop" }, { message: { content: "ok" } }]) {
+      vi.stubGlobal("fetch", vi.fn(async () => res(200, { id: "g", choices: [choice], usage: { prompt_tokens: 1, completion_tokens: 1 } })));
+      expect((await openrouterAdapter.complete(OR_REQ, "k")).text).toBe("ok");
+    }
+  });
+
   it("maps malformed cost values to undefined instead of failing the call", async () => {
     for (const bad of ["0.1", -1, NaN, null]) {
       vi.stubGlobal("fetch", vi.fn(async () => orResponse({ prompt_tokens: 1, completion_tokens: 1, cost: bad })));

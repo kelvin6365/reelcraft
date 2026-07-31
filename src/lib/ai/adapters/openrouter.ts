@@ -17,6 +17,13 @@ function providerCost(usage?: { cost?: number; cost_details?: { upstream_inferen
   return (cost ?? 0) + (upstream ?? 0);
 }
 
+// A missing finish_reason is NOT treated as truncation — some providers omit it
+// on a clean stop, and failing those would break every otherwise-good call.
+function isTruncated(finishReason?: string, nativeFinishReason?: string): boolean {
+  const normalized = [finishReason, nativeFinishReason].map((v) => v?.toLowerCase());
+  return normalized.includes("length") || normalized.includes("max_tokens");
+}
+
 export const openrouterAdapter: TextAdapter = {
   provider: "openrouter",
 
@@ -50,7 +57,14 @@ export const openrouterAdapter: TextAdapter = {
 
     const json = (await res.json()) as {
       id?: string;
-      choices?: { message?: { content?: string } }[];
+      choices?: {
+        message?: { content?: string };
+        // OpenRouter normalises to "length" when the model hit the token cap;
+        // native_finish_reason carries the upstream spelling (Gemini emits
+        // "MAX_TOKENS"). Either one means the JSON body is cut mid-structure.
+        finish_reason?: string;
+        native_finish_reason?: string;
+      }[];
       usage?: {
         prompt_tokens?: number;
         completion_tokens?: number;
@@ -63,9 +77,23 @@ export const openrouterAdapter: TextAdapter = {
       };
     };
 
-    const text = json.choices?.[0]?.message?.content;
+    const choice = json.choices?.[0];
+    const text = choice?.message?.content;
     if (typeof text !== "string") {
       throw new AiError("EMPTY_RESPONSE", "openrouter returned no content", true);
+    }
+
+    // Truncation must never reach the parser. repairTruncatedJson() would happily
+    // close the dangling brackets and hand downstream a schema-valid but
+    // half-empty result (observed: 20/37 shots lost their photography pass, and
+    // image prompts lost their "never render text" tail → subtitles burnt into
+    // the frame). Retryable so textCallJson's 3-attempt loop re-rolls it.
+    if (isTruncated(choice?.finish_reason, choice?.native_finish_reason)) {
+      throw new AiError(
+        "OUTPUT_TRUNCATED",
+        `openrouter: response truncated at the token limit (finish_reason=${choice?.finish_reason ?? "?"}/${choice?.native_finish_reason ?? "?"}, ${text.length} chars)`,
+        true,
+      );
     }
 
     return {

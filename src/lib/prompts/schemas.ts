@@ -161,46 +161,56 @@ export const StoryboardPlanOutput = z.object({
 export type StoryboardPlanOutput = z.infer<typeof StoryboardPlanOutput>;
 
 // storyboard_photography
+// .min(1) matches StoryboardPlanOutput/ScenesOutput: a per-shot pass that came
+// back with zero shots is a failed generation, not an empty-but-valid result.
+// Without it a truncated-then-repaired `{"shots":[]}` validated cleanly and the
+// handler wrote photography: null onto every shot with no error anywhere.
 export const PhotographyOutput = z.object({
-  shots: z.array(
-    z.object({
-      index: z.number().int().positive(),
-      lighting: z.string(),
-      dof: z.enum(["shallow", "medium", "deep"]),
-      focusFace: z.string().optional().default(""),
-      tone: z.string(),
-      note: z.string().optional().default(""),
-    }),
-  ),
+  shots: z
+    .array(
+      z.object({
+        index: z.number().int().positive(),
+        lighting: z.string(),
+        dof: z.enum(["shallow", "medium", "deep"]),
+        focusFace: z.string().optional().default(""),
+        tone: z.string(),
+        note: z.string().optional().default(""),
+      }),
+    )
+    .min(1),
 });
 export type PhotographyOutput = z.infer<typeof PhotographyOutput>;
 
 // storyboard_acting
 export const ActingOutput = z.object({
-  shots: z.array(
-    z.object({
-      index: z.number().int().positive(),
-      expression: z.string(),
-      bodyAction: z.string(),
-      eyeline: z.string().optional().default(""),
-      note: z.string().optional().default(""),
-    }),
-  ),
+  shots: z
+    .array(
+      z.object({
+        index: z.number().int().positive(),
+        expression: z.string(),
+        bodyAction: z.string(),
+        eyeline: z.string().optional().default(""),
+        note: z.string().optional().default(""),
+      }),
+    )
+    .min(1), // 見 PhotographyOutput：零鏡 = 生成失敗，唔係合法空結果
 });
 export type ActingOutput = z.infer<typeof ActingOutput>;
 
 // storyboard_detail — also emits a motion-ready i2v video_prompt per shot.
 export const DetailOutput = z.object({
-  shots: z.array(
-    z.object({
-      index: z.number().int().positive(),
-      shotSize: z.string(),
-      angle: z.string(),
-      camera: z.string(),
-      video_prompt: z.string().optional().default(""),
-      note: z.string().optional().default(""),
-    }),
-  ),
+  shots: z
+    .array(
+      z.object({
+        index: z.number().int().positive(),
+        shotSize: z.string(),
+        angle: z.string(),
+        camera: z.string(),
+        video_prompt: z.string().optional().default(""),
+        note: z.string().optional().default(""),
+      }),
+    )
+    .min(1), // 見 PhotographyOutput：零鏡 = 生成失敗，唔係合法空結果
 });
 export type DetailOutput = z.infer<typeof DetailOutput>;
 
@@ -251,8 +261,19 @@ export const ScriptReviewOutput = z.object({
 export type ScriptReviewOutput = z.infer<typeof ScriptReviewOutput>;
 
 // image_prompt_shot
+// 600 chars is a truncation floor, not a quality bar. image_prompt_shot.zh.txt
+// mandates a fixed ~330-char English tail ("Render as ONE single cinematic
+// frame … Never render any text, captions, subtitles or words in the frame.")
+// on top of the scene description, so a complete prompt cannot be short:
+// measured range on a real 37-shot episode was 790–1531 chars, while the four
+// truncated ones were 128–491. 600 sits above every observed truncation with
+// ~110 chars of margin and still ~190 below the shortest legitimate prompt.
+// A shorter-than-this prompt has lost its tail — which is exactly how shot 26
+// ended up with five lines of English subtitles rendered into the image.
+const IMAGE_PROMPT_MIN_CHARS = 600;
+
 export const ImagePromptShotOutput = z.object({
-  prompt: z.string().min(1),
+  prompt: z.string().min(IMAGE_PROMPT_MIN_CHARS),
   negativePrompt: z.string().optional().default(""),
   referencedAssets: z.array(z.string()).default([]),
 });
