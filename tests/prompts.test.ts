@@ -18,11 +18,14 @@ describe("buildPrompt", () => {
   it("renders a real catalog prompt and returns id + version", () => {
     const built = buildPrompt("build_scenes", { script_text: "阿May推門而入。" });
     expect(built.promptId).toBe("build_scenes");
-    expect(built.version).toBe("1");
+    expect(built.version).toBe("2");
     expect(built.text).toContain("阿May推門而入。");
     // constraint phrases survive rendering
     expect(built.text).toContain("錨點不得改寫");
     expect(built.text).toContain("20 個內容元素");
+    // 閃回／時空跳躍必須切場 —— Scene.location 逐場綁定，一場跨兩個時空就一定用錯背景
+    expect(built.text).toContain("時間／地點跳躍必須切場");
+    expect(built.text).toContain("一個場景只能有一個時空");
     // no leftover placeholders
     expect(built.text).not.toMatch(/\{[a-zA-Z_][a-zA-Z0-9_]*\}/);
   });
@@ -100,9 +103,9 @@ describe("buildPrompt", () => {
   // 實測：機械音鏡頭出咗成塊英文 HUD（"...CLEARED EARTH DRAGON LAIR IN 23 MINUTES..."）
   // 連計時器，而本片係中文短劇。根因係 plan 容許 subject 淨寫「機械音提示」，
   // 落到生圖 prompt 就變成「a mechanical voice announces: ...」，模型當然照畫。
-  it("renders storyboard_plan v4 with the no-invisible-subject rule intact", () => {
+  it("renders storyboard_plan v5 with the no-invisible-subject rule intact", () => {
     const built = buildPrompt("storyboard_plan", { scene_text: "頭頂傳來機械音：通關成功。" });
-    expect(built.version).toBe("4");
+    expect(built.version).toBe("5");
     expect(built.text).toContain("嚴禁產生冇可見畫面主體嘅鏡頭");
     expect(built.text).toContain("表面只有發光紋路同幾何邊框，冇任何文字");
     expect(built.text).toContain("嚴禁把「机械音」「旁白」「畫外音」「系統」「AI」呢類非人物寫入 characters");
@@ -117,6 +120,21 @@ describe("buildPrompt", () => {
     expect(built.text).toContain("過肩鏡");
     // 遠景群像係放寬出口：人多寫入 subject，characters 照樣 ≤2
     expect(built.text).toContain("characters 照樣留 ≤2 個主角");
+    // 軟措辭擋唔住（實測違反率 13.5%），要明講係硬上限 + 畀拆法
+    expect(built.text).toContain("呢個係硬上限，唔係建議");
+    expect(built.text).toContain("寧願多切一個鏡，都唔好塞多個人入去");
+  });
+
+  // 實測：subject 寫「夏雨戰隊在副本中勝利」而 characters 只有「王楚」，出圖就憑空多咗
+  // 三個雜兵 —— 冇入 characters 就冇參考圖，但 prompt 自己描述咗佢哋，生圖層嗰句
+  // 「不得加入未描述嘅角色」完全擋唔到。所以要喺分鏡層封閉人名。
+  it("renders storyboard_plan with the subject/characters closure rule intact", () => {
+    const built = buildPrompt("storyboard_plan", { scene_text: "王楚在後方支援，夏雨戰隊衝入副本。" });
+    expect(built.text).toContain("都必須同時列入本鏡 characters");
+    expect(built.text).toContain("就唔准喺 subject 提佢哋");
+    // 集體稱謂唔可以當背景蒙混過關
+    expect(built.text).toContain("群體稱謂當人算");
+    expect(built.text).toContain("夏雨戰隊");
   });
 
   it("renders image_prompt_shot v10 with the sound-shot carrier rule and text-free surface ban intact", () => {

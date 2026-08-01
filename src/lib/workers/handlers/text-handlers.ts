@@ -33,19 +33,64 @@ function warnIncompleteStages(sceneId: string, planned: number, stages: [string,
 
 // 每鏡同框角色上限。參考圖生圖模型同時綁定 3 個以上人物身份就會屬性互相污染，
 // 而 buildShotRefAssets 本身最多只送 2 張角色參考圖 —— 第 3 個角色根本冇圖可依。
-// prompt 已經明文寫死 ≤2，呢度**淨係留痕唔硬擋**：schema .max(2) 會令成個 scene
-// 重試三次然後 fail，而截斷令整集靜默殘缺嘅教訓啱啱先修好，唔應該再開新嘅硬 fail 路徑。
+// prompt 已經明文寫死 ≤2，但實測違反率 13.5%（5/37 鏡），軟約束擋唔住，所以呢層做
+// **確定性降級**：截頭 2 個 + 剝走 subject 入面提到被截角色嘅子句。
+// 唔准 throw、唔准令 scene fail —— schema .max(2) 會令成個 scene 重試三次然後 fail，
+// 重演「整集靜默殘缺」嗰條路。降級 + 留痕，鏡頭一定要寫得入 DB。
 export const MAX_SHOT_CHARACTERS = 2;
 
-export function warnCrowdedShots(sceneId: string, shots: { index: number; characters?: string[] }[]): number {
+// subject 嘅子句分隔符。storyboard_plan 明文要求用「；」分隔（禁止換行），
+// 但模型偶爾會用半形 ; 或者句號，一併當分隔符處理。
+const SUBJECT_CLAUSE_SEPARATOR = /[；;。]/;
+
+interface CappableShot {
+  index: number;
+  subject?: string;
+  characters?: string[];
+}
+
+// 由 subject 剝走提到 dropped 角色嘅子句。三層降級，保證唔會回傳空字串：
+// ① 淨低唔提 dropped 角色嘅子句 → 直接接返；
+// ② 全部子句都提到 dropped（例如單子句「安吉拉紧握法杖，艾琳扬头」）→ 用保留角色
+//    砌一句最低限度、唔會憑空作人嘅 subject；
+// ③ 連保留角色都冇（理論上唔會，characters > 2 先會行到呢度）→ 原句照留。
+function stripDroppedFromSubject(subject: string, dropped: string[], kept: string[]): string {
+  const original = subject.trim();
+  // 被截角色名如果係保留角色名嘅一部分（「王楚」vs「王楚天」），用 includes 會誤剝
+  // 保留角色嗰句戲 —— 呢類名唔可以攞嚟做剝除依據。
+  const strippable = dropped.filter((name) => name.length > 0 && !kept.some((k) => k !== name && k.includes(name)));
+  if (!original || strippable.length === 0) return original;
+
+  const survivors = original
+    .split(SUBJECT_CLAUSE_SEPARATOR)
+    .map((clause) => clause.trim())
+    .filter((clause) => clause.length > 0 && !strippable.some((name) => clause.includes(name)));
+  if (survivors.length > 0) return survivors.join("；");
+
+  if (kept.length > 0) return `${kept.join("、")}在場，畫面只影佢哋`;
+  return original;
+}
+
+// 回傳被降級（characters 超標）嘅鏡頭數。shots 會被就地改寫。
+export function capCrowdedShots(sceneId: string, shots: CappableShot[]): number {
   let crowded = 0;
   for (const shot of shots) {
     const names = shot.characters ?? [];
     if (names.length <= MAX_SHOT_CHARACTERS) continue;
     crowded++;
+
+    const kept = names.slice(0, MAX_SHOT_CHARACTERS);
+    const dropped = names.slice(MAX_SHOT_CHARACTERS);
+    shot.characters = kept;
+
+    const before = shot.subject ?? "";
+    const after = stripDroppedFromSubject(before, dropped, kept);
+    if (after !== before) shot.subject = after;
+
     console.warn(
       `[storyboard] scene=${sceneId} shot=${shot.index} 同框 ${names.length} 個角色（上限 ${MAX_SHOT_CHARACTERS}）：` +
-        `${names.join("、")} — 只有頭 ${MAX_SHOT_CHARACTERS} 個攞到參考圖，其餘身份會漂移`,
+        `${names.join("、")} — 已降級：只保留 ${kept.join("、")}，截走 ${dropped.join("、")}` +
+        (after === before ? "（subject 冇提到被截角色，原文保留）" : `，subject 改寫為「${after}」`),
     );
   }
   return crowded;
@@ -335,7 +380,9 @@ export const storyboardRunHandler: TaskHandler = async ({ task, reportProgress }
     const span = 100 / scenes.length;
 
     const plan = await textCallJson(ctx, models.text, "storyboard_plan", { scene_text: scene.content.slice(0, 12_000) });
-    warnCrowdedShots(scene.id, plan.shots);
+    // 就地降級：截頭 2 個角色 + 剝走 subject 提到被截角色嘅子句。
+    // 必須喺 shotListJson / prisma.shot.create 之前做，令下游三個階段都食到降級後嘅版本。
+    capCrowdedShots(scene.id, plan.shots);
     await prisma.scene.update({ where: { id: scene.id }, data: { blocking: plan.blocking as object } });
     reportProgress(base + span * 0.4);
 
