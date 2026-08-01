@@ -102,3 +102,36 @@ describe("capCrowdedShots", () => {
     expect(shots[0].characters).toEqual(["a", "b"]);
   });
 });
+
+describe("capCrowdedShots — subject 提到但漏咗入 characters 嘅角色", () => {
+  // 實測鏡 31：subject「陈琳娜看見門外的王楚」但 characters 只有 [陈琳娜]。
+  // 王楚係真係要入鏡嘅，補返佢入去先攞到參考圖；剝走佢就拆散咗個鏡頭。
+  it("adopts a subject-only character when there is room", () => {
+    vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const shots = [{ index: 1, subject: "陈琳娜看見門外的王楚，表情驚訝", characters: ["陈琳娜"] }];
+    capCrowdedShots("s1", shots, ["陈琳娜", "王楚", "李雪晴"]);
+    expect(shots[0].characters).toEqual(["陈琳娜", "王楚"]);
+    expect(shots[0].subject).toBe("陈琳娜看見門外的王楚，表情驚訝");
+  });
+
+  // 實測鏡 3：模型自己寫 2 個 characters（守到 ≤2）但 subject 寫咗 5 個人。
+  // cap 唔會觸發，所以舊版由頭到尾冇檢查過 subject —— 呢個就係「多咗三個唔知
+  // 邊度嚟嘅雜兵」嘅根因。補唔落嘅一定要由 subject 剝走。
+  it("strips subject-only characters when characters is already full", () => {
+    vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const shots = [
+      { index: 3, subject: "王楚上前；鄭夏雨、李雪晴、安吉拉對視後皺眉", characters: ["王楚", "鄭夏雨"] },
+    ];
+    capCrowdedShots("s1", shots, ["王楚", "鄭夏雨", "李雪晴", "安吉拉"]);
+    expect(shots[0].characters).toEqual(["王楚", "鄭夏雨"]);
+    expect(shots[0].subject).toBe("王楚上前");
+  });
+
+  it("leaves shots alone when subject only names listed characters", () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const shots = [{ index: 1, subject: "王楚低頭看手腕", characters: ["王楚"] }];
+    expect(capCrowdedShots("s1", shots, ["王楚", "鄭夏雨"])).toBe(0);
+    expect(warn).not.toHaveBeenCalled();
+    expect(shots[0].characters).toEqual(["王楚"]);
+  });
+});

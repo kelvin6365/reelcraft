@@ -71,16 +71,40 @@ function stripDroppedFromSubject(subject: string, dropped: string[], kept: strin
   return original;
 }
 
-// 回傳被降級（characters 超標）嘅鏡頭數。shots 會被就地改寫。
-export function capCrowdedShots(sceneId: string, shots: CappableShot[]): number {
+// subject 提到咗但冇入 characters 嘅角色 → 補返入去（仲有位嘅話）。
+//
+// 點解要補而唔係一律剝：實測鏡 31 subject 係「陈琳娜看見門外的王楚，表情驚訝」而
+// characters 只有 [陈琳娜]。王楚係真係要入鏡嘅，剝走佢就拆散咗個鏡頭；補返佢入
+// characters 反而令佢攞到參考圖。淨係喺補唔落（已經滿 2 個）先至交畀下面剝走。
+//
+// ⚠️ 呢個補位一定要喺 cap 之前行：模型自己寫 2 個 characters 但 subject 寫 5 個人
+// 嗰陣（實測鏡 3），cap 唔會觸發，subject 就永遠冇被檢查過——而生圖 prompt 照樣會
+// 叫模型畫嗰 5 個人，冇參考圖嘅就憑空作。呢個正正係「多咗三個唔知邊度嚟嘅雜兵」嘅根因。
+function adoptSubjectOnlyCharacters(shot: CappableShot, known: string[]): string[] {
+  const subject = shot.subject ?? "";
+  const current = shot.characters ?? [];
+  if (!subject) return [];
+  const mentioned = known.filter((n) => n.length > 0 && subject.includes(n) && !current.includes(n));
+  if (mentioned.length === 0) return [];
+  const room = Math.max(0, MAX_SHOT_CHARACTERS - current.length);
+  const adopted = mentioned.slice(0, room);
+  if (adopted.length > 0) shot.characters = [...current, ...adopted];
+  // 補唔落嘅照樣要交出去——下面會連同佢哋喺 subject 嘅子句一齊剝走。
+  return mentioned.slice(room);
+}
+
+// 回傳被降級（characters 超標或 subject 提到參考圖外角色）嘅鏡頭數。shots 就地改寫。
+// known = 本 project 已知角色名，用嚟認出 subject 入面「有名有姓但冇入 characters」嗰啲。
+export function capCrowdedShots(sceneId: string, shots: CappableShot[], known: string[] = []): number {
   let crowded = 0;
   for (const shot of shots) {
+    const orphans = adoptSubjectOnlyCharacters(shot, known);
     const names = shot.characters ?? [];
-    if (names.length <= MAX_SHOT_CHARACTERS) continue;
+    if (names.length <= MAX_SHOT_CHARACTERS && orphans.length === 0) continue;
     crowded++;
 
     const kept = names.slice(0, MAX_SHOT_CHARACTERS);
-    const dropped = names.slice(MAX_SHOT_CHARACTERS);
+    const dropped = [...names.slice(MAX_SHOT_CHARACTERS), ...orphans];
     shot.characters = kept;
 
     const before = shot.subject ?? "";
@@ -88,9 +112,10 @@ export function capCrowdedShots(sceneId: string, shots: CappableShot[]): number 
     if (after !== before) shot.subject = after;
 
     console.warn(
-      `[storyboard] scene=${sceneId} shot=${shot.index} 同框 ${names.length} 個角色（上限 ${MAX_SHOT_CHARACTERS}）：` +
-        `${names.join("、")} — 已降級：只保留 ${kept.join("、")}，截走 ${dropped.join("、")}` +
-        (after === before ? "（subject 冇提到被截角色，原文保留）" : `，subject 改寫為「${after}」`),
+      `[storyboard] scene=${sceneId} shot=${shot.index} 已降級（上限 ${MAX_SHOT_CHARACTERS}）：characters=${names.join("、") || "（空）"}` +
+        (orphans.length > 0 ? `，subject 另外提到參考圖外嘅 ${orphans.join("、")}` : "") +
+        ` — 保留 ${kept.join("、") || "（無）"}，剝走 ${dropped.join("、")}` +
+        (after === before ? "（subject 冇提到佢哋，原文保留）" : `，subject 改寫為「${after}」`),
     );
   }
   return crowded;
@@ -373,6 +398,13 @@ export const storyboardRunHandler: TaskHandler = async ({ task, reportProgress }
   await prisma.shot.deleteMany({ where: { episodeId: episode.id, sceneId: { notIn: keepSceneIds } } });
   if (skipped > 0) console.log(`[storyboard] task=${task.id} resuming — ${skipped}/${scenes.length} scenes already built`);
 
+  // 認出 subject 入面「有名有姓但冇入 characters」嗰啲角色——長名行先，
+  // 免得「王楚」喺「王楚天」出現時搶先命中。
+  const knownCharacterNames = (await prisma.character.findMany({ where: { projectId: project.id }, select: { name: true } }))
+    .map((c) => c.name)
+    .filter((n) => n.trim() !== "")
+    .sort((a, b) => b.length - a.length);
+
   let globalIndex = await prisma.shot.count({ where: { episodeId: episode.id } });
   for (let s = 0; s < toBuild.length; s++) {
     const scene = toBuild[s];
@@ -380,9 +412,10 @@ export const storyboardRunHandler: TaskHandler = async ({ task, reportProgress }
     const span = 100 / scenes.length;
 
     const plan = await textCallJson(ctx, models.text, "storyboard_plan", { scene_text: scene.content.slice(0, 12_000) });
-    // 就地降級：截頭 2 個角色 + 剝走 subject 提到被截角色嘅子句。
-    // 必須喺 shotListJson / prisma.shot.create 之前做，令下游三個階段都食到降級後嘅版本。
-    capCrowdedShots(scene.id, plan.shots);
+    // 就地降級：補返 subject 提到但漏咗嘅角色（仲有位嘅話）、截頭 2 個、剝走剩低嗰啲
+    // 喺 subject 嘅子句。必須喺 shotListJson / prisma.shot.create 之前做，
+    // 令攝影／表演／細節三個階段同埋生圖都食到降級後嘅版本。
+    capCrowdedShots(scene.id, plan.shots, knownCharacterNames);
     await prisma.scene.update({ where: { id: scene.id }, data: { blocking: plan.blocking as object } });
     reportProgress(base + span * 0.4);
 
