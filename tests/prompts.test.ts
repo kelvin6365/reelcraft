@@ -18,7 +18,7 @@ describe("buildPrompt", () => {
   it("renders a real catalog prompt and returns id + version", () => {
     const built = buildPrompt("build_scenes", { script_text: "阿May推門而入。" });
     expect(built.promptId).toBe("build_scenes");
-    expect(built.version).toBe("2");
+    expect(built.version).toBe("3");
     expect(built.text).toContain("阿May推門而入。");
     // constraint phrases survive rendering
     expect(built.text).toContain("錨點不得改寫");
@@ -26,6 +26,11 @@ describe("buildPrompt", () => {
     // 閃回／時空跳躍必須切場 —— Scene.location 逐場綁定，一場跨兩個時空就一定用錯背景
     expect(built.text).toContain("時間／地點跳躍必須切場");
     expect(built.text).toContain("一個場景只能有一個時空");
+    // v3：上一版規則寫咗但模型唔跟（重跑後閃回照樣夾喺場景 1），所以補觸發信號清單
+    // ＋「一句都要切」＋具體後果，唔再靠模型自己判斷值唔值得獨立成場
+    expect(built.text).toContain("見到即切，不要自行判斷值不值得獨立成場");
+    expect(built.text).toContain("一句都要切");
+    expect(built.text).toContain("閃回會沿用外層場景的 location");
     // no leftover placeholders
     expect(built.text).not.toMatch(/\{[a-zA-Z_][a-zA-Z0-9_]*\}/);
   });
@@ -103,9 +108,9 @@ describe("buildPrompt", () => {
   // 實測：機械音鏡頭出咗成塊英文 HUD（"...CLEARED EARTH DRAGON LAIR IN 23 MINUTES..."）
   // 連計時器，而本片係中文短劇。根因係 plan 容許 subject 淨寫「機械音提示」，
   // 落到生圖 prompt 就變成「a mechanical voice announces: ...」，模型當然照畫。
-  it("renders storyboard_plan v5 with the no-invisible-subject rule intact", () => {
+  it("renders storyboard_plan v6 with the no-invisible-subject rule intact", () => {
     const built = buildPrompt("storyboard_plan", { scene_text: "頭頂傳來機械音：通關成功。" });
-    expect(built.version).toBe("5");
+    expect(built.version).toBe("6");
     expect(built.text).toContain("嚴禁產生冇可見畫面主體嘅鏡頭");
     expect(built.text).toContain("表面只有發光紋路同幾何邊框，冇任何文字");
     expect(built.text).toContain("嚴禁把「机械音」「旁白」「畫外音」「系統」「AI」呢類非人物寫入 characters");
@@ -137,7 +142,23 @@ describe("buildPrompt", () => {
     expect(built.text).toContain("夏雨戰隊");
   });
 
-  it("renders image_prompt_shot v10 with the sound-shot carrier rule and text-free surface ban intact", () => {
+  // 實測鏡 16：subject 寫「王楚制作药水和附魔；夏雨战队在副本中胜利」——兩個時刻。
+  // 單幀模型冇時間軸，唯有把兩個時刻並排畫，出咗個 2×2 格拼貼；連續性條款嗰句
+  // not a character sheet, grid or collage 完全守唔住，因為 prompt 自己就要求咗兩件事。
+  it("renders storyboard_plan with the one-frozen-moment rule and its priority over the 15-char heuristic", () => {
+    const built = buildPrompt("storyboard_plan", { scene_text: "他花了兩年製藥、附魔、練級，終於登頂。" });
+    expect(built.text).toContain("一鏡一凝固瞬間（拆鏡硬性規則）");
+    expect(built.text).toContain("subject 嚴禁出現時序詞");
+    // 理由要留喺 prompt 入面，唔係淨落指令
+    expect(built.text).toContain("拼貼喺短劇入面係廢鏡");
+    // 同「每 15 字一鏡」嘅張力要明確判勝負，唔可以留返畀模型自己權衡
+    expect(built.text).toContain("同「每 15 字一鏡」衝突時，呢條贏");
+    expect(built.text).toContain("鏡頭數冇上限，同框人數同一鏡入面嘅時刻數先有上限");
+    // 下游 collapseMultiMomentShots 會確定性剝除，要話畀模型知寫咗會消失
+    expect(built.text).toContain("時序詞之後嘅內容會被直接剝走");
+  });
+
+  it("renders image_prompt_shot v11 with the sound-shot carrier rule and text-free surface ban intact", () => {
     const built = buildPrompt("image_prompt_shot", {
       shot_json: "{}",
       scene_blocking: "B",
@@ -145,7 +166,7 @@ describe("buildPrompt", () => {
       locked_assets: "A",
       style_suffix: "S",
     });
-    expect(built.version).toBe("10");
+    expect(built.version).toBe("11");
     expect(built.text).toContain("聲音本身冇畫面，唔可以直譯");
     expect(built.text).toContain("必須改為描述承載畫面");
     expect(built.text).toContain("必須明確寫成無文字無數字無符號");
@@ -155,6 +176,23 @@ describe("buildPrompt", () => {
     // 原有嘅 dialogue 禁令唔可以被取代
     expect(built.text).toContain("嚴禁");
     expect(built.text).toContain("Never render any text");
+  });
+
+  // 實測：「夏雨戰隊」冇對應資產 → 冇參考圖 → 模型作咗四個一模一樣嘅金髮騎士，
+  // 而下一鏡又係另一批樣。冇得唔畫嘅話，起碼要畫成認唔出樣、唔需要身份一致性嘅群眾。
+  it("renders image_prompt_shot with the unnamed-crowd rule intact", () => {
+    const built = buildPrompt("image_prompt_shot", {
+      shot_json: "{}",
+      scene_blocking: "B",
+      reference_legend: "L",
+      locked_assets: "A",
+      style_suffix: "S",
+    });
+    expect(built.text).toContain("無名群眾（locked_assets 冇對應資產嘅集體名詞）");
+    expect(built.text).toContain("唔准把佢哋畫成可辨認嘅面孔");
+    // 寫咗人數，模型就會逐個畫清楚 —— 要不可數描述
+    expect(built.text).toContain("唔准把集體名詞翻成一個明確人數");
+    expect(built.text).toContain("群眾唔准搶主體");
   });
 
   it("throws PROMPT_NOT_FOUND for an unknown promptId", () => {

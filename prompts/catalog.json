@@ -56,20 +56,20 @@
     {
       "id": "build_scenes",
       "path": "pipeline/build_scenes.zh.txt",
-      "version": "2",
+      "version": "3",
       "variables": [
         "script_text"
       ],
-      "description": "劇本切場景，只回傳起訖文字錨點供程式定位，約 20 元素/場；時間／地點跳躍（含閃回）必須切做獨立場景（JSON）。"
+      "description": "劇本切場景，只回傳起訖文字錨點供程式定位，約 20 元素/場；時間／地點跳躍（含閃回）必須切做獨立場景，附觸發信號清單、一句都要切、錨點取法（JSON）。"
     },
     {
       "id": "storyboard_plan",
       "path": "pipeline/storyboard_plan.zh.txt",
-      "version": "5",
+      "version": "6",
       "variables": [
         "scene_text"
       ],
-      "description": "分鏡第①階段規劃：場景切鏡頭清單，約 15 字/鏡，每鏡帶 source_text；subject 必須係可見畫面且只准提到 characters 入面嘅人、每鏡 characters 硬性 ≤2（JSON）。"
+      "description": "分鏡第①階段規劃：場景切鏡頭清單，約 15 字/鏡，每鏡帶 source_text；subject 必須係可見畫面、一鏡一凝固瞬間（禁時序詞，優先於字數比例）、只准提到 characters 入面嘅人、每鏡 characters 硬性 ≤2（JSON）。"
     },
     {
       "id": "storyboard_photography",
@@ -112,7 +112,7 @@
     {
       "id": "image_prompt_shot",
       "path": "pipeline/image_prompt_shot.zh.txt",
-      "version": "10",
+      "version": "11",
       "variables": [
         "shot_json",
         "scene_blocking",
@@ -120,7 +120,7 @@
         "locked_assets",
         "style_suffix"
       ],
-      "description": "鏡頭分鏡轉英文生圖 prompt，Image N 參考綁定 + 角色外貌強制寫入 + 空間契約連戲 + 聲音類鏡頭改描述無文字承載畫面 + 連續性條款。"
+      "description": "鏡頭分鏡轉英文生圖 prompt，Image N 參考綁定 + 角色外貌強制寫入 + 無資產集體名詞只准畫成認唔出樣嘅群眾 + 空間契約連戲 + 聲音類鏡頭改描述無文字承載畫面 + 連續性條款。"
     }
   ]
 }

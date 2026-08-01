@@ -121,6 +121,93 @@ export function capCrowdedShots(sceneId: string, shots: CappableShot[], known: s
   return crowded;
 }
 
+// 時序連接詞：明確表示「跟住先發生」。單幀生圖模型冇時間軸，收到兩個時刻就唯有把
+// 兩個時刻並排畫入同一張圖 —— 實測鏡 16 出咗個 2×2 格拼貼，而拼貼喺短劇入面係廢鏡
+// （剪唔入、i2v 動唔到、連唔到戲）。生圖 prompt 尾嗰句 `not a character sheet, grid
+// or collage` 完全擋唔住，因為 prompt 自己就要求咗兩件事。
+//
+// 必須跟住一個標點先當時序詞：「兩年之後」呢類係時間狀語唔係時序連接，喺句中間切
+// 落去只會剩返「兩年」呢種爛頭。同樣理由唔收「再」——「再次確認」「一再退讓」全部
+// 係同一刻，收咗誤傷率太高；「再」留畀 prompt 層軟性禁止就夠。
+const TEMPORAL_CUT =
+  /[，,、；;。]\s*(?:隨後|随后|然後|然后|之後|之后|其後|其后|接著|接着|接住|跟住|稍後|稍后|後來|后来|繼而|继而)/;
+
+// 集體名詞：呢類「人」冇對應資產、冇參考圖，模型一定會憑空作 —— 實測「夏雨战队」
+// 出咗四個一模一樣嘅金髮騎士（用戶原話：多左 3 個唔知乜水），而下一鏡又係另一批樣。
+// adoptSubjectOnlyCharacters 捉唔到佢哋，因為佢淨係認 project 已知角色名。
+const CROWD_NOUN =
+  /(戰隊|战队|隊伍|队伍|隊員|队员|眾人|众人|大家|人群|一群|幾名|几名|數名|数名|村民|士兵|守衛|守卫|圍觀|围观|們|们)/;
+
+// 由 subject 剝走「第一個瞬間」以外嘅嘢，兩刀：
+// ① 時序詞之後全部剝走 —— 嗰啲係第二個時刻。
+// ② 提到集體名詞、但一個已知角色都冇提嘅**非首個**子句剝走 —— 呢類子句幾乎一定係
+//    另一組人喺另一個地方做緊另一件事（「…；夏雨战队在副本中胜利」）。
+//
+// 第一個子句永遠留低：呢個係「subject 唔可以變空」嘅結構性保證，唔使靠 fallback 句。
+// 注意呢度**唔會**淨係「保留第一個子句」—— 「王楚舉劍；李雪晴退後」係同一刻嘅兩個
+// 細節，斬咗就係無端刪戲。分辨準則係「呢個子句講緊另一組人／另一刻」，唔係「有冇；」。
+function keepFirstMoment(subject: string, known: string[]): string {
+  const cut = TEMPORAL_CUT.exec(subject);
+  const head = cut ? subject.slice(0, cut.index).trim() : subject;
+  const base = head.length > 0 ? head : subject;
+
+  const clauses = base
+    .split(SUBJECT_CLAUSE_SEPARATOR)
+    .map((c) => c.trim())
+    .filter((c) => c.length > 0);
+  const survivors = clauses.filter(
+    (clause, i) => i === 0 || !(CROWD_NOUN.test(clause) && !known.some((n) => n.length > 0 && clause.includes(n))),
+  );
+  // 冇剝到子句就唔好重砌字串：split/join 會把「。」正規化成「；」，淨係咁就當改咗，
+  // 會出一條誤導人嘅 warn。
+  if (survivors.length === clauses.length) return cut ? base : subject;
+  return survivors.join("；");
+}
+
+// subject 縮到第一個瞬間之後，只喺被剝走嗰段出現過嘅角色要一齊由 characters 除名。
+// 點解一定要做：buildShotRefAssets 係照 characters 掛參考圖，而生圖 prompt 明文要求
+// 「本鏡每個出鏡角色都要寫外貌」—— 留低一個已經唔喺畫面嘅名，等於叫模型把佢畫返
+// 入去，第二個時刻就用另一種方式返嚟。
+// 名字互為子串（「王楚」vs「王楚天」）時 after.includes 會判成仍在場，方向保守（留低），
+// 可接受：多一張參考圖遠好過剝走一個真係喺畫面嘅角色。
+// characters 可以被清空 —— 空 characters 係合法嘅空鏡／物件鏡，唔係錯誤。
+function pruneVanishedCharacters(shot: CappableShot, before: string, after: string): string[] {
+  const names = shot.characters ?? [];
+  const gone = names.filter((n) => n.length > 0 && before.includes(n) && !after.includes(n));
+  if (gone.length === 0) return [];
+  shot.characters = names.filter((n) => !gone.includes(n));
+  return gone;
+}
+
+// 回傳被縮成單一瞬間嘅鏡頭數。shots 就地改寫。
+//
+// ⚠️ 必須喺 capCrowdedShots **之前**行。兩者都會改 subject，次序有實質分別：
+// 先縮瞬間，capCrowdedShots 嘅 adoptSubjectOnlyCharacters 就唔會攞 ≤2 個名額嘅其中
+// 一個去補一個只存在於「第二個時刻」嘅角色（補完個鏡頭都唔會出現佢），而剝除亦只需
+// 要處理真係喺畫面嗰段文字。倒轉次序嘅話 cap 會對住一段之後會被刪走嘅文字做決定。
+// 兩者嘅剝除邏輯亦唔重疊：cap 剝「參考圖外嘅已知角色」，呢度剝「另一個時刻／無名群眾」。
+//
+// 同 capCrowdedShots 一樣：唔准 throw、唔准令 scene fail。鏡頭寧願降級都一定要寫得入
+// DB —— 硬擋只會令成個 scene 重試三次然後 fail，重演「整集靜默殘缺」嗰條路。
+export function collapseMultiMomentShots(sceneId: string, shots: CappableShot[], known: string[] = []): number {
+  let collapsed = 0;
+  for (const shot of shots) {
+    const before = (shot.subject ?? "").trim();
+    if (!before) continue;
+    const after = keepFirstMoment(before, known);
+    if (after === before || after.length === 0) continue;
+    collapsed++;
+    shot.subject = after;
+    const gone = pruneVanishedCharacters(shot, before, after);
+    console.warn(
+      `[storyboard] scene=${sceneId} shot=${shot.index} subject 有多過一個時刻／無名群眾 — ` +
+        `只保留第一個瞬間：「${before}」→「${after}」` +
+        (gone.length > 0 ? `，characters 除名 ${gone.join("、")}（只喺被剝走嗰段出現）` : ""),
+    );
+  }
+  return collapsed;
+}
+
 interface CharacterBioJson { age?: string; occupation?: string; personality?: string; painPoint?: string; backstory?: string }
 function formatCharacterBios(characters: Character[]): string {
   return characters
@@ -412,9 +499,11 @@ export const storyboardRunHandler: TaskHandler = async ({ task, reportProgress }
     const span = 100 / scenes.length;
 
     const plan = await textCallJson(ctx, models.text, "storyboard_plan", { scene_text: scene.content.slice(0, 12_000) });
-    // 就地降級：補返 subject 提到但漏咗嘅角色（仲有位嘅話）、截頭 2 個、剝走剩低嗰啲
-    // 喺 subject 嘅子句。必須喺 shotListJson / prisma.shot.create 之前做，
+    // 就地降級，次序有意：先把 subject 縮返一個凝固瞬間（剝走第二個時刻同無名群眾），
+    // 再做同框上限（補返漏咗嘅角色、截頭 2 個、剝走剩低嗰啲嘅子句）—— 咁 cap 係對住
+    // 真係會入畫嗰段文字做決定。兩者都必須喺 shotListJson / prisma.shot.create 之前做，
     // 令攝影／表演／細節三個階段同埋生圖都食到降級後嘅版本。
+    collapseMultiMomentShots(scene.id, plan.shots, knownCharacterNames);
     capCrowdedShots(scene.id, plan.shots, knownCharacterNames);
     await prisma.scene.update({ where: { id: scene.id }, data: { blocking: plan.blocking as object } });
     reportProgress(base + span * 0.4);
