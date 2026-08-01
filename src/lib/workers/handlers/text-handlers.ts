@@ -31,6 +31,26 @@ function warnIncompleteStages(sceneId: string, planned: number, stages: [string,
   }
 }
 
+// 每鏡同框角色上限。參考圖生圖模型同時綁定 3 個以上人物身份就會屬性互相污染，
+// 而 buildShotRefAssets 本身最多只送 2 張角色參考圖 —— 第 3 個角色根本冇圖可依。
+// prompt 已經明文寫死 ≤2，呢度**淨係留痕唔硬擋**：schema .max(2) 會令成個 scene
+// 重試三次然後 fail，而截斷令整集靜默殘缺嘅教訓啱啱先修好，唔應該再開新嘅硬 fail 路徑。
+export const MAX_SHOT_CHARACTERS = 2;
+
+export function warnCrowdedShots(sceneId: string, shots: { index: number; characters?: string[] }[]): number {
+  let crowded = 0;
+  for (const shot of shots) {
+    const names = shot.characters ?? [];
+    if (names.length <= MAX_SHOT_CHARACTERS) continue;
+    crowded++;
+    console.warn(
+      `[storyboard] scene=${sceneId} shot=${shot.index} 同框 ${names.length} 個角色（上限 ${MAX_SHOT_CHARACTERS}）：` +
+        `${names.join("、")} — 只有頭 ${MAX_SHOT_CHARACTERS} 個攞到參考圖，其餘身份會漂移`,
+    );
+  }
+  return crowded;
+}
+
 interface CharacterBioJson { age?: string; occupation?: string; personality?: string; painPoint?: string; backstory?: string }
 function formatCharacterBios(characters: Character[]): string {
   return characters
@@ -315,6 +335,7 @@ export const storyboardRunHandler: TaskHandler = async ({ task, reportProgress }
     const span = 100 / scenes.length;
 
     const plan = await textCallJson(ctx, models.text, "storyboard_plan", { scene_text: scene.content.slice(0, 12_000) });
+    warnCrowdedShots(scene.id, plan.shots);
     await prisma.scene.update({ where: { id: scene.id }, data: { blocking: plan.blocking as object } });
     reportProgress(base + span * 0.4);
 

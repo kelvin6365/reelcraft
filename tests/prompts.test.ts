@@ -97,6 +97,48 @@ describe("buildPrompt", () => {
     expect(built.text).toContain("外貌描述必須以性別開頭");
   });
 
+  // 實測：機械音鏡頭出咗成塊英文 HUD（"...CLEARED EARTH DRAGON LAIR IN 23 MINUTES..."）
+  // 連計時器，而本片係中文短劇。根因係 plan 容許 subject 淨寫「機械音提示」，
+  // 落到生圖 prompt 就變成「a mechanical voice announces: ...」，模型當然照畫。
+  it("renders storyboard_plan v4 with the no-invisible-subject rule intact", () => {
+    const built = buildPrompt("storyboard_plan", { scene_text: "頭頂傳來機械音：通關成功。" });
+    expect(built.version).toBe("4");
+    expect(built.text).toContain("嚴禁產生冇可見畫面主體嘅鏡頭");
+    expect(built.text).toContain("表面只有發光紋路同幾何邊框，冇任何文字");
+    expect(built.text).toContain("嚴禁把「机械音」「旁白」「畫外音」「系統」「AI」呢類非人物寫入 characters");
+  });
+
+  it("renders storyboard_plan with the ≤2 same-frame character cap and its rationale intact", () => {
+    const built = buildPrompt("storyboard_plan", { scene_text: "四人並肩衝出洞口。" });
+    expect(built.text).toContain("每鏡 characters 硬性 ≤2");
+    expect(built.text).toContain("最多 2 個");
+    // 理由要留喺 prompt 入面，唔係淨落指令
+    expect(built.text).toContain("只送到 2 張角色參考圖");
+    expect(built.text).toContain("過肩鏡");
+    // 遠景群像係放寬出口：人多寫入 subject，characters 照樣 ≤2
+    expect(built.text).toContain("characters 照樣留 ≤2 個主角");
+  });
+
+  it("renders image_prompt_shot v10 with the sound-shot carrier rule and text-free surface ban intact", () => {
+    const built = buildPrompt("image_prompt_shot", {
+      shot_json: "{}",
+      scene_blocking: "B",
+      reference_legend: "L",
+      locked_assets: "A",
+      style_suffix: "S",
+    });
+    expect(built.version).toBe("10");
+    expect(built.text).toContain("聲音本身冇畫面，唔可以直譯");
+    expect(built.text).toContain("必須改為描述承載畫面");
+    expect(built.text).toContain("必須明確寫成無文字無數字無符號");
+    // 同 dialogue 禁令唔同：呢條擋嘅係模型「幫你畫返個正常運作嘅系統」
+    expect(built.text).toContain("一個真實 HUD 本來就有字");
+    expect(built.text).toContain("唔准當人畫");
+    // 原有嘅 dialogue 禁令唔可以被取代
+    expect(built.text).toContain("嚴禁");
+    expect(built.text).toContain("Never render any text");
+  });
+
   it("throws PROMPT_NOT_FOUND for an unknown promptId", () => {
     expect(() => buildPrompt("does_not_exist", {})).toThrowError(PromptError);
     try {

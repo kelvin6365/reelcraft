@@ -18,8 +18,14 @@ export interface AngleStyle {
   negativePrompt?: string;
 }
 
+// ⚠️ 呢段會 append 落每一張場景主圖，所以佢係整條場景 prompt 入面最強嘅構圖信號。
+// 舊版寫「wide establishing reference view」——一句橫構圖指令，同 API 嘅 aspect_ratio
+// （而家跟 project.videoRatio，多數係 9:16）直接打架：模型跟文字畫返個開闊橫向 vista，
+// 再 letterbox 塞入豎框，張場景圖本身就帶住黑邊，攞去做鏡頭參考仲會傳染落分鏡出圖。
+// 改成縱向取向：由前景地面向上帶到天花／天空嘅層次感，保住「establishing（交代成個空間）／
+// 統一透視／可作為機位參考」呢三個原意，只係換咗個掃視方向。
 const ANGLE_REF_FRAMING =
-  "wide establishing reference view, unified perspective with consistent vanishing points, consistent logically-motivated lighting true to the scene's time of day, logically coherent spatial layout, empty scene with no people, no characters, no text, no labels, clean composition, rich environmental detail, high quality";
+  "vertical establishing reference view, tall full-height framing that carries the eye from the foreground floor up through the mid-ground structures to the ceiling or sky, unified perspective with consistent vanishing points, consistent logically-motivated lighting true to the scene's time of day, logically coherent spatial layout, complete enough to serve as a camera-placement reference for later shots, empty scene with no people, no characters, no text, no labels, clean composition, rich environmental detail, high quality";
 
 export function buildLocationMainPrompt(basePrompt: string, style: AngleStyle): string {
   const stylePart = style.locationPrefix ?? style.assetPrefix ?? style.prefix ?? "";

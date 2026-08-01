@@ -248,6 +248,9 @@ export function AssetsPanel({ view, progress, live }: PanelProps) {
               chosenId={l.lockedImageMediaId}
               lockedUrl={l.lockedImageUrl}
               isLocation
+              // 場景圖而家跟成品比例生成（見 media-handlers.ts assetRatio），縮圖框要跟返，
+              // 否則 object-cover 會硬裁走一大截構圖。
+              videoRatio={view.episode.project.videoRatio}
               angles={l.angles}
               locked={l.locked}
               lockPath="/api/locations"
@@ -362,6 +365,8 @@ function AssetCard(props: {
   isCharacter?: boolean;
   isLocation?: boolean;
   isProp?: boolean;
+  // 只有場景卡會傳：場景資產跟 project.videoRatio 出圖，所以縮圖框亦要跟。
+  videoRatio?: string;
   refFaceUrl?: string | null;
   refFaceNote?: string;
   imageRefSupported?: boolean;
@@ -400,6 +405,11 @@ function AssetCard(props: {
   const disabled = busy || inFlight;
   // 揀圖 ≠ 鎖定：得一張候選圖時自動預揀，唔使強逼撳多一次
   const effectiveSelected = selectedId ?? (props.candidates.length === 1 ? props.candidates[0] : null);
+
+  // 每種資產嘅出圖比例都唔同（道具 1:1、角色 9:16 但卡片一路用 3/4 裁身、場景跟
+  // project.videoRatio）。統一喺呢度計一次，候選圖格同視角縮圖都用同一個值——
+  // 之前視角縮圖三種資產一律 aspect-video，角色／道具實際係豎圖同方圖，硬裁到變形。
+  const assetAspect = props.isProp ? "1/1" : props.isCharacter ? "3/4" : (props.videoRatio ?? "9:16").replace(":", "/");
 
   async function savePrompt() {
     if (promptDraft === props.prompt) return;
@@ -516,6 +526,7 @@ function AssetCard(props: {
                 promptParam={props.viewPromptParam ?? "anglePrompt"}
                 regenParam={props.viewRegenParam ?? "angle"}
                 previewBasePath={props.lockPath}
+                thumbAspect={assetAspect}
               />
             ))}
           </div>
@@ -577,11 +588,8 @@ function AssetCard(props: {
             <img
               src={props.lockedUrl}
               alt={props.name}
-              className={cn(
-                "rounded-md",
-                props.isLocation ? "max-w-[320px] object-contain" : props.isProp ? "max-w-[200px] object-contain" : "max-w-[200px] object-cover",
-              )}
-              style={props.isLocation ? undefined : props.isProp ? { aspectRatio: "1/1" } : { aspectRatio: "3/4" }}
+              className={cn("rounded-md", props.isProp ? "max-w-[200px] object-contain" : "max-w-[200px] object-cover")}
+              style={{ aspectRatio: assetAspect }}
             />
           </button>
           {props.faceUrl ? (
@@ -610,12 +618,7 @@ function AssetCard(props: {
         </p>
       ) : (
         <div className="space-y-3">
-          <div
-            className={cn(
-              "grid gap-3",
-              props.isLocation ? "grid-cols-2 sm:grid-cols-3" : props.isProp ? "grid-cols-3 sm:grid-cols-3" : "grid-cols-3 sm:grid-cols-4",
-            )}
-          >
+          <div className={cn("grid gap-3", props.isProp ? "grid-cols-3 sm:grid-cols-3" : "grid-cols-3 sm:grid-cols-4")}>
             {props.candidates.map((mediaId) => {
               const url = props.candidateUrlById[mediaId];
               const selected = effectiveSelected === mediaId;
@@ -630,9 +633,9 @@ function AssetCard(props: {
                     aria-label={selected ? `${props.name} 已揀呢張候選圖` : `揀 ${props.name} 呢張候選圖`}
                     className={cn(
                       "block w-full overflow-hidden rounded-md border-2 transition-colors",
-                      props.isLocation ? "aspect-video" : props.isProp ? "aspect-square" : "aspect-[3/4]",
                       selected ? "border-primary ring-2 ring-primary" : "border-transparent hover:border-border",
                     )}
+                    style={{ aspectRatio: assetAspect }}
                   >
                     {url ? (
                       <img src={url} alt="候選" className="size-full object-cover" />
@@ -708,6 +711,7 @@ function AssetViewRow({
   promptParam,
   regenParam,
   previewBasePath,
+  thumbAspect,
 }: {
   basePath: string;
   parentId: string;
@@ -728,6 +732,9 @@ function AssetViewRow({
   // 三種資產（character/location/prop）而家都有 preview-prompt endpoint——
   // 傳入父資產嘅 API base（例如 "/api/characters"）先會顯示「查看實際 Prompt」toggle。
   previewBasePath?: string;
+  // CSS aspect-ratio（例："9/16"、"1/1"、"3/4"）——呢個 row 由 character／location／prop
+  // 三種資產共用，出圖比例各自唔同，所以由父卡片傳落嚟，唔可以喺呢度一刀切。
+  thumbAspect: string;
 }) {
   const { busy, run } = useAction(qk.episode(episodeId));
   const { text, onChange, onBlur, saved } = useAutosaveField(prompt, (v) =>
@@ -755,7 +762,12 @@ function AssetViewRow({
       {previewBasePath && <PromptPreview previewUrl={`${previewBasePath}/${parentId}/preview-prompt`} view={{ label, prompt: text }} />}
       {url && (
         <button type="button" className="cursor-zoom-in" onClick={() => onLightbox({ src: url, type: "image", title: `${parentName} 視角：${label}` })}>
-          <img src={url} alt={`${parentName} 視角：${label}`} className="aspect-video max-w-[200px] rounded-md object-cover" />
+          <img
+            src={url}
+            alt={`${parentName} 視角：${label}`}
+            className="max-w-[200px] rounded-md object-cover"
+            style={{ aspectRatio: thumbAspect }}
+          />
         </button>
       )}
     </div>

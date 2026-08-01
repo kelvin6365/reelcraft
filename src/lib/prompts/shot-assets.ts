@@ -145,9 +145,13 @@ export function buildShotRefAssets(
 ): ShotRefAssets {
   // ⚠️ 排序係硬性要求，唔好「順手」改返轉：
   // Gemini 2.5 Flash Image 官方文檔——「the model will adopt the aspect ratio of the
-  // last image provided」。場景鎖定圖係 16:9（1344×768），角色鎖定圖係 9:16（768×1344），
-  // 而短劇成品要 9:16。舊排序（角色→場景）最後一張係橫向場景圖 → 實測 21/37 張出圖
-  // 有燒死嘅黑邊。所以：場景排最前，角色排最後，讓模型跟最後嗰張 9:16 角色圖。
+  // last image provided」。場景鎖定圖同角色鎖定圖而家都跟成品比例生成（場景跟
+  // project.videoRatio，角色 9:16，見 media-handlers.ts assetRatio），所以「最後一張」
+  // 已經唔再係比例問題。留返呢個排序係為咗身份：角色排最後，模型最後讀到嘅就係
+  // identity anchor（面部特寫／全身正面），身份訊號最貼近輸出；場景排最前做空間底圖。
+  // （歷史：場景圖曾經係 16:9，最後一張放場景會令出圖燒死黑邊。根因唔係比例——
+  // outbound-image 一直有 crop——而係橫構圖被中央裁切後模型自己重建開闊場景再
+  // letterbox。已由「場景改原生豎構圖」修好，但呢個排序照樣係啱嘅。）
   const locationRef: RefAsset[] = shotLocation?.lockedImageMediaId
     ? [{ mediaId: shotLocation.lockedImageMediaId, label: `${shotLocation.name}（場景主視角）`, prompt: shotLocation.prompt ?? "" }]
     : [];

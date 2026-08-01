@@ -65,11 +65,11 @@
     {
       "id": "storyboard_plan",
       "path": "pipeline/storyboard_plan.zh.txt",
-      "version": "3",
+      "version": "4",
       "variables": [
         "scene_text"
       ],
-      "description": "分鏡第①階段規劃：場景切鏡頭清單，約 15 字/鏡，每鏡帶 source_text（JSON）。"
+      "description": "分鏡第①階段規劃：場景切鏡頭清單，約 15 字/鏡，每鏡帶 source_text；subject 必須係可見畫面、每鏡 characters ≤2（JSON）。"
     },
     {
       "id": "storyboard_photography",
@@ -112,7 +112,7 @@
     {
       "id": "image_prompt_shot",
       "path": "pipeline/image_prompt_shot.zh.txt",
-      "version": "9",
+      "version": "10",
       "variables": [
         "shot_json",
         "scene_blocking",
@@ -120,7 +120,7 @@
         "locked_assets",
         "style_suffix"
       ],
-      "description": "鏡頭分鏡轉英文生圖 prompt，Image N 參考綁定 + 角色外貌強制寫入 + 空間契約連戲 + 連續性條款。"
+      "description": "鏡頭分鏡轉英文生圖 prompt，Image N 參考綁定 + 角色外貌強制寫入 + 空間契約連戲 + 聲音類鏡頭改描述無文字承載畫面 + 連續性條款。"
     }
   ]
 }

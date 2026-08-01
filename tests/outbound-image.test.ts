@@ -38,7 +38,10 @@ describe("parseAspectRatio", () => {
 });
 
 describe("cropBox", () => {
-  it("hits the target ratio exactly for a 16:9 scene ref going into a 9:16 shot", () => {
+  // 歷史註腳：呢組數字（1344×768）原本嚟自「場景鎖定圖係 16:9」嗰個年代。場景資產
+  // 而家原生跟 project.videoRatio 出圖，唔會再係橫圖，但 cropBox 本身係純幾何——
+  // 任何橫圖進豎框（例如用戶自己上載嘅墊臉相）都行同一條數，所以呢個 case 照留。
+  it("crops a landscape source down to a portrait target exactly (1344×768 → 9:16)", () => {
     const box = mod.cropBox({ width: 1344, height: 768 }, 9 / 16, 1024);
     expect(box).toEqual({ width: 432, height: 768 });
     expect(box.width / box.height).toBeCloseTo(0.5625, 4);
@@ -65,7 +68,9 @@ describe("planEncode — 最後一張必須符合目標比例", () => {
   const nineSixteen = 9 / 16;
 
   it("crops a last-position identity anchor whose ratio fights the target", () => {
-    // 16:9 project：最後一張係原生 9:16 嘅近臉圖 → 比例正確性贏，照切。
+    // 16:9 專案：最後一張係原生 9:16 嘅近臉圖 → 比例正確性贏，照切。
+    // （注意 project.videoRatio 而家亦決定場景資產比例，所以「目標 16:9」呢個情境
+    // 係真實存在嘅——橫片專案成條 pipeline 都係 16:9。）
     expect(
       mod.planEncode({ identityAnchor: true, isLast: true, targetRatio: 16 / 9, sourceRatio: nineSixteen }),
     ).toBe("identity-crop");

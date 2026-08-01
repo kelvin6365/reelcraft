@@ -1,7 +1,7 @@
 {
   "promptId": "image_prompt_shot",
   "variables": {
-    "shot_json": "{\"plan\":{\"subject\":\"林知夏推門入店\",\"beat\":\"她鼓起勇氣走進來\",\"characters\":[\"林知夏\",\"陳阿姨\"],\"dialogue\":\"對唔住我遲到咗\"},\"photography\":{\"lighting\":\"窗外冷藍逆光，室內暖黃補光\",\"dof\":\"shallow\",\"focusFace\":\"林知夏\",\"tone\":\"林知夏偏冷低飽和，店內偏暖\"},\"acting\":{\"expression\":\"眉頭微蹙、嘴角緊抿\",\"bodyAction\":\"右手仍按在門把上、身體半側\",\"eyeline\":\"望向店內深處\"},\"detail\":{\"shotSize\":\"全景\",\"angle\":\"平視\",\"camera\":\"固定\"}}",
+    "shot_json": "{\"plan\":{\"subject\":\"牆上一塊空白光板亮起，林知夏抬頭望向它\",\"beat\":\"機械音提示響起，她意識到自己遲到\",\"characters\":[\"林知夏\",\"陳阿姨\"],\"dialogue\":\"對唔住我遲到咗\"},\"photography\":{\"lighting\":\"窗外冷藍逆光，室內暖黃補光\",\"dof\":\"shallow\",\"focusFace\":\"林知夏\",\"tone\":\"林知夏偏冷低飽和，店內偏暖\"},\"acting\":{\"expression\":\"眉頭微蹙、嘴角緊抿\",\"bodyAction\":\"右手仍按在門把上、身體半側\",\"eyeline\":\"望向牆上光板\"},\"detail\":{\"shotSize\":\"全景\",\"angle\":\"平視\",\"camera\":\"固定\"}}",
     "scene_blocking": "軸線：鏡頭一律在窗一側；林知夏=畫面左、面向畫面右、企喺門口；陳阿姨=畫面右、面向畫面左、坐窗邊桌左側；道具：桌上有咖啡杯",
     "reference_legend": "Image 1: 咖啡店·夜（場景主視角） — location reference\nImage 2: 林知夏（面部特寫） — identity reference",
     "locked_assets": "咖啡店·夜（場景主視角） — Image 1 — 外貌（凍結文本，照譯勿改寫）: 深木色吧枱，暖黃吊燈，落地窗\n林知夏（面部特寫） — Image 2 — 外貌（凍結文本，照譯勿改寫）: 女，二十多歲，及肩黑髮，圓框眼鏡，米白色針織外套\n陳阿姨 — NO REFERENCE IMAGE — 外貌（凍結文本，照譯勿改寫；唔准用 Image N 指佢）: 女，五十多歲，短鬈灰髮，深藍圍裙",
@@ -22,6 +22,10 @@
     "嚴禁把本模板出現過的英文文字原樣輸出",
     "留白等於邀請模型照抄參考圖的姿勢同構圖",
     "style_suffix 一律排喺最尾",
+    "聲音本身冇畫面，唔可以直譯",
+    "必須改為描述承載畫面",
+    "必須明確寫成無文字無數字無符號",
+    "唔准當人畫",
     "The reference images are identity references only",
     "Never render any text"
   ]

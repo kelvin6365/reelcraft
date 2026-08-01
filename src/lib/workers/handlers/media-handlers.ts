@@ -17,6 +17,7 @@ import { buildAngleImagePrompt, buildAngleNegativePrompt, buildLocationMainPromp
 import { buildPropMainPrompt, buildPropViewPrompt, buildPropNegativePrompt, type PropTier } from "@/lib/prompts/prop-views";
 import { buildCharacterMainPrompt, buildCharacterViewPrompt, buildCharacterNegativePrompt, buildCharacterFacePrompt, REF_FACE_MATCH_PROMPT } from "@/lib/prompts/character-views";
 import { loadStyle } from "@/lib/prompts/style-pack";
+import { safeAppearancePrompt } from "@/lib/prompts/appearance-filter";
 
 const CANDIDATE_COUNT = 3;
 
@@ -128,7 +129,10 @@ function assetImageHandler(kind: "character" | "location" | "prop"): TaskHandler
           modelKey: models.image,
           prompt: buildAngleImagePrompt(angle),
           negativePrompt: buildAngleNegativePrompt(style),
-          aspectRatio: "16:9",
+          // 跟成品比例，唔好硬編 16:9。視角圖係圖生圖、以主圖做唯一參考（下面 referenceMediaIds），
+          // 主圖而家係 project.videoRatio（見下面 assetRatio 嗰段註釋）。9:16 主圖配 16:9 目標，
+          // 等於逼模型將一張豎圖塞入橫框 → 視角圖自己 letterbox，跟住成張黑邊圖再做鏡頭參考。
+          aspectRatio: project.videoRatio,
           resolution: "4K",
           keyPrefix: `projects/${project.id}/locations/${row.id}`,
           referenceMediaIds: [row.lockedImageMediaId],
@@ -180,7 +184,17 @@ function assetImageHandler(kind: "character" | "location" | "prop"): TaskHandler
       return { view: viewIndex, mediaId: media.id };
     }
 
-    const assetRatio = kind === "location" ? "16:9" : "9:16";
+    // 場景主圖跟 project.videoRatio，唔再硬編 16:9——推翻 commit d204865（當時設 16:9
+    // 做「establishing 廣角橫構圖」，冇任何設計文檔，理由只留喺 commit message）。
+    //
+    // ⚠️ 唔好見到「參考圖比例」就以為呢度可以改返轉：**問題唔係比例，係構圖。**
+    // outbound-image 嘅 planEncode 一直都已經將非 identityAnchor 嘅參考圖 crop 到目標比例
+    // （實測 1344×768 → 432×768），所以送出去嗰張本來就係 9:16。真正殺人嘅係橫向 vista
+    // 被中央裁切丟走 68% 畫面，模型收到半截構圖之後會自己重建個開闊場景再 letterbox。
+    // 隔離實驗（同一鏡、同 prompt、只換參考圖）：冇參考圖 472px 黑邊／16:9 場景圖裁成 9:16
+    // 327px 黑邊／原生 9:16 場景圖 0px。所以要嘅係**原生豎構圖**，唔係事後裁切。
+    // 角色／道具維持原狀（角色 9:16、道具 1:1，見上面各自分支）。
+    const assetRatio = kind === "location" ? project.videoRatio : "9:16";
     // 墊臉 — user-uploaded reference face, only relevant to characters. Feeding
     // it as a reference lets the model lock the face while generating the front
     // view; see ref-face route for upload/removal.
@@ -321,11 +335,19 @@ export const imageShotHandler: TaskHandler = async ({ task, reportProgress }) =>
   // 收咗 locked_assets 但淨係寫個名就算，身份 100% 押喺一張參考圖上。
   // droppedCharacters（參考圖配額用完）照樣入 block，但明確標明冇圖，
   // 模板規則會禁止用 Image N 指佢哋，逼模型用全文字外貌描述。
+  //
+  // 外貌文本先過 safeAppearancePrompt：模板規則要求「照譯勿改寫」，即係 DB 入面嗰句
+  // 原文會逐字去到出圖 provider。有角色個 appearancePrompt 寫住「露出许多皮肤（尤其是
+  // 腰部）」，逐字譯入之後即刻 HTTP_422 content_policy_violation，terminal error 直接
+  // fail 一鏡。過濾只剝審查詞，服裝／髮色／配件（身份錨）一律保留。
   const lockedAssets =
     [
-      ...refs.map((a, i) => `${a.label} — Image ${i + 1} — 外貌（凍結文本，照譯勿改寫）: ${a.prompt || "（無描述）"}`),
+      ...refs.map(
+        (a, i) => `${a.label} — Image ${i + 1} — 外貌（凍結文本，照譯勿改寫）: ${safeAppearancePrompt(a.label, a.prompt) || "（無描述）"}`,
+      ),
       ...droppedCharacters.map(
-        (c) => `${c.name} — NO REFERENCE IMAGE — 外貌（凍結文本，照譯勿改寫；唔准用 Image N 指佢）: ${c.appearancePrompt || "（無描述）"}`,
+        (c) =>
+          `${c.name} — NO REFERENCE IMAGE — 外貌（凍結文本，照譯勿改寫；唔准用 Image N 指佢）: ${safeAppearancePrompt(c.name, c.appearancePrompt) || "（無描述）"}`,
       ),
     ].join("\n") || "（無鎖定資產）";
 
