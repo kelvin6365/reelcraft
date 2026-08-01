@@ -112,7 +112,7 @@
     {
       "id": "image_prompt_shot",
       "path": "pipeline/image_prompt_shot.zh.txt",
-      "version": "8",
+      "version": "9",
       "variables": [
         "shot_json",
         "scene_blocking",
@@ -120,7 +120,7 @@
         "locked_assets",
         "style_suffix"
       ],
-      "description": "鏡頭分鏡轉英文生圖 prompt，@图N 參考綁定 + 空間契約連戲 + 連續性條款。"
+      "description": "鏡頭分鏡轉英文生圖 prompt，Image N 參考綁定 + 角色外貌強制寫入 + 空間契約連戲 + 連續性條款。"
     }
   ]
 }

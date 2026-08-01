@@ -301,10 +301,33 @@ export const imageShotHandler: TaskHandler = async ({ task, reportProgress }) =>
     lockedProps.map((p) => ({ name: p.name, prompt: p.prompt, lockedImageMediaId: p.lockedImageMediaId, views: p.views })),
   );
 
-  const refAssets = buildShotRefAssets(shotCharacters, shotLocation, shotProps);
-  const referenceMediaIds = refAssets.map((a) => a.mediaId);
-  const referenceLegend = refAssets.map((a, i) => `图片${i + 1}=${a.label}`).join("；") || "（無參考圖）";
-  const lockedAssets = refAssets.map((a, i) => `图片${i + 1}（${a.label}）: ${a.prompt}`).join("\n") || "（無鎖定資產）";
+  const { refs, droppedCharacters } = buildShotRefAssets(shotCharacters, shotLocation, shotProps);
+  // 帶住 identityAnchor 落 outbound-image：近臉特寫走高解析／低壓縮路徑（2048 / q92 /
+  // 4:4:4），唔會壓落 1024。塊臉係身份訊號嘅唯一載體 —— 壓完 IED 剩返 30-40px，
+  // 低過 ISO/IEC 39794-5 最低 90px 一半，等於送咗張圖但鎖唔到身份。
+  const referenceMediaIds = refs.map((a) => ({ mediaId: a.mediaId, identityAnchor: a.identityAnchor === true }));
+
+  // Legend 用英文 `Image N`，唔再用 `@图N`/`图片N`：命名 token（@name）只有 Runway
+  // 支援，而且係 API 一級欄位；Gemini / FLUX / Seedream / Qwen 全部認英文序數
+  // （"the woman in the first image" / "Image 1"）。我哋舊格式係兩個家族嘅混種，
+  // 而且喺英文 prompt 插中文 token，指涉力再打折。
+  const charNames = new Set(shotCharacters.map((c) => c.name));
+  const baseLabel = (label: string) => label.split("（")[0] ?? label;
+  const kindOf = (label: string) => (charNames.has(baseLabel(label)) ? "identity reference" : "location reference");
+  const referenceLegend = refs.map((a, i) => `Image ${i + 1}: ${a.label} — ${kindOf(a.label)}`).join("\n") || "(no reference images)";
+
+  // Identity block：外貌描述由 handler 逐字帶入，模板規則要求 term-for-term 照譯、
+  // 唔准每鏡重新措辭。實測 37 鏡 imagePrompt 提到盔甲 0/37、髮色 1/37——text model
+  // 收咗 locked_assets 但淨係寫個名就算，身份 100% 押喺一張參考圖上。
+  // droppedCharacters（參考圖配額用完）照樣入 block，但明確標明冇圖，
+  // 模板規則會禁止用 Image N 指佢哋，逼模型用全文字外貌描述。
+  const lockedAssets =
+    [
+      ...refs.map((a, i) => `${a.label} — Image ${i + 1} — 外貌（凍結文本，照譯勿改寫）: ${a.prompt || "（無描述）"}`),
+      ...droppedCharacters.map(
+        (c) => `${c.name} — NO REFERENCE IMAGE — 外貌（凍結文本，照譯勿改寫；唔准用 Image N 指佢）: ${c.appearancePrompt || "（無描述）"}`,
+      ),
+    ].join("\n") || "（無鎖定資產）";
 
   reportProgress(10);
   const out = await textCallJson(

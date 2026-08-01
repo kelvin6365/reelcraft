@@ -8,7 +8,7 @@ import { fakeImage, fakeTts, fakeVideo } from "@/lib/ai/adapters/fake-media";
 import { falImage, falTts, falVideo } from "@/lib/ai/adapters/fal";
 import { atlasImage, atlasTts, atlasVideo } from "@/lib/ai/adapters/atlascloud";
 import { loadTemplates, runTemplate, type TemplateVars } from "@/lib/ai/template/runtime";
-import { normalizeReferenceImages } from "@/lib/ai/outbound-image";
+import { dedupeReferenceRefs, normalizeReferenceImages, type ReferenceImageRef } from "@/lib/ai/outbound-image";
 import { createMediaFromBuffer, createMediaFromUrl, getMediaUrl } from "@/lib/media/service";
 import type { MediaObject } from "@prisma/client";
 
@@ -47,7 +47,10 @@ export interface ImageGenRequest {
   // 交由 provider 預設輸出，唔會令任務失敗。
   resolution?: ImageResolution;
   keyPrefix: string;
-  referenceMediaIds?: string[];
+  // 參考圖：可以係純 mediaId，亦可以係 { mediaId, identityAnchor: true } —— 後者
+  // 標明「呢張係身份錨定圖（角色近臉特寫）」，會走高解析度／低壓縮路徑而且唔會
+  // 按出圖比例 center-crop（見 outbound-image.ts）。
+  referenceMediaIds?: ReferenceImageRef[];
 }
 
 export type ImageResolution = "1K" | "2K" | "4K";
@@ -127,13 +130,14 @@ export function effectiveImageModelKey(modelKey: string, hasRefs: boolean): stri
 }
 
 export async function generateImage(ctx: CallContext, req: ImageGenRequest): Promise<MediaObject> {
-  const referenceImages = req.referenceMediaIds?.length
-    ? await normalizeReferenceImages(req.referenceMediaIds)
-    : undefined;
+  // 次序好重要：先由參考圖數量決定最終 model key（t2i → /edit swap），再 normalize。
+  // Normalize 要知道目標比例（將來仲會要知 per-model capability），所以唔可以再喺
+  // model key 未定案之前跑。用 dedupeReferenceRefs 而唔係 raw array length，
+  // 令「hasRefs」同 normalize 實際會處理嘅張數對齊（空字串／重複會被剔走）。
+  const refs = dedupeReferenceRefs(req.referenceMediaIds ?? []);
+  const modelKey = effectiveImageModelKey(req.modelKey, refs.length > 0);
 
-  const modelKey = effectiveImageModelKey(req.modelKey, !!referenceImages?.length);
-
-  if (referenceImages?.length && !getCapabilities(modelKey)?.supportsReferenceImages) {
+  if (refs.length > 0 && !getCapabilities(modelKey)?.supportsReferenceImages) {
     throw new AiError(
       "MODEL_NO_REFERENCE_SUPPORT",
       `${modelKey} 唔支援參考圖（img2img）——鎖定資產嘅角色一致性會失效。請喺專案設定揀一個支援參考圖嘅圖像模型。`,
@@ -143,6 +147,10 @@ export async function generateImage(ctx: CallContext, req: ImageGenRequest): Pro
 
   const resolution =
     req.resolution && getCapabilities(modelKey)?.resolutions?.includes(req.resolution) ? req.resolution : undefined;
+
+  // 裁到出圖比例：Gemini「採用最後一張輸入圖嘅比例」，1344×768 嘅場景圖入 9:16
+  // 出圖會令模型砌橫構圖再 letterbox → 燒死黑邊。
+  const referenceImages = refs.length ? await normalizeReferenceImages(refs, { aspectRatio: req.aspectRatio }) : undefined;
 
   return generate(ctx, "image", modelKey, async ({ provider, modelId }) => {
     if (provider === "fake") {

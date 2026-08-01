@@ -1,51 +1,167 @@
 // Outbound reference-image normalization for character consistency
 // (docs/plans/2026-07-19-character-consistency-design.md). Turns locked-asset
-// mediaIds into provider-ready base64 data-URIs: fetched from storage, downscaled
-// + JPEG-compressed (keeps multi-ref payloads small), deduped, capped, and
-// partial-failure tolerant — a couple of unreachable refs don't sink the shot.
+// mediaIds into provider-ready base64 data-URIs: fetched from storage, cropped to
+// the target output ratio, downscaled + JPEG-compressed (keeps multi-ref payloads
+// small), deduped, capped, and partial-failure tolerant — a couple of unreachable
+// refs don't sink the shot.
 // Only generate-media.ts may import this (guard: no-ai-bypass).
 import sharp from "sharp";
 import { prisma } from "@/lib/db";
 import { getStorage } from "@/lib/storage";
 import { AiError } from "@/lib/ai/types";
 
-const MAX_REFS = 6; // provider payload sanity cap (huobao/waoowaoo both cap ~6)
+// ⚠️ 呢個【唔係】語義上嘅參考圖上限，係一個「應該永遠唔會踩到」嘅 payload 保險絲。
+// 真正嘅截斷屬於呼叫方：見 shot-assets.ts 嘅 MAX_SHOT_REFS = 3（Gemini 2.5 Flash Image
+// 官方「maximum of three images in an input」）。點解唔喺呢層截：prompt 嘅 图片N legend
+// 係按呼叫方嗰個陣列編號嘅，如果呢層再靜靜 splice 多一刀，兩邊截斷點唔一致就會令
+// legend 同實際送出嘅圖片錯位——模型會照住錯嘅 legend 讀圖。
+// 所以呢層刻意設得比任何呼叫方嘅語義上限鬆，而且踩到嗰陣會嗌（唔會靜靜切）。
+const MAX_REFS = 6;
 const MAX_EDGE = 1024; // downscale longest edge
 const JPEG_QUALITY = 80;
 
-async function toDataUri(mediaId: string): Promise<string | null> {
+// 身份錨定圖（角色近臉特寫）專用門檻。理由：
+// 1. Gemini 把輸入切成 768×768 tile——塊臉要至少填滿一個完整 tile 先有足夠 token
+//    去承載身份特徵。9:16 嘅圖長邊 1024 → 短邊得 576，連一個 tile 都唔夠闊。
+//    短邊要 ≥768 即長邊要 ≥1366（9:16），取 2048 留 headroom。
+// 2. ISO/IEC 19794-5 最佳實踐 IED 120px（39794-5 最低 90px）。實測長邊 1024 路徑
+//    落嚟塊臉 IED ≈30–40px，低過行業下限一半;走 2048 路徑後大致 ×2。
+// 3. JPEG 80 嘅 chroma subsampling 正正食掉眼／唇邊界——身份比對就係睇呢啲，
+//    所以呢條路徑用 q92 + 4:4:4 唔做色度抽樣。
+// 只有 identityAnchor 走呢條路，其餘參考圖照舊 1024/q80 控 payload 同成本。
+const IDENTITY_MAX_EDGE = 2048;
+const IDENTITY_JPEG_QUALITY = 92;
+
+export interface ReferenceImageInput {
+  mediaId: string;
+  // 標明呢張係「身份錨定圖」（角色近臉特寫）：走高解析度／低壓縮路徑，
+  // 而且唔會按出圖比例 center-crop（怕切走塊臉）。
+  identityAnchor?: boolean;
+}
+
+export type ReferenceImageRef = string | ReferenceImageInput;
+
+export interface NormalizeReferenceOptions {
+  // 目標出圖比例，形如 "9:16"。Gemini 會採用「最後一張輸入圖」嘅比例，
+  // 所以參考圖要預先裁到同出圖一致，唔係就會燒死黑邊。
+  // parse 唔到就 fallback 返保留原比例嘅 fit:"inside" 行為。
+  aspectRatio?: string;
+}
+
+interface EncodeOptions {
+  aspectRatio: number | null;
+  identityAnchor: boolean;
+}
+
+// "9:16" / "16:9" / "1:1"，順手收 "16x9" 同 "16/9"。返回 width/height 比值。
+// 任何 parse 唔到／非有限／離譜嘅值一律當冇提供（唔炸，退回原比例路徑）。
+export function parseAspectRatio(ratio: string | undefined | null): number | null {
+  if (!ratio) return null;
+  const m = /^\s*(\d+(?:\.\d+)?)\s*[:x/]\s*(\d+(?:\.\d+)?)\s*$/i.exec(ratio);
+  if (!m) return null;
+  const w = Number(m[1]);
+  const h = Number(m[2]);
+  if (!(w > 0) || !(h > 0)) return null;
+  const r = w / h;
+  if (!Number.isFinite(r) || r < 0.05 || r > 20) return null;
+  return r;
+}
+
+// 算出「切到 targetRatio、又唔使放大」嘅最大 box，再把長邊壓落 maxEdge。
+// 注意：唔可以直接用 sharp 嘅 withoutEnlargement 配 fit:"cover"——sharp 會逐邊
+// 獨立 clamp，出嚟嘅圖會變返 source 比例（實測 576×1024 → 576×768），黑邊照舊。
+export function cropBox(
+  src: { width: number; height: number },
+  targetRatio: number,
+  maxEdge: number,
+): { width: number; height: number } {
+  const srcRatio = src.width / src.height;
+  const [cropW, cropH] =
+    srcRatio > targetRatio ? [src.height * targetRatio, src.height] : [src.width, src.width / targetRatio];
+  const scale = Math.min(1, maxEdge / Math.max(cropW, cropH));
+  return { width: Math.max(1, Math.round(cropW * scale)), height: Math.max(1, Math.round(cropH * scale)) };
+}
+
+async function encode(raw: Buffer, opts: EncodeOptions): Promise<Buffer> {
+  const pipeline = sharp(raw).rotate(); // honor EXIF orientation
+
+  if (opts.identityAnchor) {
+    // 近臉特寫唔可以 center-crop——切走額頭／下巴就冇咗身份資訊。保留原比例，
+    // 只係唔壓細。代價係佢自身唔會幫到出圖比例（見 module doc 同呼叫方注意事項）。
+    return pipeline
+      .resize(IDENTITY_MAX_EDGE, IDENTITY_MAX_EDGE, { fit: "inside", withoutEnlargement: true })
+      .jpeg({ quality: IDENTITY_JPEG_QUALITY, chromaSubsampling: "4:4:4" })
+      .toBuffer();
+  }
+
+  const src = opts.aspectRatio === null ? null : await sourceSize(raw);
+  const resized =
+    opts.aspectRatio === null || src === null
+      ? pipeline.resize(MAX_EDGE, MAX_EDGE, { fit: "inside", withoutEnlargement: true })
+      : pipeline.resize({ ...cropBox(src, opts.aspectRatio, MAX_EDGE), fit: "cover", position: "centre" });
+
+  return resized.jpeg({ quality: JPEG_QUALITY }).toBuffer();
+}
+
+// EXIF orientation 5–8 代表影像被旋轉 90°，.rotate() 之後 w/h 對調。
+async function sourceSize(raw: Buffer): Promise<{ width: number; height: number } | null> {
+  const meta = await sharp(raw).metadata();
+  if (!meta.width || !meta.height) return null;
+  const swapped = (meta.orientation ?? 1) >= 5;
+  return swapped ? { width: meta.height, height: meta.width } : { width: meta.width, height: meta.height };
+}
+
+async function toDataUri(ref: ReferenceImageInput, opts: NormalizeReferenceOptions): Promise<string | null> {
   try {
-    const media = await prisma.mediaObject.findUnique({ where: { id: mediaId } });
+    const media = await prisma.mediaObject.findUnique({ where: { id: ref.mediaId } });
     if (!media) return null;
     const raw = await getStorage().getObjectBuffer(media.storageKey);
-    const jpeg = await sharp(raw)
-      .rotate() // honor EXIF orientation
-      .resize(MAX_EDGE, MAX_EDGE, { fit: "inside", withoutEnlargement: true })
-      .jpeg({ quality: JPEG_QUALITY })
-      .toBuffer();
+    const jpeg = await encode(raw, {
+      aspectRatio: parseAspectRatio(opts.aspectRatio),
+      identityAnchor: ref.identityAnchor === true,
+    });
     return `data:image/jpeg;base64,${jpeg.toString("base64")}`;
   } catch (err) {
-    console.error("[outbound-image] normalize failed", { mediaId, err: String(err) });
+    console.error("[outbound-image] normalize failed", { mediaId: ref.mediaId, err: String(err) });
     return null;
   }
 }
 
-// Resolve an ordered list of reference mediaIds to data-URIs, preserving order
-// (order is load-bearing — the prompt's 图片N legend maps to this array). Dedupes
-// by mediaId first. Throws only if EVERY reference fails.
-export async function normalizeReferenceImages(mediaIds: (string | null | undefined)[]): Promise<string[]> {
-  const seen = new Set<string>();
-  const ids: string[] = [];
-  for (const m of mediaIds) {
-    if (m && !seen.has(m)) {
-      seen.add(m);
-      ids.push(m);
-    }
+// Dedupe by mediaId, preserve first-seen order; identityAnchor is sticky (OR)
+// so a duplicate that's flagged anywhere gets the high-resolution path.
+export function dedupeReferenceRefs(refs: (ReferenceImageRef | null | undefined)[]): ReferenceImageInput[] {
+  const byId = new Map<string, ReferenceImageInput>();
+  for (const r of refs) {
+    const mediaId = typeof r === "string" ? r : r?.mediaId;
+    if (!mediaId) continue;
+    const identityAnchor = typeof r === "object" && r !== null && r.identityAnchor === true;
+    const prev = byId.get(mediaId);
+    if (prev) prev.identityAnchor = prev.identityAnchor || identityAnchor;
+    else byId.set(mediaId, { mediaId, identityAnchor });
   }
-  ids.splice(MAX_REFS);
+  const all = [...byId.values()];
+  if (all.length > MAX_REFS) {
+    // 踩到保險絲 = 有呼叫方冇喺自己嗰層截斷，legend 已經同實際圖片錯位。
+    console.error("[outbound-image] reference count exceeded the payload backstop — caller must truncate", {
+      got: all.length,
+      backstop: MAX_REFS,
+    });
+  }
+  return all.slice(0, MAX_REFS);
+}
+
+// Resolve an ordered list of reference images to data-URIs, preserving order
+// (order is load-bearing — the prompt's 图片N legend maps to this array, and
+// Gemini adopts the aspect ratio of the LAST image). Accepts bare mediaIds or
+// {mediaId, identityAnchor} records. Throws only if EVERY reference fails.
+export async function normalizeReferenceImages(
+  refs: (ReferenceImageRef | null | undefined)[],
+  opts: NormalizeReferenceOptions = {},
+): Promise<string[]> {
+  const ids = dedupeReferenceRefs(refs);
   if (ids.length === 0) return [];
 
-  const resolved = await Promise.all(ids.map(toDataUri));
+  const resolved = await Promise.all(ids.map((ref) => toDataUri(ref, opts)));
   const ok = resolved.filter((u): u is string => u !== null);
   if (ok.length === 0) {
     throw new AiError("REFERENCE_ALL_FAILED", `all ${ids.length} reference image(s) failed to normalize`, true);

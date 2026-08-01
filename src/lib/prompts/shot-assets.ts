@@ -1,5 +1,3 @@
-import type { LocationAngle } from "@/lib/prompts/location-angles";
-
 export interface RefCharacter {
   name: string;
   aliases?: string[];
@@ -23,12 +21,20 @@ export interface RefProp {
 
 const norm = (s: string) => s.normalize("NFKC").trim().toLowerCase();
 
+// 單字名（「王」「李」）做 substring 會亂咬：「王」會咬中「王楚」，
+// 「王楚」又會咬中「王」。角色配額得 2 個，多咬一個就白白食走一格。
+// 兩邊都夠長先准 substring，唔夠就只准全等。（同 pickShotLocation 一致）
+const MIN_FUZZY_LEN = 2;
+
+const looseMatch = (nm: string, w: string) =>
+  nm === w || (nm.length >= MIN_FUZZY_LEN && w.length >= MIN_FUZZY_LEN && (nm.includes(w) || w.includes(nm)));
+
 export function matchShotCharacters(shotCharNames: string[], locked: RefCharacter[]): RefCharacter[] {
   const wanted = shotCharNames.map(norm).filter(Boolean);
   if (!wanted.length) return [];
   return locked.filter((c) => {
     const names = [c.name, ...(c.aliases ?? [])].map(norm).filter(Boolean);
-    return names.some((nm) => wanted.some((w) => nm === w || nm.includes(w) || w.includes(nm)));
+    return names.some((nm) => wanted.some((w) => looseMatch(nm, w)));
   });
 }
 
@@ -36,8 +42,7 @@ export function matchShotCharacters(shotCharNames: string[], locked: RefCharacte
 // 但劇本原文／build_scenes 嘅 scene.location 唔會帶時段後綴。兩邊都剝走先可以比。
 const stripTimeOfDay = (s: string) => s.replace(/[·・‧](?:早|日|黃昏|黄昏|夜)\s*$/u, "");
 const baseName = (s: string) => norm(stripTimeOfDay(s));
-// 單字地點（「屋」「山」）做 substring 會亂咬，只准整名相等
-const MIN_FUZZY_LEN = 2;
+// 單字地點（「屋」「山」）做 substring 會亂咬，只准整名相等 → 共用上面嘅 MIN_FUZZY_LEN
 
 // 揀呢個鏡頭要用邊個鎖定場景嘅參考圖。
 // 優先用 build_scenes 寫入 DB 嘅 scene.location（權威來源），撞唔到先退回劇本原文 substring。
@@ -96,15 +101,28 @@ export interface RefAsset {
   mediaId: string;
   label: string;
   prompt: string;
+  // 角色近臉特寫 —— outbound-image 會用高解析度／低壓縮路徑送出（2048 / q92 / 4:4:4），
+  // 唔會壓落 1024。塊臉係身份訊號嘅唯一載體，壓縮完 IED 剩返 30-40px 就鎖唔到身份。
+  identityAnchor?: boolean;
 }
 
-// Provider cap — normalizeReferenceImages (outbound-image.ts:12) silently
-// splices beyond 6, so truncate HERE before the legend is numbered, or the
-// 图片N legend and the actually-sent images drift out of sync. Characters,
-// location and props all compete for these 6 slots — only assets actually
-// matched to this shot (via matchShotCharacters/pickShotLocation/matchShotProps)
-// are passed in, so busy shots degrade gracefully rather than overflowing.
-export const MAX_SHOT_REFS = 6;
+// Gemini 2.5 Flash Image 官方文檔明文：「include a maximum of three images in an input」。
+// 超過三張，模型會開始溝身份（多角色鏡頭出現張冠李戴／角色直接消失）。
+// 舊註釋引「huobao/waoowaoo both cap ~6」係口耳相傳，冇官方根據，已作廢。
+// 一定要喺呢度截斷（唔好留畀 normalizeReferenceImages 靜靜 splice），
+// 因為 图片N legend 係按呢個陣列編號嘅，截斷點唔一致就會 legend 同實際圖片錯位。
+export const MAX_SHOT_REFS = 3;
+
+// 三格額度：1 格場景 + 2 格角色。道具／場景 angle 圖／角色側背視角一律冇位，
+// 佢哋只能靠 prompt 文字描述。
+export const MAX_SHOT_CHARACTER_REFS = 2;
+
+export interface ShotRefAssets {
+  /** 已 slice 到 MAX_SHOT_REFS，順序 = 實際送出 provider 嘅順序 */
+  refs: RefAsset[];
+  /** 冇攞到參考圖位嘅角色 —— 下游要改用純文字外貌描述補返身份 */
+  droppedCharacters: { name: string; appearancePrompt: string }[];
+}
 
 export function buildShotRefAssets(
   shotCharacters: {
@@ -123,36 +141,42 @@ export function buildShotRefAssets(
       }
     | null
     | undefined,
-  shotProps: RefProp[] = [],
-): RefAsset[] {
-  const refAssets: RefAsset[] = [
-    ...shotCharacters
-      .filter((c) => c.lockedImageMediaId)
-      .flatMap((c) => [
-        { mediaId: c.lockedImageMediaId!, label: `${c.name}（角色全身正面）`, prompt: c.appearancePrompt },
-        ...(c.faceImageMediaId ? [{ mediaId: c.faceImageMediaId, label: `${c.name}（面部特寫）`, prompt: "面部身份參照" }] : []),
-        ...((c.views as LocationAngle[] | undefined) ?? [])
-          .filter((v): v is LocationAngle & { mediaId: string } => v.mediaId != null)
-          .map((v) => ({ mediaId: v.mediaId, label: `${c.name}（${v.label}）`, prompt: "同一角色的其他視角參照" })),
-      ]),
-    ...(shotLocation?.lockedImageMediaId
-      ? [{ mediaId: shotLocation.lockedImageMediaId, label: `${shotLocation.name}（場景主視角）`, prompt: shotLocation.prompt ?? "" }]
-      : []),
-    ...((shotLocation?.angles as LocationAngle[] | undefined) ?? [])
-      .filter((a): a is LocationAngle & { mediaId: string } => a.mediaId != null)
-      .map((a) => ({
-        mediaId: a.mediaId,
-        label: `${shotLocation!.name}（場景視角：${a.label}）`,
-        prompt: a.prompt,
-      })),
-    ...shotProps
-      .filter((p) => p.lockedImageMediaId)
-      .flatMap((p) => [
-        { mediaId: p.lockedImageMediaId!, label: `${p.name}（道具主視角）`, prompt: p.prompt ?? "" },
-        ...((p.views as LocationAngle[] | undefined) ?? [])
-          .filter((v): v is LocationAngle & { mediaId: string } => v.mediaId != null)
-          .map((v) => ({ mediaId: v.mediaId, label: `${p.name}（道具視角：${v.label}）`, prompt: v.prompt })),
-      ]),
-  ];
-  return refAssets.slice(0, MAX_SHOT_REFS);
+  _shotProps: RefProp[] = [],
+): ShotRefAssets {
+  // ⚠️ 排序係硬性要求，唔好「順手」改返轉：
+  // Gemini 2.5 Flash Image 官方文檔——「the model will adopt the aspect ratio of the
+  // last image provided」。場景鎖定圖係 16:9（1344×768），角色鎖定圖係 9:16（768×1344），
+  // 而短劇成品要 9:16。舊排序（角色→場景）最後一張係橫向場景圖 → 實測 21/37 張出圖
+  // 有燒死嘅黑邊。所以：場景排最前，角色排最後，讓模型跟最後嗰張 9:16 角色圖。
+  const locationRef: RefAsset[] = shotLocation?.lockedImageMediaId
+    ? [{ mediaId: shotLocation.lockedImageMediaId, label: `${shotLocation.name}（場景主視角）`, prompt: shotLocation.prompt ?? "" }]
+    : [];
+
+  // 每個角色只送一張。優先近臉特寫（faceImageMediaId）——身份靠五官鎖，
+  // 近臉比全身更能守住 identity；冇近臉圖先退回全身鎖定圖。
+  const characterRefs: RefAsset[] = [];
+  const droppedCharacters: { name: string; appearancePrompt: string }[] = [];
+  for (const c of shotCharacters) {
+    if (characterRefs.length < MAX_SHOT_CHARACTER_REFS && c.faceImageMediaId) {
+      characterRefs.push({ mediaId: c.faceImageMediaId, label: `${c.name}（面部特寫）`, prompt: c.appearancePrompt, identityAnchor: true });
+      continue;
+    }
+    if (characterRefs.length < MAX_SHOT_CHARACTER_REFS && c.lockedImageMediaId) {
+      characterRefs.push({ mediaId: c.lockedImageMediaId, label: `${c.name}（角色全身正面）`, prompt: c.appearancePrompt });
+      continue;
+    }
+    // 額度用完，或者呢個角色根本一張鎖定圖都冇 → 交畀下游寫成文字描述
+    droppedCharacters.push({ name: c.name, appearancePrompt: c.appearancePrompt });
+  }
+
+  if (droppedCharacters.length > 0) {
+    // 舊版淨係 slice(0, 6)，一聲不響掉走角色，呢個 bug 靜默咗好耐。
+    console.warn(
+      `[buildShotRefAssets] 角色參考圖額度不足 — 本鏡共 ${shotCharacters.length} 個角色，` +
+        `送出 ${characterRefs.length} 個 [${characterRefs.map((r) => r.label).join(", ")}]，` +
+        `擋走 ${droppedCharacters.length} 個 [${droppedCharacters.map((c) => c.name).join(", ")}] → 改用文字描述`,
+    );
+  }
+
+  return { refs: [...locationRef, ...characterRefs].slice(0, MAX_SHOT_REFS), droppedCharacters };
 }

@@ -10,8 +10,16 @@ process.env.BETTER_AUTH_SECRET ??= "x".repeat(32);
 process.env.BETTER_AUTH_URL ??= "http://localhost:3000";
 process.env.API_ENCRYPTION_KEY ??= "y".repeat(32);
 
+// Stubbed rather than importOriginal: the real module pulls in sharp + storage,
+// and this file only exercises the capability gate / model-key swap.
+const normalizeSpy = vi.fn(async (ids: unknown[]) => ids.map(() => "data:image/jpeg;base64,AA=="));
 vi.mock("@/lib/ai/outbound-image", () => ({
-  normalizeReferenceImages: vi.fn(async (ids: string[]) => ids.map(() => "data:image/jpeg;base64,AA==")),
+  normalizeReferenceImages: normalizeSpy,
+  dedupeReferenceRefs: (refs: (string | { mediaId: string } | null | undefined)[]) =>
+    refs
+      .map((r) => (typeof r === "string" ? r : r?.mediaId))
+      .filter((id): id is string => !!id)
+      .map((mediaId) => ({ mediaId, identityAnchor: false })),
 }));
 vi.mock("@/lib/db", () => ({ prisma: {} }));
 
@@ -27,6 +35,7 @@ beforeAll(async () => {
 
 afterEach(() => {
   vi.unstubAllGlobals();
+  normalizeSpy.mockClear();
 });
 
 describe("supportsReferenceImages catalog", () => {
@@ -64,6 +73,19 @@ describe("generateImage reference gate", () => {
     ).rejects.toMatchObject({ code: "MODEL_NO_REFERENCE_SUPPORT", retryable: false });
 
     expect(fetchMock).not.toHaveBeenCalled();
+    // 次序證明：model key swap／capability gate 行喺 normalize 之前，
+    // 所以一個註定失敗嘅 call 唔會白白去 storage 攞圖再壓縮。
+    expect(normalizeSpy).not.toHaveBeenCalled();
+  });
+
+  it("normalizes references against the target output ratio", async () => {
+    await media
+      .generateImage(ctx as never, { ...req, modelKey: "fake::image", referenceMediaIds: ["media-1"] } as never)
+      .catch(() => null);
+
+    expect(normalizeSpy).toHaveBeenCalledWith([{ mediaId: "media-1", identityAnchor: false }], {
+      aspectRatio: "9:16",
+    });
   });
 
   it("lets a reference-capable model through the gate", async () => {
