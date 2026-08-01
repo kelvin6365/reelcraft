@@ -49,8 +49,48 @@ export interface NormalizeReferenceOptions {
 }
 
 interface EncodeOptions {
-  aspectRatio: number | null;
+  targetRatio: number | null;
   identityAnchor: boolean;
+  // 係咪陣列最後一張——決定咗佢使唔使為咗比例正確性犧牲面部保真度，見 planEncode。
+  isLast: boolean;
+}
+
+// 兩個比例差幾多先當「唔同」。5% 嘅相對差足以放行編碼上嘅零頭（角色資產原生
+// 768×1344 = 0.5714，對 9:16 = 0.5625 差 1.6%，provider 一樣會出 9:16），
+// 但任何有意義嘅比例跳躍都遠遠超標（9:16 vs 16:9 差 216%、vs 1:1 差 78%、
+// vs 3:4 差 33%），唔會漏網。
+const RATIO_TOLERANCE = 0.05;
+
+export type EncodePlan = "identity" | "identity-crop" | "crop" | "fit-inside";
+
+// 決定一張參考圖行邊條編碼路徑。抽成純函數係為咗可以直接測「最後一張」呢條
+// invariant，唔使砌真圖。
+//
+// 關鍵不變式：**最後一張送出嘅圖必須符合目標出圖比例。** Gemini 官方文檔明文
+// 「the model will adopt the aspect ratio of the last image provided」——最後一張
+// 比例唔啱，模型就會照佢嘅比例砌構圖再 letterbox 入目標畫布，燒死黑邊。
+//
+// 呢個令 identityAnchor 喺「排最後」嗰陣要讓步：normalize 唔可以重排（順序係
+// load-bearing，prompt 嘅 图片N legend 按呢個陣列編號），而 buildShotRefAssets 嘅
+// 排序係 [場景, ...角色]，即係最後一張結構上必然係角色近臉圖。所以最後一張
+// identityAnchor 一旦比例唔啱，就無視「唔 crop」嘅保護，照切。
+//
+// 點解值得犧牲該張嘅面部保真度：黑邊係**確定性**失敗——一旦踩中，該集每一格
+// 都燒死，而且冇得補救；面部被切窄係**漸進式降級**——身份特徵仍然大部分保留，
+// 而且鏡頭通常仲有其他角色 ref 同純文字外貌描述兜底。確定性災難輸畀漸進降級。
+// 注意呢張仍然行 2048/q92/4:4:4 高解析路徑，讓步嘅只係「唔 crop」嗰part。
+export function planEncode(opts: {
+  identityAnchor: boolean;
+  isLast: boolean;
+  targetRatio: number | null;
+  sourceRatio: number | null;
+}): EncodePlan {
+  const { identityAnchor, isLast, targetRatio, sourceRatio } = opts;
+  // 目標比例 parse 唔到／讀唔到 source 尺寸 → 退回原本保留比例嘅行為，唔炸。
+  if (targetRatio === null || sourceRatio === null) return identityAnchor ? "identity" : "fit-inside";
+  if (!identityAnchor) return "crop";
+  const matches = Math.abs(sourceRatio - targetRatio) / targetRatio <= RATIO_TOLERANCE;
+  return isLast && !matches ? "identity-crop" : "identity";
 }
 
 // "9:16" / "16:9" / "1:1"，順手收 "16x9" 同 "16/9"。返回 width/height 比值。
@@ -82,25 +122,39 @@ export function cropBox(
   return { width: Math.max(1, Math.round(cropW * scale)), height: Math.max(1, Math.round(cropH * scale)) };
 }
 
-async function encode(raw: Buffer, opts: EncodeOptions): Promise<Buffer> {
+export async function encodeReferenceImage(raw: Buffer, opts: EncodeOptions): Promise<Buffer> {
   const pipeline = sharp(raw).rotate(); // honor EXIF orientation
+  const src = await sourceSize(raw);
+  const plan = planEncode({ ...opts, sourceRatio: src ? src.width / src.height : null });
+  const identityJpeg = { quality: IDENTITY_JPEG_QUALITY, chromaSubsampling: "4:4:4" } as const;
 
-  if (opts.identityAnchor) {
-    // 近臉特寫唔可以 center-crop——切走額頭／下巴就冇咗身份資訊。保留原比例，
-    // 只係唔壓細。代價係佢自身唔會幫到出圖比例（見 module doc 同呼叫方注意事項）。
-    return pipeline
-      .resize(IDENTITY_MAX_EDGE, IDENTITY_MAX_EDGE, { fit: "inside", withoutEnlargement: true })
-      .jpeg({ quality: IDENTITY_JPEG_QUALITY, chromaSubsampling: "4:4:4" })
-      .toBuffer();
+  switch (plan) {
+    case "identity":
+      // 近臉特寫唔 center-crop——切走額頭／下巴就冇咗身份資訊。保留原比例，只係唔壓細。
+      return pipeline
+        .resize(IDENTITY_MAX_EDGE, IDENTITY_MAX_EDGE, { fit: "inside", withoutEnlargement: true })
+        .jpeg(identityJpeg)
+        .toBuffer();
+    case "identity-crop":
+      // 排最後 + 比例唔啱：比例正確性贏（見 planEncode 嘅論證）。解析度／壓縮率
+      // 照舊行高規格，讓步嘅淨係「唔 crop」。
+      // biome-ignore lint/style/noNonNullAssertion: planEncode 只喺兩者皆非 null 先會回呢個 plan
+      return pipeline
+        .resize({ ...cropBox(src!, opts.targetRatio!, IDENTITY_MAX_EDGE), fit: "cover", position: "centre" })
+        .jpeg(identityJpeg)
+        .toBuffer();
+    case "crop":
+      // biome-ignore lint/style/noNonNullAssertion: 同上
+      return pipeline
+        .resize({ ...cropBox(src!, opts.targetRatio!, MAX_EDGE), fit: "cover", position: "centre" })
+        .jpeg({ quality: JPEG_QUALITY })
+        .toBuffer();
+    default:
+      return pipeline
+        .resize(MAX_EDGE, MAX_EDGE, { fit: "inside", withoutEnlargement: true })
+        .jpeg({ quality: JPEG_QUALITY })
+        .toBuffer();
   }
-
-  const src = opts.aspectRatio === null ? null : await sourceSize(raw);
-  const resized =
-    opts.aspectRatio === null || src === null
-      ? pipeline.resize(MAX_EDGE, MAX_EDGE, { fit: "inside", withoutEnlargement: true })
-      : pipeline.resize({ ...cropBox(src, opts.aspectRatio, MAX_EDGE), fit: "cover", position: "centre" });
-
-  return resized.jpeg({ quality: JPEG_QUALITY }).toBuffer();
 }
 
 // EXIF orientation 5–8 代表影像被旋轉 90°，.rotate() 之後 w/h 對調。
@@ -111,14 +165,19 @@ async function sourceSize(raw: Buffer): Promise<{ width: number; height: number 
   return swapped ? { width: meta.height, height: meta.width } : { width: meta.width, height: meta.height };
 }
 
-async function toDataUri(ref: ReferenceImageInput, opts: NormalizeReferenceOptions): Promise<string | null> {
+async function toDataUri(
+  ref: ReferenceImageInput,
+  opts: NormalizeReferenceOptions,
+  isLast: boolean,
+): Promise<string | null> {
   try {
     const media = await prisma.mediaObject.findUnique({ where: { id: ref.mediaId } });
     if (!media) return null;
     const raw = await getStorage().getObjectBuffer(media.storageKey);
-    const jpeg = await encode(raw, {
-      aspectRatio: parseAspectRatio(opts.aspectRatio),
+    const jpeg = await encodeReferenceImage(raw, {
+      targetRatio: parseAspectRatio(opts.aspectRatio),
       identityAnchor: ref.identityAnchor === true,
+      isLast,
     });
     return `data:image/jpeg;base64,${jpeg.toString("base64")}`;
   } catch (err) {
@@ -161,7 +220,11 @@ export async function normalizeReferenceImages(
   const ids = dedupeReferenceRefs(refs);
   if (ids.length === 0) return [];
 
-  const resolved = await Promise.all(ids.map((ref) => toDataUri(ref, opts)));
+  // isLast 係按截斷後嘅陣列算。已知細口：如果最後嗰張 fetch 失敗（partial failure），
+  // 實際送出嘅最後一張會變成前一張，而佢當時唔係按「最後」嘅規則編碼。呢個組合要
+  // 「最後一張掛咗」×「前一張係比例唔啱嘅 anchor」先中，代價係退回黑邊——同修之前
+  // 一樣，唔會更差；要根治就要 fetch 完再編碼第二轉，唔值。
+  const resolved = await Promise.all(ids.map((ref, i) => toDataUri(ref, opts, i === ids.length - 1)));
   const ok = resolved.filter((u): u is string => u !== null);
   if (ok.length === 0) {
     throw new AiError("REFERENCE_ALL_FAILED", `all ${ids.length} reference image(s) failed to normalize`, true);

@@ -1,3 +1,4 @@
+import sharp from "sharp";
 import { beforeAll, describe, expect, it, vi } from "vitest";
 
 process.env.DATABASE_URL ??= "postgres://user:pw@localhost:5432/test";
@@ -57,6 +58,89 @@ describe("cropBox", () => {
   it("crops the other way for a landscape target", () => {
     const box = mod.cropBox({ width: 768, height: 1344 }, 16 / 9, 1024);
     expect(box).toEqual({ width: 768, height: 432 });
+  });
+});
+
+describe("planEncode — 最後一張必須符合目標比例", () => {
+  const nineSixteen = 9 / 16;
+
+  it("crops a last-position identity anchor whose ratio fights the target", () => {
+    // 16:9 project：最後一張係原生 9:16 嘅近臉圖 → 比例正確性贏，照切。
+    expect(
+      mod.planEncode({ identityAnchor: true, isLast: true, targetRatio: 16 / 9, sourceRatio: nineSixteen }),
+    ).toBe("identity-crop");
+  });
+
+  it("leaves a last-position identity anchor alone when the ratio already matches (今日 = no-op)", () => {
+    // 角色資產原生 768×1344 = 0.5714，對 9:16 = 0.5625 差 1.6%，喺容差內。
+    expect(
+      mod.planEncode({ identityAnchor: true, isLast: true, targetRatio: nineSixteen, sourceRatio: 768 / 1344 }),
+    ).toBe("identity");
+    expect(
+      mod.planEncode({ identityAnchor: true, isLast: true, targetRatio: nineSixteen, sourceRatio: nineSixteen }),
+    ).toBe("identity");
+  });
+
+  it("never crops an identity anchor that is not last, even on a ratio mismatch", () => {
+    expect(
+      mod.planEncode({ identityAnchor: true, isLast: false, targetRatio: 16 / 9, sourceRatio: nineSixteen }),
+    ).toBe("identity");
+  });
+
+  it("always crops ordinary references regardless of position", () => {
+    for (const isLast of [true, false]) {
+      expect(mod.planEncode({ identityAnchor: false, isLast, targetRatio: nineSixteen, sourceRatio: 16 / 9 })).toBe(
+        "crop",
+      );
+    }
+  });
+
+  it("falls back to the ratio-preserving path when the target or source is unknown", () => {
+    expect(mod.planEncode({ identityAnchor: false, isLast: true, targetRatio: null, sourceRatio: 1 })).toBe(
+      "fit-inside",
+    );
+    expect(mod.planEncode({ identityAnchor: true, isLast: true, targetRatio: null, sourceRatio: 1 })).toBe("identity");
+    expect(mod.planEncode({ identityAnchor: true, isLast: true, targetRatio: nineSixteen, sourceRatio: null })).toBe(
+      "identity",
+    );
+  });
+});
+
+describe("encodeReferenceImage — 實際出圖尺寸", () => {
+  const solid = (width: number, height: number) =>
+    sharp({ create: { width, height, channels: 3, background: "#456" } })
+      .jpeg()
+      .toBuffer();
+
+  it("keeps a last-position anchor at full identity resolution when the ratio matches", async () => {
+    const out = await mod.encodeReferenceImage(await solid(768, 1344), {
+      targetRatio: 9 / 16,
+      identityAnchor: true,
+      isLast: true,
+    });
+    // 原圖細過 IDENTITY_MAX_EDGE，唔放大，亦冇被切。
+    expect(await sharp(out).metadata()).toMatchObject({ width: 768, height: 1344 });
+  });
+
+  it("crops a last-position anchor to the target ratio but keeps the identity resolution path", async () => {
+    const out = await mod.encodeReferenceImage(await solid(768, 1344), {
+      targetRatio: 16 / 9,
+      identityAnchor: true,
+      isLast: true,
+    });
+    const meta = await sharp(out).metadata();
+    expect(meta.width / meta.height).toBeCloseTo(16 / 9, 2);
+    // 長邊仍然由 IDENTITY_MAX_EDGE(2048) 而唔係 MAX_EDGE(1024) 管——只讓步「唔 crop」。
+    expect(meta.width).toBe(768);
+  });
+
+  it("downscales an ordinary reference to the 1024 path and hits the target ratio exactly", async () => {
+    const out = await mod.encodeReferenceImage(await solid(1344, 768), {
+      targetRatio: 9 / 16,
+      identityAnchor: false,
+      isLast: true,
+    });
+    expect(await sharp(out).metadata()).toMatchObject({ width: 432, height: 768 });
   });
 });
 
