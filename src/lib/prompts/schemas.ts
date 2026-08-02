@@ -260,20 +260,31 @@ export const ScriptReviewOutput = z.object({
 });
 export type ScriptReviewOutput = z.infer<typeof ScriptReviewOutput>;
 
-// image_prompt_shot
-// 600 chars is a truncation floor, not a quality bar. image_prompt_shot.zh.txt
-// mandates a fixed ~330-char English tail ("Render as ONE single cinematic
-// frame … Never render any text, captions, subtitles or words in the frame.")
-// on top of the scene description, so a complete prompt cannot be short:
-// measured range on a real 37-shot episode was 790–1531 chars, while the four
-// truncated ones were 128–491. 600 sits above every observed truncation with
-// ~110 chars of margin and still ~190 below the shortest legitimate prompt.
-// A shorter-than-this prompt has lost its tail — which is exactly how shot 26
-// ended up with five lines of English subtitles rendered into the image.
-const IMAGE_PROMPT_MIN_CHARS = 600;
+// image_prompt_shot —— 截斷偵測用「條款在唔在」，唔用字數。
+//
+// 呢度本來係 .min(600)：當時觀察到完整英文 prompt 790–1531 字元、被截斷嘅 128–491，
+// 就攞 600 做地板。但字數只係代理指標，而佢綁死咗語言 —— prompt 輸出語言改成跟原文
+// （見 output-language.ts）之後，中文密度高約 1.75 倍（實測平均 731 vs 英文 1281），
+// 32/47 條完全正常嘅中文 prompt 即刻被打回頭，成個 scene 白燒三次重試。
+//
+// 真正要捉嘅嘢由頭到尾都唔係「短」，而係「尾巴俾人斬走咗」——模板強制 prompt 結尾
+// 一字不改照抄連續性條款（禁拼貼、參考圖只作身份參照、禁畫文字），而截斷第一個
+// 食掉嘅就係佢。shot 26 出五行英文字幕，就係因為呢段冇送到。
+//
+// 所以直接驗條款在唔在：精確（唔使估門檻）、語言無關（兩版各認一個獨有片段）、
+// 而且捉到「模型自己漏寫條款」呢種字數檢查本來就捉唔到嘅情況。
+const CONTINUITY_CLAUSE_MARKERS = [
+  "Never render any text", // 英文版尾句
+  "絕不出現任何文字", // 繁中版尾句
+];
 
 export const ImagePromptShotOutput = z.object({
-  prompt: z.string().min(IMAGE_PROMPT_MIN_CHARS),
+  prompt: z
+    .string()
+    .min(1)
+    .refine((p) => CONTINUITY_CLAUSE_MARKERS.some((m) => p.includes(m)), {
+      message: "prompt 缺少連續性條款（被截斷或模型漏寫）——呢段一失，出圖就會拼貼／畫字／抄參考圖構圖",
+    }),
   negativePrompt: z.string().optional().default(""),
   referencedAssets: z.array(z.string()).default([]),
 });

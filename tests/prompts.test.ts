@@ -386,15 +386,22 @@ describe("truncation guards in the per-shot schemas", () => {
     expect(DetailOutput.safeParse({ shots: [detailShot] }).success).toBe(true);
   });
 
-  it("rejects an image prompt too short to still carry its mandated tail", () => {
-    // 491 chars was the longest real truncated prompt observed in production.
+  // 截斷偵測由「字數地板」改成「條款在唔在」。字數綁死語言：輸出語言跟原文之後，
+  // 中文密度高約 1.75 倍，舊嘅 .min(600) 一次過打回 32/47 條正常中文 prompt。
+  it("rejects an image prompt whose continuity clause was truncated away", () => {
+    // 生產環境見過最長嘅截斷殘骸 491 字元——長短唔係重點，冇咗尾巴先係。
     expect(ImagePromptShotOutput.safeParse({ prompt: "a".repeat(491) }).success).toBe(false);
   });
 
-  it("accepts a full-length image prompt", () => {
-    // 790 chars was the shortest complete prompt in the same episode.
-    const out = ImagePromptShotOutput.parse({ prompt: "a".repeat(790) });
-    expect(out.prompt).toHaveLength(790);
-    expect(out.referencedAssets).toEqual([]);
+  it("accepts an English prompt carrying its continuity clause", () => {
+    const p = `${"a".repeat(400)} Never render any text, captions, subtitles or words in the frame.`;
+    expect(ImagePromptShotOutput.parse({ prompt: p }).referencedAssets).toEqual([]);
+  });
+
+  // 呢條係迴歸鎖：中文 prompt 短過舊門檻但完整，唔可以再被打回頭。
+  it("accepts a shorter Chinese prompt carrying its continuity clause", () => {
+    const p = `${"郑".repeat(200)}畫面中絕不出現任何文字、字幕、標題或文句。`;
+    const out = ImagePromptShotOutput.parse({ prompt: p });
+    expect(out.prompt.length).toBeLessThan(600);
   });
 });
