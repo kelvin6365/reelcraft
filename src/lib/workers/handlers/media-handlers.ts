@@ -18,6 +18,7 @@ import { buildPropMainPrompt, buildPropViewPrompt, buildPropNegativePrompt, type
 import { buildCharacterMainPrompt, buildCharacterViewPrompt, buildCharacterNegativePrompt, buildCharacterFacePrompt, REF_FACE_MATCH_PROMPT } from "@/lib/prompts/character-views";
 import { loadStyle } from "@/lib/prompts/style-pack";
 import { safeAppearancePrompt } from "@/lib/prompts/appearance-filter";
+import { OUTPUT_LANGUAGE_LABEL, resolveOutputLanguage } from "@/lib/prompts/output-language";
 
 const CANDIDATE_COUNT = 3;
 
@@ -340,14 +341,20 @@ export const imageShotHandler: TaskHandler = async ({ task, reportProgress }) =>
   // 原文會逐字去到出圖 provider。有角色個 appearancePrompt 寫住「露出许多皮肤（尤其是
   // 腰部）」，逐字譯入之後即刻 HTTP_422 content_policy_violation，terminal error 直接
   // fail 一鏡。過濾只剝審查詞，服裝／髮色／配件（身份錨）一律保留。
+  //
+  // 輸出語言跟第 1 站原文：中文小說 → 中文 prompt。locked_assets 本身係中文，輸出
+  // 同語言即係連翻譯呢一步都冇，凍結文本可以原樣照抄——「照譯勿改寫」只係把漂移
+  // 推到翻譯層（同一個特徵詞每鏡可以譯成唔同英文），照抄先係真正消除。
+  const outputLanguage = resolveOutputLanguage([episode.rawText, episode.scriptText]);
+  const frozenNote = outputLanguage === "zh" ? "凍結文本，原樣照抄勿改" : "凍結文本，照譯勿改寫";
   const lockedAssets =
     [
       ...refs.map(
-        (a, i) => `${a.label} — Image ${i + 1} — 外貌（凍結文本，照譯勿改寫）: ${safeAppearancePrompt(a.label, a.prompt) || "（無描述）"}`,
+        (a, i) => `${a.label} — Image ${i + 1} — 外貌（${frozenNote}）: ${safeAppearancePrompt(a.label, a.prompt) || "（無描述）"}`,
       ),
       ...droppedCharacters.map(
         (c) =>
-          `${c.name} — NO REFERENCE IMAGE — 外貌（凍結文本，照譯勿改寫；唔准用 Image N 指佢）: ${safeAppearancePrompt(c.name, c.appearancePrompt) || "（無描述）"}`,
+          `${c.name} — NO REFERENCE IMAGE — 外貌（${frozenNote}；唔准用 Image N 指佢）: ${safeAppearancePrompt(c.name, c.appearancePrompt) || "（無描述）"}`,
       ),
     ].join("\n") || "（無鎖定資產）";
 
@@ -362,6 +369,7 @@ export const imageShotHandler: TaskHandler = async ({ task, reportProgress }) =>
       locked_assets: lockedAssets,
       reference_legend: referenceLegend,
       style_suffix: style.prefix ?? "",
+      output_language: OUTPUT_LANGUAGE_LABEL[outputLanguage],
     },
   );
 

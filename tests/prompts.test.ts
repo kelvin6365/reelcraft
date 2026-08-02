@@ -158,15 +158,16 @@ describe("buildPrompt", () => {
     expect(built.text).toContain("時序詞之後嘅內容會被直接剝走");
   });
 
-  it("renders image_prompt_shot v11 with the sound-shot carrier rule and text-free surface ban intact", () => {
+  it("renders image_prompt_shot v12 with the sound-shot carrier rule and text-free surface ban intact", () => {
     const built = buildPrompt("image_prompt_shot", {
       shot_json: "{}",
       scene_blocking: "B",
       reference_legend: "L",
       locked_assets: "A",
       style_suffix: "S",
+      output_language: "英文",
     });
-    expect(built.version).toBe("11");
+    expect(built.version).toBe("12");
     expect(built.text).toContain("聲音本身冇畫面，唔可以直譯");
     expect(built.text).toContain("必須改為描述承載畫面");
     expect(built.text).toContain("必須明確寫成無文字無數字無符號");
@@ -187,11 +188,12 @@ describe("buildPrompt", () => {
       reference_legend: "L",
       locked_assets: "A",
       style_suffix: "S",
+      output_language: "繁體中文",
     });
     expect(built.text).toContain("無名群眾（locked_assets 冇對應資產嘅集體名詞）");
     expect(built.text).toContain("唔准把佢哋畫成可辨認嘅面孔");
     // 寫咗人數，模型就會逐個畫清楚 —— 要不可數描述
-    expect(built.text).toContain("唔准把集體名詞翻成一個明確人數");
+    expect(built.text).toContain("唔准把集體名詞寫成一個明確人數");
     expect(built.text).toContain("群眾唔准搶主體");
   });
 
