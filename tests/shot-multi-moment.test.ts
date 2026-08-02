@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, afterEach } from "vitest";
-import { capCrowdedShots, collapseMultiMomentShots } from "@/lib/workers/handlers/text-handlers";
+import { anonymizeCrowdSubjects, capCrowdedShots, collapseMultiMomentShots } from "@/lib/workers/handlers/text-handlers";
 
 // 單幀生圖模型冇時間軸：subject 塞咗兩個時刻，模型唯一嘅出路就係並排畫入同一張圖
 // （實測鏡 16 出 2×2 拼貼）。prompt 明文禁止但同 ≤2 上限一樣擋唔住，所以呢層做確定性
@@ -137,5 +137,61 @@ describe("collapseMultiMomentShots → capCrowdedShots 次序", () => {
     capCrowdedShots("s1", shots, known);
     expect(shots[0].characters).toEqual(["王楚", "李雪晴"]);
     expect(shots[0].subject).toBe("王楚上前；李雪晴皺眉");
+  });
+});
+
+// 集體名詞喺第一個子句嗰陣，keepFirstMoment 一定唔會剝（第一子句係「subject 唔會變空」
+// 嘅結構性保證）。所以要有第三層：改寫個名詞，唔郁句戲。
+describe("anonymizeCrowdSubjects", () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  it("rewrites the crowd noun in the FIRST clause — the one collapse can never strip", () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const shots = [
+      {
+        index: 16,
+        subject: "王楚的想象：夏雨战队在副本中不断胜利的画面，王楚在后方提供支持",
+        characters: ["王楚"],
+      },
+    ];
+    expect(anonymizeCrowdSubjects("s1", shots, ["王楚", "陈琳娜"])).toBe(1);
+    expect(shots[0].subject).not.toContain("夏雨战队");
+    expect(shots[0].subject).toContain("看不清面孔");
+    // 改寫唔係刪除：兩截真戲都要仲喺度
+    expect(shots[0].subject).toContain("王楚的想象");
+    expect(shots[0].subject).toContain("王楚在后方提供支持");
+    expect(warn.mock.calls[0][0]).toContain("shot=16");
+  });
+
+  it("leaves crowd nouns alone when they map to a locked asset", () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const shots = [{ index: 1, subject: "夏雨战队举杯", characters: [] }];
+    expect(anonymizeCrowdSubjects("s1", shots, ["夏雨战队"])).toBe(0);
+    expect(shots[0].subject).toBe("夏雨战队举杯");
+    expect(warn).not.toHaveBeenCalled();
+  });
+
+  it("catches bare and quantified crowd nouns", () => {
+    vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    for (const bad of ["王楚看着众人", "一群士兵冲上来", "幾名玩家在旁邊", "人群散開", "村民围观"]) {
+      const shots = [{ index: 1, subject: bad, characters: [] }];
+      expect(anonymizeCrowdSubjects("s1", shots, ["王楚"]), bad).toBe(1);
+      expect(shots[0].subject, bad).toContain("看不清面孔");
+    }
+  });
+
+  it("stays silent on a subject with no crowd noun", () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const shots = [{ index: 1, subject: "王楚低頭看手腕", characters: ["王楚"] }];
+    expect(anonymizeCrowdSubjects("s1", shots, ["王楚"])).toBe(0);
+    expect(warn).not.toHaveBeenCalled();
+  });
+
+  // 同前兩層一樣嘅硬性保證：鏡頭寧願降級都一定要寫得入 DB。
+  it("never throws — a crowd-only shot must still be written, not fail the scene", () => {
+    vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const shots = [{ index: 1 }, { index: 2, subject: "" }, { index: 3, subject: "众人" }];
+    expect(() => anonymizeCrowdSubjects("s1", shots, [])).not.toThrow();
+    expect(shots[2].subject).toBeTruthy();
   });
 });

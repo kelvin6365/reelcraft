@@ -26,6 +26,12 @@ const CLAUSE_PATTERNS: RegExp[] = [
   /(?:半裸|全裸|赤裸|裸[体體]|裸露|袒露|衣不蔽[体體]|不著寸縷|不着寸缕)/u,
   // 事業線／乳溝
   /(?:事[业業][线線]|乳[沟溝])/u,
+  // 體態誇張成語：實測「前凸后翘」（陈琳娜 appearancePrompt）令鏡 37 食 HTTP_422
+  // content_policy_violation。呢批詞成句嘅重點就係身材曲線，冇服裝／髮色／配件呢啲
+  // 身份錨，整句掉冇損失。只收有信心會觸發審查嗰啲——「豐滿」「身材姣好」呢類仲有
+  // 歧義（可以修飾服裝、可以係中性描述），照原則留返畀 provider 講先算。
+  /(?:前凸后翘|前凸後翹|凹凸有致|曲[线線]玲[珑瓏]|玲[珑瓏]有致|身材火辣|火辣身材|[丰豐]乳肥臀)/u,
+  /(?:巨乳|爆乳|美乳|酥胸|美臀|翹臀|翘臀)/u,
   // 英文：整句都係講暴露程度
   /\b(?:revealing|scantily[\s-]?clad|skimpy|barely[\s-]?covered|see[\s-]?through)\b/i,
   /\b(?:exposed|bare|naked)\s+(?:skin|midriff|waist|belly|torso|chest|cleavage|thighs?|shoulders?\s+and\s+\w+)\b/i,

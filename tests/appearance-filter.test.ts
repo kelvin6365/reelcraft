@@ -71,6 +71,32 @@ describe("filterAppearancePrompt — 唔准誤傷正常外貌", () => {
     expect(filterAppearancePrompt("")).toEqual({ text: "", removed: [] });
   });
 
+  it("剝走實際撞板嗰句：前凸后翘（鏡 37 食 HTTP_422）", () => {
+    const raw = "女，36岁，褐发蓝瞳，成熟御姐，前凸后翘，双腿白皙修长。 浴袍";
+    const { text, removed } = filterAppearancePrompt(raw);
+    expect(removed).toContain("前凸后翘");
+    expect(text).not.toContain("前凸后翘");
+    // 身份錨全部保住 —— 髮色／瞳色／服裝係跨鏡一致性嘅唯一文字載體
+    expect(text).toContain("褐发蓝瞳");
+    expect(text).toContain("浴袍");
+    expect(text).toContain("36岁");
+  });
+
+  it("捉到同類體態誇張詞", () => {
+    for (const bad of ["前凸後翹", "凹凸有致", "曲线玲珑", "身材火辣", "丰乳肥臀", "酥胸微露", "翘臀"]) {
+      const { removed } = filterAppearancePrompt(`黑色长发，${bad}，红色旗袍`);
+      expect(removed, bad).toHaveLength(1);
+    }
+  });
+
+  // 刻意保持窄：呢批仲有歧義（可以修飾服裝、可以係中性描述），照原則留返畀 provider 講先算。
+  it("唔會趁機寫闊 —— 有歧義嘅體態詞唔郁", () => {
+    for (const ok of ["身材高挑", "体型丰满", "身材匀称"]) {
+      const { removed } = filterAppearancePrompt(`黑色长发，${ok}，红色旗袍`);
+      expect(removed, ok).toHaveLength(0);
+    }
+  });
+
   it("全句都係審查詞時返空字串，唔會拋錯", () => {
     expect(filterAppearancePrompt("裸露皮肤").text).toBe("");
   });

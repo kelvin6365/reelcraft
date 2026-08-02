@@ -208,6 +208,75 @@ export function collapseMultiMomentShots(sceneId: string, shots: CappableShot[],
   return collapsed;
 }
 
+// 集體名詞硬改寫：冇對應鎖定資產嘅「一堆人」→ 改寫成無名遠景，唔靠模型自律。
+//
+// 點解要喺 handler 硬做：image_prompt_shot.zh.txt 早就明文寫「冇對應資產嘅集體名詞唔准
+// 畫成可辨認面孔，要寫成遠景／背影／失焦剪影」，實測照樣出六個雜兵（藍髮女、紅髮女、
+// 矮人、小孩…），而且下一鏡又係另一批樣。同 ≤2 同框（違反率 13.5% → 0）、時序詞（→ 0）
+// 一模一樣：prompt 擋唔住嘅嘢，喺 handler 做確定性改寫先至真係 0。
+//
+// 點解係改寫唔係刪除：keepFirstMoment 剝子句嘅前提係「呢個子句講緊另一組人／另一刻」，
+// 而且第一個子句永遠保留（呢個係「subject 唔會變空」嘅結構性保證，唔可以取消）。實測鏡 16
+// 「王楚的想象：夏雨战队在副本中不断胜利的画面，王楚在后方提供支持」個集體名詞正正喺第一
+// 個子句 —— 剝走成句就淨返一個冇內容嘅鏡頭，改寫個名詞就保住成場戲，同時令落到生圖
+// prompt 嗰陣根本冇得作可辨認嘅人。
+//
+// 兩層都刻意寫得窄（同 appearance-filter 一樣嘅取捨）：寧願漏一兩個講法（可見 —— 出圖見到
+// 雜兵、可以補 pattern），都好過闊到誤改真戲。
+const CROWD_HEAD =
+  "戰隊|战队|隊伍|队伍|小隊|小队|隊員|队员|眾人|众人|群眾|群众|人群|村民|士兵|守衛|守卫|觀眾|观众|路人|圍觀者|围观者";
+// 明確嘅複數量詞。跟住佢嘅名詞由一張窄名單認 —— 只喺量詞後面先生效，所以「同事」
+// 「記者」呢啲單獨出現有機會係主角本人嘅詞，唔會被誤改。
+const CROWD_QUANT = "一群|一眾|一众|幾名|几名|數名|数名|幾個|几个|眾多|众多|許多|许多";
+const CROWD_QUANT_NOUN =
+  "人|玩家|學生|学生|孩子|同事|同學|同学|手下|隨從|随从|保鏢|保镖|記者|记者|冒險者|冒险者|士兵|村民";
+// 專有名前綴（「夏雨战队」嘅「夏雨」）只喺佢由非漢字邊界起計 1-3 個字先食走：句中間
+// 嘅「他加入了夏雨战队」只會改到「战队」兩個字，留低「夏雨」。呢個方向係刻意保守 ——
+// 食多咗前綴會啃走動詞（「加入了」），出一句爛 subject，比留低一個名更差。
+const CROWD_PHRASE = new RegExp(
+  `(?:${CROWD_QUANT})(?:${CROWD_HEAD}|${CROWD_QUANT_NOUN})?|(?:(?<![\\u4e00-\\u9fff])[\\u4e00-\\u9fff]{1,3})?(?:${CROWD_HEAD})`,
+  "gu",
+);
+// 改寫後嘅講法：明確講「遠處」「看不清面孔」，生圖模型冇得作面。呢句本身唔會再命中
+// CROWD_PHRASE（「數個」「身影」都唔喺任何一張名單），所以唔會自我遞迴。
+const CROWD_ANON = "遠處數個看不清面孔的模糊身影";
+
+function anonymizeCrowdPhrases(subject: string, known: string[]): { text: string; hits: string[] } {
+  const hits: string[] = [];
+  const text = subject.replace(CROWD_PHRASE, (m) => {
+    // 對得上鎖定資產嘅唔准郁：呢個「隊伍」有參考圖，改寫佢等於刪走真戲。互為子串都當命中
+    // （「夏雨」vs「夏雨战队」），方向保守 —— 漏改一個有名有姓嘅群體，好過改走一個真角色。
+    if (known.some((n) => n.length > 0 && (m.includes(n) || n.includes(m)))) return m;
+    hits.push(m);
+    return CROWD_ANON;
+  });
+  return { text, hits };
+}
+
+// 回傳有集體名詞被改寫嘅鏡頭數。shots 就地改寫。
+//
+// ⚠️ 行喺 capCrowdedShots **之後**：cap 靠角色名喺 subject 入面嘅位置決定剝邊個子句，
+// 而改寫會塞一段唔含任何名嘅文字入去。倒轉次序，cap 就要對住一段已經被我哋改過嘅文字
+// 做剝除決定，warn 出嚟嘅「subject 改寫為」亦會夾雜兩層改動，查唔到係邊層做嘅。
+//
+// 同前兩層一樣：唔准 throw、唔准令 scene fail。冇對應資產唔係錯誤，係常態。
+export function anonymizeCrowdSubjects(sceneId: string, shots: CappableShot[], known: string[] = []): number {
+  let rewritten = 0;
+  for (const shot of shots) {
+    const before = (shot.subject ?? "").trim();
+    if (!before) continue;
+    const { text: after, hits } = anonymizeCrowdPhrases(before, known);
+    if (hits.length === 0 || after === before) continue;
+    rewritten++;
+    shot.subject = after;
+    console.warn(
+      `[storyboard] scene=${sceneId} shot=${shot.index} subject 有 ${hits.length} 個冇對應資產嘅集體名詞` +
+        `（${hits.join("、")}）— 已改寫成無名遠景，免得生圖憑空作面孔：「${before}」→「${after}」`,
+    );
+  }
+  return rewritten;
+}
+
 interface CharacterBioJson { age?: string; occupation?: string; personality?: string; painPoint?: string; backstory?: string }
 function formatCharacterBios(characters: Character[]): string {
   return characters
@@ -419,6 +488,120 @@ export const extractPropsHandler: TaskHandler = async ({ task, reportProgress })
   return { props: out.props.length, created };
 };
 
+// 閃回／回憶／夢境 → 程式切場，唔再靠模型判斷。
+//
+// 點解唔再改 prompt：build_scenes.zh.txt 已經兩度加硬性規則（「時間／地點跳躍必須切場」、
+// 「見到即切，不要自行判斷值不值得獨立成場」，仲寫埋實測後果同錨點取法），兩次重跑都仍然
+// 係 2 場，閃回（兩年前王楚喺電腦前）照樣夾喺場景 1（1001 字）之內。模型明顯把「一場約
+// 20 個元素」嘅配額當成可以壓過硬性規則 —— 同 ≤2 同框、時序詞係同一類失效模式：軟約束
+// 對住一個要權衡嘅目標，永遠有機會輸。
+//
+// 後果係靜默壞掉：Scene.location 逐場綁定，一場跨兩個時空，閃回嗰批鏡頭一定攞到外層場景
+// 嘅背景（實測：兩年前喺電腦前 → 出圖變咗龍巢穴同一條死龍），而且冇任何錯誤訊息。
+//
+// 點解唔會整壞 sliceByAnchors：呢個係**純後處理**。錨點定位照跑（原文 indexOf、命中判斷、
+// proportional fallback 全部不變），我哋淨係喺佢切出嚟嘅 content 字串上面再切一刀。切出嚟
+// 嘅子場景 anchorStart/anchorEnd 留空 —— 佢哋唔係模型畀嘅錨點，冒充就會令日後嘅錨點除錯
+// 睇到假資料（頭尾兩截保留原本嘅頭錨／尾錨，因為嗰兩個位置真係無變）。
+//
+// 閃回場嘅 location 一律留空：我哋確定佢唔喺外層場景嗰度，但唔知佢喺邊。留空之後
+// pickShotLocation 會退返去掃描該場原文揀鎖定地點，掃唔到就唔畀場景參考圖 —— 寧願冇圖
+// （中性背景，睇得出），好過畀錯地方（靜默壞）。
+//
+// ⚠️ 只認括號旁白註記，唔認散文入面嘅「兩年前」。「兩年前他就是這樣說的」呢類係對白入面
+// 嘅時間狀語，唔係畫面跳轉，照切就會把一場戲斬到粉碎（每場冇夠內容出鏡頭）。同樣係「寧願
+// 漏網（背景錯咗睇得到）都唔好亂切（切完先知場景結構爛咗）」嘅取捨。
+const FLASHBACK_OPEN = /[（(][^（()）]*?(?:闪回|閃回|回忆|回憶|梦境|夢境|梦中|夢中|倒叙|倒敘)[^（()）]*[）)]/;
+// 回切註記本身屬於「回到現在」嗰場（佢係嗰場嘅第一句），所以下面切喺佢**之前**。
+const FLASHBACK_CLOSE =
+  /[（(][^（()）]*?(?:回到现在|回到現在|回到当下|回到當下|画面拉回|畫面拉回|镜头拉回|鏡頭拉回|镜头回到|鏡頭回到|闪回结束|閃回結束)[^（()）]*[）)]/;
+// 短過呢個長度嘅碎片唔值得獨立成場（出唔到鏡頭），一律併返隔籬 —— 但一個字都唔准丟。
+const MIN_SEGMENT_CHARS = 8;
+
+export interface SceneDraft {
+  content: string;
+  anchorStart: string;
+  anchorEnd: string;
+  summary: string;
+  location: string;
+  timeOfDay: string;
+}
+
+// 把一段 content 切成「現在／閃回／現在…」交替嘅片段。全程唔准丟字：每一刀嘅頭、中、尾
+// 三截加返埋一定等於原文。
+function cutFlashbackSegments(content: string): { content: string; flashback: boolean }[] {
+  const pieces: { content: string; flashback: boolean }[] = [];
+  let rest = content;
+  // 上限純為防禦：一場入面正常唔會有 8 段閃回，行到上限就當佢係一場算數。
+  for (let guard = 0; guard < 8; guard++) {
+    const open = FLASHBACK_OPEN.exec(rest);
+    if (!open) break;
+
+    let head = rest.slice(0, open.index);
+    let flashEnd = open.index + open[0].length;
+    const close = FLASHBACK_CLOSE.exec(rest.slice(flashEnd));
+    // 有回切註記 → 閃回一路去到嗰度（覆蓋跨段閃回）；冇 → 閃回就係嗰個括號段本身。
+    if (close) flashEnd += close.index;
+    let flash = rest.slice(open.index, flashEnd);
+    const tail = rest.slice(flashEnd);
+
+    if (flash.trim().length < MIN_SEGMENT_CHARS) break; // 得個註記冇內容，切咗反而多餘
+
+    if (head.trim().length > 0) {
+      if (head.trim().length >= MIN_SEGMENT_CHARS) {
+        pieces.push({ content: head, flashback: false });
+      } else if (pieces.length > 0) {
+        pieces[pieces.length - 1].content += head; // 太碎，併返上一段
+      } else {
+        flash = head + flash; // 場頭得幾隻字就入閃回：併入閃回段係最細嘅代價，總之唔丟字
+      }
+      head = "";
+    }
+    pieces.push({ content: flash, flashback: true });
+    rest = tail;
+  }
+
+  if (rest.trim().length > 0) {
+    if (rest.trim().length >= MIN_SEGMENT_CHARS || pieces.length === 0) pieces.push({ content: rest, flashback: false });
+    else pieces[pieces.length - 1].content += rest;
+  }
+  return pieces;
+}
+
+// 就地把夾住閃回嘅場景拆開。回傳新嘅場景清單（順序即係 sceneIndex）。
+// 同 storyboard 嗰幾層一樣：唔准 throw、唔准令 task fail —— 認唔到標記就原封不動放行。
+export function splitFlashbackScenes(episodeId: string, scenes: SceneDraft[]): SceneDraft[] {
+  const out: SceneDraft[] = [];
+  for (const scene of scenes) {
+    const segments = cutFlashbackSegments(scene.content);
+    if (segments.length <= 1) {
+      out.push(scene);
+      continue;
+    }
+    segments.forEach((seg, i) => {
+      const isFirst = i === 0;
+      const isLast = i === segments.length - 1;
+      out.push({
+        content: seg.content,
+        // 頭尾兩截嘅邊界同原本一模一樣，錨點照留；中間切出嚟嘅邊界唔係模型畀嘅錨點，留空。
+        anchorStart: isFirst ? scene.anchorStart : "",
+        anchorEnd: isLast ? scene.anchorEnd : "",
+        summary: seg.flashback ? `（閃回／回憶）${scene.summary}`.slice(0, 200) : scene.summary,
+        // 閃回唔喺外層場景嗰個地點，但我哋唔知佢喺邊 —— 留空好過填錯（見上面註釋）。
+        location: seg.flashback ? "" : scene.location,
+        timeOfDay: seg.flashback ? "" : scene.timeOfDay,
+      });
+    });
+    console.warn(
+      `[build-scenes] episode=${episodeId} 場景「${scene.summary.slice(0, 20)}」夾住閃回／回憶 — ` +
+        `模型冇切，已按括號標記程式切成 ${segments.length} 場` +
+        `（${segments.map((s) => `${s.flashback ? "閃回" : "現在"}${s.content.trim().length}字`).join(" / ")}）；` +
+        "閃回場 location 留空，寧願冇場景參考圖都好過用錯背景",
+    );
+  }
+  return out;
+}
+
 export const buildScenesHandler: TaskHandler = async ({ task, reportProgress }) => {
   const { episode, project } = await loadEpisodeWithProject(task);
   const source = episode.scriptText || episode.rawText;
@@ -435,22 +618,36 @@ export const buildScenesHandler: TaskHandler = async ({ task, reportProgress }) 
 
   reportProgress(60);
   const slices = sliceByAnchors(source, out.scenes);
+  // 錨點切完先做閃回後處理：切場靠原文 offset，後處理淨係郁 content 字串（見
+  // splitFlashbackScenes 註釋）。模型自己已經切啱嗰啲場，呢層完全唔會郁。
+  const drafts = splitFlashbackScenes(
+    episode.id,
+    slices.map((slice, i) => ({
+      content: slice.content,
+      anchorStart: slice.anchorStart,
+      anchorEnd: slice.anchorEnd,
+      summary: out.scenes[i]?.summary ?? "",
+      // 模型輸出嘅地點／時段——落 DB 做每鏡揀場景參考圖嘅權威來源（Scene.location 註釋）
+      location: out.scenes[i]?.location ?? "",
+      timeOfDay: out.scenes[i]?.timeOfDay ?? "",
+    })),
+  );
+
   await prisma.scene.deleteMany({ where: { episodeId: episode.id } });
-  for (let i = 0; i < slices.length; i++) {
-    const meta = out.scenes[i];
+  for (let i = 0; i < drafts.length; i++) {
+    const draft = drafts[i];
     await prisma.scene.create({
       data: {
         id: newId(),
         userId: task.userId,
         episodeId: episode.id,
         sceneIndex: i + 1,
-        summary: meta?.summary ?? "",
-        content: slices[i].content,
-        anchorStart: slices[i].anchorStart,
-        anchorEnd: slices[i].anchorEnd,
-        // 模型輸出嘅地點／時段——落 DB 做每鏡揀場景參考圖嘅權威來源（Scene.location 註釋）
-        location: meta?.location ?? "",
-        timeOfDay: meta?.timeOfDay ?? "",
+        summary: draft.summary,
+        content: draft.content,
+        anchorStart: draft.anchorStart,
+        anchorEnd: draft.anchorEnd,
+        location: draft.location,
+        timeOfDay: draft.timeOfDay,
       },
     });
   }
@@ -468,7 +665,7 @@ export const buildScenesHandler: TaskHandler = async ({ task, reportProgress }) 
       payload: { chainedFrom: task.id },
     });
   }
-  return { scenes: slices.length, chained: then === TASK_TYPE.STORYBOARD_RUN };
+  return { scenes: drafts.length, chained: then === TASK_TYPE.STORYBOARD_RUN };
 };
 
 export const storyboardRunHandler: TaskHandler = async ({ task, reportProgress }) => {
@@ -501,10 +698,13 @@ export const storyboardRunHandler: TaskHandler = async ({ task, reportProgress }
     const plan = await textCallJson(ctx, models.text, "storyboard_plan", { scene_text: scene.content.slice(0, 12_000) });
     // 就地降級，次序有意：先把 subject 縮返一個凝固瞬間（剝走第二個時刻同無名群眾），
     // 再做同框上限（補返漏咗嘅角色、截頭 2 個、剝走剩低嗰啲嘅子句）—— 咁 cap 係對住
-    // 真係會入畫嗰段文字做決定。兩者都必須喺 shotListJson / prisma.shot.create 之前做，
-    // 令攝影／表演／細節三個階段同埋生圖都食到降級後嘅版本。
+    // 真係會入畫嗰段文字做決定；最後先把仲留喺句入面、冇對應資產嘅集體名詞改寫成無名
+    // 遠景（前兩層都係「剝」，佢係「改寫」，要對住已經定形嘅 subject 做）。三者都必須喺
+    // shotListJson / prisma.shot.create 之前做，令攝影／表演／細節三個階段同埋生圖都食到
+    // 降級後嘅版本。
     collapseMultiMomentShots(scene.id, plan.shots, knownCharacterNames);
     capCrowdedShots(scene.id, plan.shots, knownCharacterNames);
+    anonymizeCrowdSubjects(scene.id, plan.shots, knownCharacterNames);
     await prisma.scene.update({ where: { id: scene.id }, data: { blocking: plan.blocking as object } });
     reportProgress(base + span * 0.4);
 
