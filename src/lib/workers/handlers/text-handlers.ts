@@ -279,18 +279,29 @@ function anonymizeCrowdPhrases(subject: string, known: string[]): { text: string
 // 做剝除決定，warn 出嚟嘅「subject 改寫為」亦會夾雜兩層改動，查唔到係邊層做嘅。
 //
 // 同前兩層一樣：唔准 throw、唔准令 scene fail。冇對應資產唔係錯誤，係常態。
+// ⚠️ 唔做 inline 替換，改為附加一句指令。
+//
+// 原本係喺 subject 入面直接把集體名詞換成「遠處數個看不清面孔的模糊身影」。實測連續
+// 撞三次爛句：換咗引號內嘅系統訊息（「您已被踢出夏雨遠處數個…」）、前綴食唔乾淨
+// （「夏遠處數個…」「與其他遠處數個…」）、相鄰命中貼出兩句。每修一個 edge case 就
+// 冒出下一個 —— 喺自然語言上做字串手術本質上就係咁，唔值得再逐個補。
+//
+// 附加指令冇呢個問題：原句一個字都唔郁（語意零損失），指令獨立成句，下游 text model
+// 讀到「呢批人要畫成認唔出樣」就夠。搞爛句子嘅風險由「每次替換」變成零。
+const CROWD_DIRECTIVE = "（畫面中未列入 characters 的群體，一律畫成遠處看不清面孔的模糊身影，不得畫成可辨認的人）";
+
 export function anonymizeCrowdSubjects(sceneId: string, shots: CappableShot[], known: string[] = []): number {
   let rewritten = 0;
   for (const shot of shots) {
     const before = (shot.subject ?? "").trim();
-    if (!before) continue;
-    const { text: after, hits } = anonymizeCrowdPhrases(before, known);
-    if (hits.length === 0 || after === before) continue;
+    if (!before || before.includes(CROWD_DIRECTIVE)) continue;
+    const { hits } = anonymizeCrowdPhrases(before, known);
+    if (hits.length === 0) continue;
     rewritten++;
-    shot.subject = after;
+    shot.subject = `${before}${CROWD_DIRECTIVE}`;
     console.warn(
       `[storyboard] scene=${sceneId} shot=${shot.index} subject 有 ${hits.length} 個冇對應資產嘅集體名詞` +
-        `（${hits.join("、")}）— 已改寫成無名遠景，免得生圖憑空作面孔：「${before}」→「${after}」`,
+        `（${hits.join("、")}）— 已附加無名群眾指令，免得生圖憑空作面孔：「${before}」`,
     );
   }
   return rewritten;

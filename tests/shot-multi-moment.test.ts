@@ -155,7 +155,7 @@ describe("anonymizeCrowdSubjects", () => {
       },
     ];
     expect(anonymizeCrowdSubjects("s1", shots, ["王楚", "陈琳娜"])).toBe(1);
-    expect(shots[0].subject).not.toContain("夏雨战队");
+    expect(shots[0].subject).toContain("夏雨战队"); // 原句保留，指令另外附加
     expect(shots[0].subject).toContain("看不清面孔");
     // 改寫唔係刪除：兩截真戲都要仲喺度
     expect(shots[0].subject).toContain("王楚的想象");
@@ -214,7 +214,7 @@ describe("anonymizeCrowdSubjects — 引號內唔郁", () => {
     vi.spyOn(console, "warn").mockImplementation(() => undefined);
     const shots = [{ index: 1, subject: "夏雨戰隊在副本中不斷勝利", characters: [] as string[] }];
     expect(anonymizeCrowdSubjects("s1", shots, ["王楚"])).toBe(1);
-    expect(shots[0].subject).not.toContain("夏雨");
+    expect(shots[0].subject).toContain("夏雨戰隊在副本中不斷勝利");
     expect(shots[0].subject).toContain("看不清面孔");
   });
 });
@@ -225,7 +225,6 @@ it("collapses adjacent duplicate crowd replacements", () => {
   vi.spyOn(console, "warn").mockImplementation(() => undefined);
   const shots = [{ index: 1, subject: "幾名女性隊員之間的魔法鏈接破碎", characters: [] as string[] }];
   anonymizeCrowdSubjects("s1", shots, ["王楚"]);
-  const anon = "遠處數個看不清面孔的模糊身影";
-  expect(shots[0].subject).toContain(anon);
-  expect(shots[0].subject).not.toContain(anon + anon);
+  expect(shots[0].subject).toContain("幾名女性隊員之間的魔法鏈接破碎");
+  expect((shots[0].subject!.match(/看不清面孔/g) ?? []).length).toBe(1);
 });
