@@ -7,6 +7,7 @@ import { TASK_TYPE, TaskError } from "@/lib/task/types";
 import { parseSrt } from "@/lib/srt";
 import { matchReusableAudio } from "@/lib/voice/reuse-audio";
 import { planResume } from "@/lib/storyboard/resume";
+import { markFlashbackShots } from "@/lib/storyboard/flashback";
 import type { TaskHandler } from "@/lib/workers/lifecycle";
 import {
   resolveTaskModels,
@@ -567,119 +568,18 @@ export const extractPropsHandler: TaskHandler = async ({ task, reportProgress })
   return { props: out.props.length, created };
 };
 
-// 閃回／回憶／夢境 → 程式切場，唔再靠模型判斷。
+// ⚠️ 呢度以前有一層 splitFlashbackScenes：認括號旁白註記（闪回／回忆／梦境／倒叙），
+// 把夾住閃回嘅場景程式切成「現在／閃回／現在」三場。已經**移除**，母場保持完整。
 //
-// 點解唔再改 prompt：build_scenes.zh.txt 已經兩度加硬性規則（「時間／地點跳躍必須切場」、
-// 「見到即切，不要自行判斷值不值得獨立成場」，仲寫埋實測後果同錨點取法），兩次重跑都仍然
-// 係 2 場，閃回（兩年前王楚喺電腦前）照樣夾喺場景 1（1001 字）之內。模型明顯把「一場約
-// 20 個元素」嘅配額當成可以壓過硬性規則 —— 同 ≤2 同框、時序詞係同一類失效模式：軟約束
-// 對住一個要權衡嘅目標，永遠有機會輸。
+// 唔係嗰個做法錯 —— 佢真係解決咗「兩年前嘅閃回攞咗龍巢穴同死龍做背景」。係佢嘅代價比佢
+// 解決嗰樣嘢貴：切完之後同一個實體地點被斬成三場，每場各自跑一次 storyboard_plan、
+// 各自鎖一份空間契約，同一場戲嘅角色左右位同 180° 軸線就冇任何保證一致，剪埋一齊跳軸；
+// 而且切出嚟嘅碎片冇原文錨點（追溯唔返、做唔到增量重跑），summary 又係複製母場嗰句。
+// 詳細四條實測問題見 src/lib/storyboard/flashback.ts 頂部。
 //
-// 後果係靜默壞掉：Scene.location 逐場綁定，一場跨兩個時空，閃回嗰批鏡頭一定攞到外層場景
-// 嘅背景（實測：兩年前喺電腦前 → 出圖變咗龍巢穴同一條死龍），而且冇任何錯誤訊息。
-//
-// 點解唔會整壞 sliceByAnchors：呢個係**純後處理**。錨點定位照跑（原文 indexOf、命中判斷、
-// proportional fallback 全部不變），我哋淨係喺佢切出嚟嘅 content 字串上面再切一刀。切出嚟
-// 嘅子場景 anchorStart/anchorEnd 留空 —— 佢哋唔係模型畀嘅錨點，冒充就會令日後嘅錨點除錯
-// 睇到假資料（頭尾兩截保留原本嘅頭錨／尾錨，因為嗰兩個位置真係無變）。
-//
-// 閃回場嘅 location 一律留空：我哋確定佢唔喺外層場景嗰度，但唔知佢喺邊。留空之後
-// pickShotLocation 會退返去掃描該場原文揀鎖定地點，掃唔到就唔畀場景參考圖 —— 寧願冇圖
-// （中性背景，睇得出），好過畀錯地方（靜默壞）。
-//
-// ⚠️ 只認括號旁白註記，唔認散文入面嘅「兩年前」。「兩年前他就是這樣說的」呢類係對白入面
-// 嘅時間狀語，唔係畫面跳轉，照切就會把一場戲斬到粉碎（每場冇夠內容出鏡頭）。同樣係「寧願
-// 漏網（背景錯咗睇得到）都唔好亂切（切完先知場景結構爛咗）」嘅取捨。
-const FLASHBACK_OPEN = /[（(][^（()）]*?(?:闪回|閃回|回忆|回憶|梦境|夢境|梦中|夢中|倒叙|倒敘)[^（()）]*[）)]/;
-// 回切註記本身屬於「回到現在」嗰場（佢係嗰場嘅第一句），所以下面切喺佢**之前**。
-const FLASHBACK_CLOSE =
-  /[（(][^（()）]*?(?:回到现在|回到現在|回到当下|回到當下|画面拉回|畫面拉回|镜头拉回|鏡頭拉回|镜头回到|鏡頭回到|闪回结束|閃回結束)[^（()）]*[）)]/;
-// 短過呢個長度嘅碎片唔值得獨立成場（出唔到鏡頭），一律併返隔籬 —— 但一個字都唔准丟。
-const MIN_SEGMENT_CHARS = 8;
-
-export interface SceneDraft {
-  content: string;
-  anchorStart: string;
-  anchorEnd: string;
-  summary: string;
-  location: string;
-  timeOfDay: string;
-}
-
-// 把一段 content 切成「現在／閃回／現在…」交替嘅片段。全程唔准丟字：每一刀嘅頭、中、尾
-// 三截加返埋一定等於原文。
-function cutFlashbackSegments(content: string): { content: string; flashback: boolean }[] {
-  const pieces: { content: string; flashback: boolean }[] = [];
-  let rest = content;
-  // 上限純為防禦：一場入面正常唔會有 8 段閃回，行到上限就當佢係一場算數。
-  for (let guard = 0; guard < 8; guard++) {
-    const open = FLASHBACK_OPEN.exec(rest);
-    if (!open) break;
-
-    let head = rest.slice(0, open.index);
-    let flashEnd = open.index + open[0].length;
-    const close = FLASHBACK_CLOSE.exec(rest.slice(flashEnd));
-    // 有回切註記 → 閃回一路去到嗰度（覆蓋跨段閃回）；冇 → 閃回就係嗰個括號段本身。
-    if (close) flashEnd += close.index;
-    let flash = rest.slice(open.index, flashEnd);
-    const tail = rest.slice(flashEnd);
-
-    if (flash.trim().length < MIN_SEGMENT_CHARS) break; // 得個註記冇內容，切咗反而多餘
-
-    if (head.trim().length > 0) {
-      if (head.trim().length >= MIN_SEGMENT_CHARS) {
-        pieces.push({ content: head, flashback: false });
-      } else if (pieces.length > 0) {
-        pieces[pieces.length - 1].content += head; // 太碎，併返上一段
-      } else {
-        flash = head + flash; // 場頭得幾隻字就入閃回：併入閃回段係最細嘅代價，總之唔丟字
-      }
-      head = "";
-    }
-    pieces.push({ content: flash, flashback: true });
-    rest = tail;
-  }
-
-  if (rest.trim().length > 0) {
-    if (rest.trim().length >= MIN_SEGMENT_CHARS || pieces.length === 0) pieces.push({ content: rest, flashback: false });
-    else pieces[pieces.length - 1].content += rest;
-  }
-  return pieces;
-}
-
-// 就地把夾住閃回嘅場景拆開。回傳新嘅場景清單（順序即係 sceneIndex）。
-// 同 storyboard 嗰幾層一樣：唔准 throw、唔准令 task fail —— 認唔到標記就原封不動放行。
-export function splitFlashbackScenes(episodeId: string, scenes: SceneDraft[]): SceneDraft[] {
-  const out: SceneDraft[] = [];
-  for (const scene of scenes) {
-    const segments = cutFlashbackSegments(scene.content);
-    if (segments.length <= 1) {
-      out.push(scene);
-      continue;
-    }
-    segments.forEach((seg, i) => {
-      const isFirst = i === 0;
-      const isLast = i === segments.length - 1;
-      out.push({
-        content: seg.content,
-        // 頭尾兩截嘅邊界同原本一模一樣，錨點照留；中間切出嚟嘅邊界唔係模型畀嘅錨點，留空。
-        anchorStart: isFirst ? scene.anchorStart : "",
-        anchorEnd: isLast ? scene.anchorEnd : "",
-        summary: seg.flashback ? `（閃回／回憶）${scene.summary}`.slice(0, 200) : scene.summary,
-        // 閃回唔喺外層場景嗰個地點，但我哋唔知佢喺邊 —— 留空好過填錯（見上面註釋）。
-        location: seg.flashback ? "" : scene.location,
-        timeOfDay: seg.flashback ? "" : scene.timeOfDay,
-      });
-    });
-    console.warn(
-      `[build-scenes] episode=${episodeId} 場景「${scene.summary.slice(0, 20)}」夾住閃回／回憶 — ` +
-        `模型冇切，已按括號標記程式切成 ${segments.length} 場` +
-        `（${segments.map((s) => `${s.flashback ? "閃回" : "現在"}${s.content.trim().length}字`).join(" / ")}）；` +
-        "閃回場 location 留空，寧願冇場景參考圖都好過用錯背景",
-    );
-  }
-  return out;
-}
+// 偵測邏輯本身冇作廢，只係作用層由「場」降到「鏡」：搬咗去 flashback.ts，
+// 喺 storyboardRunHandler 逐鏡標記 Shot.flashback，生圖嗰刻先剝走母場嘅場景參考圖同
+// 空間契約。母場嘅 Scene.location 照舊係現在時空嗰個地點 —— 閃回鏡唔會攞到佢。
 
 export const buildScenesHandler: TaskHandler = async ({ task, reportProgress }) => {
   const { episode, project } = await loadEpisodeWithProject(task);
@@ -697,20 +597,16 @@ export const buildScenesHandler: TaskHandler = async ({ task, reportProgress }) 
 
   reportProgress(60);
   const slices = sliceByAnchors(source, out.scenes);
-  // 錨點切完先做閃回後處理：切場靠原文 offset，後處理淨係郁 content 字串（見
-  // splitFlashbackScenes 註釋）。模型自己已經切啱嗰啲場，呢層完全唔會郁。
-  const drafts = splitFlashbackScenes(
-    episode.id,
-    slices.map((slice, i) => ({
-      content: slice.content,
-      anchorStart: slice.anchorStart,
-      anchorEnd: slice.anchorEnd,
-      summary: out.scenes[i]?.summary ?? "",
-      // 模型輸出嘅地點／時段——落 DB 做每鏡揀場景參考圖嘅權威來源（Scene.location 註釋）
-      location: out.scenes[i]?.location ?? "",
-      timeOfDay: out.scenes[i]?.timeOfDay ?? "",
-    })),
-  );
+  // 錨點切出嚟嘅場景**原封不動**落 DB。閃回唔再喺呢層處理（見上面註釋）。
+  const drafts = slices.map((slice, i) => ({
+    content: slice.content,
+    anchorStart: slice.anchorStart,
+    anchorEnd: slice.anchorEnd,
+    summary: out.scenes[i]?.summary ?? "",
+    // 模型輸出嘅地點／時段——落 DB 做每鏡揀場景參考圖嘅權威來源（Scene.location 註釋）
+    location: out.scenes[i]?.location ?? "",
+    timeOfDay: out.scenes[i]?.timeOfDay ?? "",
+  }));
 
   await prisma.scene.deleteMany({ where: { episodeId: episode.id } });
   for (let i = 0; i < drafts.length; i++) {
@@ -786,6 +682,10 @@ export const storyboardRunHandler: TaskHandler = async ({ task, reportProgress }
     collapseMultiMomentShots(scene.id, plan.shots, knownCharacterNames);
     capCrowdedShots(scene.id, plan.shots, knownCharacterNames);
     anonymizeCrowdSubjects(scene.id, plan.shots, knownCharacterNames);
+    // 閃回逐鏡標記。放喺呢度（plan 之後、寫 Shot 之前）係因為判定要對住**原文**
+    // （scene.content 嘅括號註記）＋ 鏡頭嘅 source_text，兩樣嘢淨係喺呢一刻同時喺手。
+    // 上面幾層降級只會郁 subject／characters，唔會郁 source_text，所以次序點都得。
+    const flashbackMarks = markFlashbackShots(scene.id, scene.content, plan.shots);
     await prisma.scene.update({ where: { id: scene.id }, data: { blocking: plan.blocking as object } });
     reportProgress(base + span * 0.4);
 
@@ -815,8 +715,9 @@ export const storyboardRunHandler: TaskHandler = async ({ task, reportProgress }
       ["detail", detailByIdx.size],
     ]);
 
-    for (const shot of plan.shots) {
+    for (const [i, shot] of plan.shots.entries()) {
       globalIndex++;
+      const mark = flashbackMarks[i] ?? { flashback: false, locationOverride: "" };
       await prisma.shot.create({
         data: {
           id: newId(),
@@ -825,6 +726,10 @@ export const storyboardRunHandler: TaskHandler = async ({ task, reportProgress }
           sceneId: scene.id,
           shotIndex: globalIndex,
           durationMs: 3000,
+          // 閃回標記落 Shot 欄位而唔係淨留喺 storyboardJson 入面：生圖層要靠佢做
+          // 硬性決定（唔畀場景參考圖、剝走空間契約），呢類決定唔應該去挖一個 Json blob。
+          flashback: mark.flashback,
+          locationOverride: mark.locationOverride,
           storyboardJson: {
             plan: shot,
             photography: photoByIdx.get(shot.index) ?? null,

@@ -48,12 +48,27 @@ const baseName = (s: string) => norm(stripTimeOfDay(s));
 // 優先用 build_scenes 寫入 DB 嘅 scene.location（權威來源），撞唔到先退回劇本原文 substring。
 // 兩者都撞唔到 → 返 undefined（唔畀場景參考圖）。畀錯場景圖比冇場景圖差好多：
 // 冇圖模型會照 prompt 文字描述畫，畀錯圖就會成個鏡頭畫咗喺第二個地方。
+//
+// ⚠️ 閃回鏡（Shot.flashback）一律唔畀圖，連掃都唔掃。兩條路都唔可以行：
+//   ① scene.location 係母場嘅地點（龍巢穴），閃回根本唔喺嗰度 —— 呢個正正就係
+//      「兩年前喺電腦前」出咗龍巢穴同死龍嗰個 bug；
+//   ② 退回掃 sceneText（母場 summary + content）更加危險 —— 母場原文成篇都係龍巢穴，
+//      一掃必定命中，等於換條路撞返同一張錯圖。
+// 閃回自己嘅地點文字（Shot.locationOverride，例如「電腦前」）唔喺呢度用：佢係純文字，
+// 交畀 formatBlocking 寫入生圖 prompt 做環境描述，唔會夾硬配一張唔啱嘅參考圖。
 export function pickShotLocation(
   sceneText: string,
   locked: RefLocation[],
   sceneLocation?: string | null,
-  ctx?: { episodeId?: string; sceneId?: string },
+  ctx?: { episodeId?: string; sceneId?: string; shotId?: string; flashback?: boolean },
 ): RefLocation | undefined {
+  if (ctx?.flashback) {
+    console.warn(
+      `[pickShotLocation] 閃回鏡 — episode=${ctx.episodeId ?? "?"} scene=${ctx.sceneId ?? "?"} shot=${ctx.shotId ?? "?"} ` +
+        `母場 location=${JSON.stringify(sceneLocation ?? "")} → 唔畀場景參考圖（母場背景一定係錯嘅時空）`,
+    );
+    return undefined;
+  }
   const candidates = locked.filter((l) => l.name.trim() !== "");
   if (candidates.length === 0) return undefined;
 

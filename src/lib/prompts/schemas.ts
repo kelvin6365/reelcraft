@@ -154,6 +154,14 @@ export const StoryboardPlanOutput = z.object({
         beat: z.string().optional().default(""),
         characters: z.array(z.string()).default([]),
         dialogue: z.string().optional().default(""),
+        // 閃回／回憶／夢境鏡頭。**呢個欄位唔係權威**：最終標記由 markFlashbackShots
+        // 用原文括號註記確定性判定，模型呢個自報只係 OR 入去補漏（冇括號註記、純靠
+        // 「兩年前」敘述嗰種閃回程式一定認唔到）。optional + default(false)：舊資料同
+        // 冇輸出呢個欄位嘅模型照樣 parse 得過，唔可以為咗個新欄位令成場 storyboard fail。
+        flashback: z.boolean().optional().default(false),
+        // 閃回本身嘅地點文字（「電腦前」）。程式抽唔到嘅自由文本，所以呢個位真係要靠模型；
+        // 飄咗都唔會靜默壞（最壞情況＝冇環境描述，同認唔出地點一樣）。
+        flashback_location: z.string().optional().default(""),
       }),
     )
     .min(1),

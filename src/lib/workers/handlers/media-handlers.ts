@@ -289,11 +289,13 @@ export const imageShotHandler: TaskHandler = async ({ task, reportProgress }) =>
     shotCharNames,
     lockedCharacters.map((c) => ({ name: c.name, aliases: c.aliases as string[] })),
   ).map((m) => lockedCharacters.find((c) => c.name === m.name)!);
+  // 閃回鏡（storyboardRunHandler 逐鏡標記，見 src/lib/storyboard/flashback.ts）唔屬於
+  // 母場嘅時空：唔可以攞母場嘅場景參考圖，亦唔受母場空間契約約束。兩層都喺下面處理。
   const shotLocation = pickShotLocation(
     `${scene?.summary ?? ""}\n${scene?.content ?? ""}`,
     lockedLocations,
     scene?.location,
-    { episodeId: shot.episodeId, sceneId: shot.sceneId },
+    { episodeId: shot.episodeId, sceneId: shot.sceneId, shotId: shot.id, flashback: shot.flashback },
   );
   // 空間契約逐鏡收窄（見 shot-blocking.ts）：契約係一場一份，塞成份入單鏡 prompt 等於
   // 叫模型硬性遵守五個人嘅落位同五件道具嘅狀態，繞過咗 characters 層所有防線。
@@ -307,10 +309,12 @@ export const imageShotHandler: TaskHandler = async ({ task, reportProgress }) =>
     scene?.blocking,
     shotCharNames,
     lockedCharacters.map((c) => c.name),
+    { flashback: shot.flashback },
   );
   if (droppedPositions.length > 0 || droppedProps.length > 0) {
     console.warn(
-      `[IMAGE_SHOT] shot=${shot.id} 空間契約逐鏡收窄 — 本鏡角色 [${shotCharNames.join("、") || "（無）"}]；` +
+      `[IMAGE_SHOT] shot=${shot.id} 空間契約逐鏡收窄${shot.flashback ? "（閃回鏡：成份契約剝走，連軸線）" : ""} — ` +
+        `本鏡角色 [${shotCharNames.join("、") || "（無）"}]；` +
         `剝走落位 [${droppedPositions.join("、") || "（無）"}]、` +
         `剝走道具 [${droppedProps.join("、") || "（無）"}]（提到唔在本鏡嘅角色）`,
     );
@@ -367,7 +371,8 @@ export const imageShotHandler: TaskHandler = async ({ task, reportProgress }) =>
     "image_prompt_shot",
     {
       shot_json: JSON.stringify(shot.storyboardJson),
-      scene_blocking: formatBlocking(shotBlocking),
+      // 閃回鏡冇場景參考圖，環境完全押喺呢段文字上面（見 shot-blocking.ts flashbackLine）
+      scene_blocking: formatBlocking(shotBlocking, { flashback: shot.flashback, locationOverride: shot.locationOverride }),
       locked_assets: lockedAssets,
       reference_legend: referenceLegend,
       style_suffix: style.prefix ?? "",

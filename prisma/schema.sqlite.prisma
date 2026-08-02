@@ -207,6 +207,20 @@ model Shot {
   status         String  @default("pending")
   durationMs     Int     @default(0)
   linkedToNext   Boolean @default(false)
+  // 閃回／回憶／夢境鏡頭標記 —— 呢一鏡嘅時空唔屬於佢所在嗰個 Scene。
+  // 點解標喺鏡頭層而唔係把閃回切做獨立場景（上一輪嘅做法，已推翻，見
+  // src/lib/storyboard/flashback.ts 頂部）：切場會把同一個實體地點斬成幾段，每段各自
+  // 鎖一份空間契約，同一場戲嘅角色左右位同 180° 軸線就冇保證一致，剪埋一齊跳軸。
+  // 用途有兩個，兩個都喺 IMAGE_SHOT 生圖嗰刻生效：
+  //   ① pickShotLocation 唔准畀母場嘅場景參考圖 —— 畀錯場景圖比冇場景圖差好多
+  //      （冇圖模型會照 prompt 文字描述畫，畀錯圖就成個鏡頭畫咗喺第二個地方）；
+  //   ② filterBlockingForShot 剝走母場空間契約 —— 軸線同落位講緊母場嗰個空間。
+  flashback      Boolean @default(false)
+  // 閃回鏡自己嘅地點文字（例如「電腦前」「醫院走廊」），由 storyboard_plan 抽出。
+  // 純文字，只會餵落生圖 prompt 做環境描述，**唔會**攞去配鎖定 Location 參考圖 ——
+  // 閃回地點多數冇抽做資產，夾硬配就係畀錯圖。
+  // 空字串 = 認唔出地點（生圖靠 subject 自己交代）；flashback=false 時一律空字串。
+  locationOverride String @default("")
 
   voiceLines VoiceLine[]
 

@@ -56,20 +56,20 @@
     {
       "id": "build_scenes",
       "path": "pipeline/build_scenes.zh.txt",
-      "version": "3",
+      "version": "4",
       "variables": [
         "script_text"
       ],
-      "description": "劇本切場景，只回傳起訖文字錨點供程式定位，約 20 元素/場；時間／地點跳躍（含閃回）必須切做獨立場景，附觸發信號清單、一句都要切、錨點取法（JSON）。"
+      "description": "劇本切場景，只回傳起訖文字錨點供程式定位，約 20 元素/場；真正轉場（換地點／換時段）要切，插入式閃回／回憶／夢境**唔切**、整段留喺母場（切開會令同一地點各自鎖一份空間契約而跳軸，閃回改由下游鏡頭層逐鏡標記）；括號註記原文照留（JSON）。"
     },
     {
       "id": "storyboard_plan",
       "path": "pipeline/storyboard_plan.zh.txt",
-      "version": "7",
+      "version": "8",
       "variables": [
         "scene_text"
       ],
-      "description": "分鏡第①階段規劃：場景切鏡頭清單，約 15 字/鏡，每鏡帶 source_text；subject 必須係可見畫面、一鏡一凝固瞬間（禁時序詞，優先於字數比例）、只准提到 characters 入面嘅人、每鏡 characters 硬性 ≤2；【】標記嘅非人物聲源唔准當角色；blocking 只准寫全場恆定狀態（JSON）。"
+      "description": "分鏡第①階段規劃：場景切鏡頭清單，約 15 字/鏡，每鏡帶 source_text；subject 必須係可見畫面、一鏡一凝固瞬間（禁時序詞，優先於字數比例）、只准提到 characters 入面嘅人、每鏡 characters 硬性 ≤2；【】標記嘅非人物聲源唔准當角色；blocking 只准寫全場恆定狀態、只描述現在時空；逐鏡標 flashback ＋ flashback_location（閃回鏡唔攞母場場景圖同空間契約）（JSON）。"
     },
     {
       "id": "storyboard_photography",

@@ -57,12 +57,28 @@ export interface BlockingFilterResult {
 // 而多留一個人正正就係我哋要修嗰個 bug（「王楚」嘅落位會被「王楚天」留低）。
 // 名對唔上就剝走 —— 少一個落位嘅代價只係模型自己揀個位，多一個落位嘅代價係憑空多一個人。
 // 而且 positions 同 characters 本來就係同一次 storyboard_plan 呼叫嘅輸出，名一定同源。
+//
+// 閃回鏡（opts.flashback）例外：**成份契約剝走，連 cameraAxis 都剝**。
+// 上面嗰句「軸線唔過濾」係對住同一場戲講嘅 —— 軸線之所以係連戲嘅根，前提係前後鏡拍緊
+// 同一個空間。閃回鏡唔喺母場嗰個空間（母場軸線寫住「鏡頭一律喺洞口一側」，而閃回係兩年前
+// 屋企電腦前），把佢硬套落去唔係連戲，係把一句唔相干嘅硬性指示塞畀模型。落位同道具更加
+// 唔使講：母場邊個企畫面左、條龍倒咗，全部同閃回無關。
+// 剝到淨低乜都冇 → formatBlocking 會出 NO_BLOCKING，嗰句本身已經叫模型保持左右關係
+// 一致唔越軸，啱啱好就係閃回鏡之間應該守嘅嘢。
 export function filterBlockingForShot(
   raw: unknown,
   shotCharNames: string[],
   knownCharacterNames: string[] = [],
+  opts?: { flashback?: boolean },
 ): BlockingFilterResult {
   const b = parseBlocking(raw);
+  if (opts?.flashback) {
+    return {
+      blocking: { cameraAxis: "", positions: [], keyProps: [] },
+      droppedPositions: (b.positions ?? []).map((p) => p.name),
+      droppedProps: b.keyProps ?? [],
+    };
+  }
   const inShot = new Set(shotCharNames.map(norm).filter(Boolean));
 
   const allPositions = b.positions ?? [];
@@ -108,7 +124,21 @@ const NO_BLOCKING = "（無空間契約——保持前後鏡頭的左右關係�
 // 模板會把契約當硬性指示讀，一段空白等於叫模型自己填。
 const NO_POSITIONS = "（本鏡無指定角色落位——按本鏡 subject 自行安排，但左右關係與視線方向須與前後鏡一致）";
 
-export function formatBlocking(raw: unknown): string {
+// 閃回鏡專用嘅開頭句。呢個係閃回鏡唯一一次把「佢喺邊」講畀生圖模型聽嘅機會 ——
+// 佢冇場景參考圖（pickShotLocation 一律唔畀），所以環境完全押喺呢段文字上面。
+// 明確叫佢**唔好**沿用本場環境：唔講嘅話，模型會由 shot_json 入面嘅 subject 同對白
+// 推返個「主場景」出嚟（實測就係咁畫返個龍巢穴出嚟）。
+function flashbackLine(locationOverride: string): string {
+  const where = locationOverride.trim();
+  return (
+    "（本鏡屬閃回／回憶／夢境，唔喺本場嘅時空——" +
+    (where ? `地點：${where}。` : "原文冇明講地點，按本鏡 subject 自行交代一個唔同於本場嘅環境。") +
+    "嚴禁沿用本場嘅場景、背景或空間佈局；本場空間契約不適用，但閃回鏡之間仍須保持左右關係與視線方向一致，不越軸）"
+  );
+}
+
+export function formatBlocking(raw: unknown, opts?: { flashback?: boolean; locationOverride?: string }): string {
+  if (opts?.flashback) return flashbackLine(opts.locationOverride ?? "");
   const b = parseBlocking(raw);
   if (!b.cameraAxis && !b.positions?.length) return NO_BLOCKING;
   const pos = (b.positions ?? [])

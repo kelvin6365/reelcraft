@@ -66,6 +66,19 @@ describe("filterBlockingForShot", () => {
     expect(droppedProps).toEqual(["老陳的煙斗=叼在嘴角"]);
   });
 
+  // 閃回鏡唔喺母場嗰個空間：母場軸線寫住「鏡頭一律喺洞口一側」，而閃回係兩年前屋企
+  // 電腦前。硬套落去唔係連戲，係塞一句唔相干嘅硬性指示。呢度係唯一一個連 cameraAxis
+  // 都要剝嘅情況。
+  it("strips the entire contract — cameraAxis included — for a flashback shot", () => {
+    const { blocking, droppedPositions, droppedProps } = filterBlockingForShot(SCENE_BLOCKING, ["王楚"], [], { flashback: true });
+    expect(blocking.cameraAxis).toBe("");
+    expect(blocking.positions).toEqual([]);
+    expect(blocking.keyProps).toEqual([]);
+    // 剝走嘅嘢照樣要留痕
+    expect(droppedPositions).toContain("鄭夏雨");
+    expect(droppedProps).toContain("巨龍=倒塌");
+  });
+
   it("never throws on a missing or malformed blocking", () => {
     expect(() => filterBlockingForShot(null, ["王楚"])).not.toThrow();
     expect(filterBlockingForShot(null, ["王楚"]).blocking.positions).toEqual([]);
@@ -91,6 +104,24 @@ describe("formatBlocking", () => {
     expect(text).toContain("軸線：鏡頭一律在洞口的一側，不越軸");
     expect(text).toContain("本鏡無指定角色落位");
     expect(text).not.toMatch(/；；/);
+  });
+
+  // 閃回鏡冇場景參考圖（pickShotLocation 一律唔畀），所以呢句文字係佢唯一一次交代
+  // 自己身在何處嘅機會。唔明講「唔好沿用本場環境」，模型會由 subject／對白推返個母場出嚟。
+  it("renders the flashback line with its location text instead of the scene contract", () => {
+    const text = formatBlocking(SCENE_BLOCKING, { flashback: true, locationOverride: "電腦前" });
+    expect(text).toContain("本鏡屬閃回");
+    expect(text).toContain("地點：電腦前");
+    expect(text).toContain("嚴禁沿用本場嘅場景");
+    expect(text).not.toContain("洞口");
+    expect(text).not.toContain("鄭夏雨");
+  });
+
+  // 認唔出地點都唔可以留白 —— 留白等於叫模型自己填，佢就會填返母場。
+  it("still forbids reusing the scene's environment when the flashback location is unknown", () => {
+    const text = formatBlocking(SCENE_BLOCKING, { flashback: true, locationOverride: "" });
+    expect(text).toContain("原文冇明講地點");
+    expect(text).toContain("嚴禁沿用本場嘅場景");
   });
 
   it("falls back to the no-contract line when there is neither axis nor positions", () => {

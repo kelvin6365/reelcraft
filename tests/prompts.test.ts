@@ -18,19 +18,22 @@ describe("buildPrompt", () => {
   it("renders a real catalog prompt and returns id + version", () => {
     const built = buildPrompt("build_scenes", { script_text: "阿May推門而入。" });
     expect(built.promptId).toBe("build_scenes");
-    expect(built.version).toBe("3");
+    expect(built.version).toBe("4");
     expect(built.text).toContain("阿May推門而入。");
     // constraint phrases survive rendering
     expect(built.text).toContain("錨點不得改寫");
     expect(built.text).toContain("20 個內容元素");
-    // 閃回／時空跳躍必須切場 —— Scene.location 逐場綁定，一場跨兩個時空就一定用錯背景
-    expect(built.text).toContain("時間／地點跳躍必須切場");
-    expect(built.text).toContain("一個場景只能有一個時空");
-    // v3：上一版規則寫咗但模型唔跟（重跑後閃回照樣夾喺場景 1），所以補觸發信號清單
-    // ＋「一句都要切」＋具體後果，唔再靠模型自己判斷值唔值得獨立成場
-    expect(built.text).toContain("見到即切，不要自行判斷值不值得獨立成場");
-    expect(built.text).toContain("一句都要切");
-    expect(built.text).toContain("閃回會沿用外層場景的 location");
+    // v4 推翻 v3：v3 叫模型見到閃回即切（切完仲有程式切場兜底）。實跑之後見到切場嘅代價
+    // 更貴——同一個地點被斬成三場，每場各自鎖一份空間契約，剪埋一齊跳軸；碎片仲冇原文
+    // 錨點。而家：真正轉場照切，插入式閃回留喺母場，閃回改由鏡頭層逐鏡標記。
+    expect(built.text).toContain("真正的轉場要切，插入式的閃回不要切");
+    expect(built.text).toContain("不要切成獨立場景");
+    expect(built.text).toContain("剪在一起會跳軸");
+    expect(built.text).toContain("下游已經在鏡頭層逐鏡標記處理");
+    // 括號註記係下游認閃回鏡嘅唯一結構訊號，唔可以被錨點取法略過
+    expect(built.text).toContain("括號註記原文照留，不要刪改、不要改寫");
+    // 母場 location 一律係現在時空 —— 閃回鏡靠 Shot.locationOverride，唔靠 Scene.location
+    expect(built.text).toContain("一律填**現在時空**那個地點");
     // no leftover placeholders
     expect(built.text).not.toMatch(/\{[a-zA-Z_][a-zA-Z0-9_]*\}/);
   });
@@ -123,9 +126,9 @@ describe("buildPrompt", () => {
   // 實測：機械音鏡頭出咗成塊英文 HUD（"...CLEARED EARTH DRAGON LAIR IN 23 MINUTES..."）
   // 連計時器，而本片係中文短劇。根因係 plan 容許 subject 淨寫「機械音提示」，
   // 落到生圖 prompt 就變成「a mechanical voice announces: ...」，模型當然照畫。
-  it("renders storyboard_plan v7 with the no-invisible-subject rule intact", () => {
+  it("renders storyboard_plan v8 with the no-invisible-subject rule intact", () => {
     const built = buildPrompt("storyboard_plan", { scene_text: "【機械音】：通關成功。" });
-    expect(built.version).toBe("7");
+    expect(built.version).toBe("8");
     expect(built.text).toContain("嚴禁產生冇可見畫面主體嘅鏡頭");
     expect(built.text).toContain("表面只有發光紋路同幾何邊框，冇任何文字");
     expect(built.text).toContain("嚴禁把「机械音」「旁白」「畫外音」「系統」「AI」呢類非人物寫入 characters");
@@ -183,6 +186,22 @@ describe("buildPrompt", () => {
     expect(built.text).toContain("鏡頭數冇上限，同框人數同一鏡入面嘅時刻數先有上限");
     // 下游 collapseMultiMomentShots 會確定性剝除，要話畀模型知寫咗會消失
     expect(built.text).toContain("時序詞之後嘅內容會被直接剝走");
+  });
+
+  // v8：閃回唔再切場（切開會令同一地點各自鎖一份空間契約而跳軸），所以一場之內可能同時
+  // 有現在同閃回兩個時空 —— 分辨落咗分鏡層。模型呢個自報唔係權威（markFlashbackShots
+  // 用原文括號註記硬做），但佢負責程式抽唔到嗰樣嘢：閃回本身嘅地點文字。
+  it("renders storyboard_plan with the per-shot flashback marking rules intact", () => {
+    const built = buildPrompt("storyboard_plan", { scene_text: "（画面闪回：王楚坐在电脑前。）他回过神来。" });
+    expect(built.text).toContain("閃回鏡頭標記（本場之內可能夾住閃回／回憶／夢境）");
+    expect(built.text).toContain("上游分場**刻意不把插入式閃回切走**");
+    expect(built.text).toContain("flashback 填 true");
+    expect(built.text).toContain("flashback_location 填該段閃回本身的地點");
+    // 理由要留喺 prompt 入面 —— 標錯係靜默壞
+    expect(built.text).toContain("閃回鏡頭不會拿到本場的場景參考圖");
+    expect(built.text).toContain("龍巢穴與一條死龍");
+    // 空間契約只講現在時空，閃回落位唔准入契約
+    expect(built.text).toContain("blocking 空間契約**只描述現在時空**");
   });
 
   it("renders image_prompt_shot v12 with the sound-shot carrier rule and text-free surface ban intact", () => {

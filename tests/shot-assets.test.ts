@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { buildShotRefAssets, MAX_SHOT_REFS, matchShotCharacters, matchShotProps, pickShotLocation, type RefCharacter, type RefLocation, type RefProp } from "@/lib/prompts/shot-assets";
 
 const chars: RefCharacter[] = [
@@ -89,6 +89,17 @@ describe("pickShotLocation (⑥)", () => {
 
   it("ignores blank locked names", () => {
     expect(pickShotLocation("天台", [{ name: "  " }])).toBeUndefined();
+  });
+
+  // 閃回鏡（Shot.flashback）唔喺母場嗰個時空。兩條路都唔可以行：scene.location 係母場
+  // 嘅地點；退回掃原文更加危險 —— 母場原文成篇都係龍巢穴，一掃必定命中，等於換條路
+  // 撞返同一張錯圖。呢個就係「兩年前喺電腦前」出咗龍巢穴同死龍嗰個 bug。
+  it("hands a flashback shot no location image at all — not even via the script-text fallback", () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    expect(pickShotLocation("鏡頭掃過大地亚龙巢穴", suffixedLocs, "大地亚龙巢穴", { flashback: true })).toBeUndefined();
+    expect(warn.mock.calls.flat().join(" ")).toContain("閃回鏡");
+    // 同一組輸入，非閃回鏡照樣攞到圖 —— 剝走嘅係閃回，唔係整條路
+    expect(pickShotLocation("鏡頭掃過大地亚龙巢穴", suffixedLocs, "大地亚龙巢穴")?.name).toBe("大地亚龙巢穴·日");
   });
 });
 
