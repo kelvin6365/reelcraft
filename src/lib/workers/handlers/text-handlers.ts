@@ -234,16 +234,31 @@ const CROWD_QUANT_NOUN =
 // 嘅「他加入了夏雨战队」只會改到「战队」兩個字，留低「夏雨」。呢個方向係刻意保守 ——
 // 食多咗前綴會啃走動詞（「加入了」），出一句爛 subject，比留低一個名更差。
 const CROWD_PHRASE = new RegExp(
-  `(?:${CROWD_QUANT})(?:${CROWD_HEAD}|${CROWD_QUANT_NOUN})?|(?:(?<![\\u4e00-\\u9fff])[\\u4e00-\\u9fff]{1,3})?(?:${CROWD_HEAD})`,
+  `(?:${CROWD_QUANT})(?:${CROWD_HEAD}|${CROWD_QUANT_NOUN})?|[\\u4e00-\\u9fff]{0,3}(?:${CROWD_HEAD})`,
   "gu",
 );
 // 改寫後嘅講法：明確講「遠處」「看不清面孔」，生圖模型冇得作面。呢句本身唔會再命中
 // CROWD_PHRASE（「數個」「身影」都唔喺任何一張名單），所以唔會自我遞迴。
 const CROWD_ANON = "遠處數個看不清面孔的模糊身影";
 
+// 引號內嘅嘢係「被引述嘅文字」——系統訊息、對白、招牌 —— 唔係畫面上企緊嘅人。
+// 實測鏡 33：subject「王楚的腕表上顯示『您已被踢出夏雨戰隊』的訊息」，盲目換咗
+// 引號入面嗰個「戰隊」，砌出「您已被踢出夏雨遠處數個看不清面孔的模糊身影」呢句廢話。
+// 呢啲文字本來就唔准入畫（連續性條款禁一切文字），改寫佢冇意義，淨係污染語意。
+function quotedRanges(s: string): [number, number][] {
+  const out: [number, number][] = [];
+  for (const re of [/「[^」]*」/gu, /“[^”]*”/gu, /"[^"]*"/gu, /『[^』]*』/gu]) {
+    for (const m of s.matchAll(re)) out.push([m.index, m.index + m[0].length]);
+  }
+  return out;
+}
+
 function anonymizeCrowdPhrases(subject: string, known: string[]): { text: string; hits: string[] } {
   const hits: string[] = [];
-  const text = subject.replace(CROWD_PHRASE, (m) => {
+  const quoted = quotedRanges(subject);
+  const text = subject.replace(CROWD_PHRASE, (m, offset: number) => {
+    // 引號內唔郁 —— 嗰啲係被引述嘅文字，唔係畫面上嘅人。
+    if (quoted.some(([a, b]) => offset >= a && offset + m.length <= b)) return m;
     // 對得上鎖定資產嘅唔准郁：呢個「隊伍」有參考圖，改寫佢等於刪走真戲。互為子串都當命中
     // （「夏雨」vs「夏雨战队」），方向保守 —— 漏改一個有名有姓嘅群體，好過改走一個真角色。
     if (known.some((n) => n.length > 0 && (m.includes(n) || n.includes(m)))) return m;

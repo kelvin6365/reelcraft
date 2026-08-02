@@ -195,3 +195,26 @@ describe("anonymizeCrowdSubjects", () => {
     expect(shots[2].subject).toBeTruthy();
   });
 });
+
+describe("anonymizeCrowdSubjects — 引號內唔郁", () => {
+  // 實測鏡 33：subject「王楚的腕表上顯示『您已被踢出夏雨戰隊』的訊息」，舊版盲目換咗
+  // 引號入面嗰個「戰隊」，砌出「您已被踢出夏雨遠處數個看不清面孔的模糊身影」呢句廢話。
+  // 引號內係被引述嘅文字（系統訊息／對白／招牌），唔係畫面上企緊嘅人。
+  it("leaves crowd nouns inside quotes untouched", () => {
+    vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const subject = "王楚的腕表上顯示「您已被踢出夏雨戰隊」的訊息";
+    const shots = [{ index: 1, subject, characters: ["王楚"] }];
+    expect(anonymizeCrowdSubjects("s1", shots, ["王楚", "郑夏雨"])).toBe(0);
+    expect(shots[0].subject).toBe(subject);
+  });
+
+  // 引號外照樣要改寫，而且要連前綴一齊食走 —— 舊版個 lookbehind 令「夏雨戰隊」淨係
+  // 換到「戰隊」，剩返「夏雨」黐喺改寫句前面。
+  it("replaces the whole team name outside quotes, not just the head noun", () => {
+    vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const shots = [{ index: 1, subject: "夏雨戰隊在副本中不斷勝利", characters: [] as string[] }];
+    expect(anonymizeCrowdSubjects("s1", shots, ["王楚"])).toBe(1);
+    expect(shots[0].subject).not.toContain("夏雨");
+    expect(shots[0].subject).toContain("看不清面孔");
+  });
+});
