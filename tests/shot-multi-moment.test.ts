@@ -218,3 +218,14 @@ describe("anonymizeCrowdSubjects — 引號內唔郁", () => {
     expect(shots[0].subject).toContain("看不清面孔");
   });
 });
+
+// 原文相鄰兩個命中（「幾名女性隊員」= 「幾名」＋「女性隊員」）唔可以貼出兩句改寫。
+// 實測鏡 31：「…遠處數個看不清面孔的模糊身影遠處數個看不清面孔的模糊身影之間…」
+it("collapses adjacent duplicate crowd replacements", () => {
+  vi.spyOn(console, "warn").mockImplementation(() => undefined);
+  const shots = [{ index: 1, subject: "幾名女性隊員之間的魔法鏈接破碎", characters: [] as string[] }];
+  anonymizeCrowdSubjects("s1", shots, ["王楚"]);
+  const anon = "遠處數個看不清面孔的模糊身影";
+  expect(shots[0].subject).toContain(anon);
+  expect(shots[0].subject).not.toContain(anon + anon);
+});

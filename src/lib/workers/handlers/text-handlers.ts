@@ -265,7 +265,11 @@ function anonymizeCrowdPhrases(subject: string, known: string[]): { text: string
     hits.push(m);
     return CROWD_ANON;
   });
-  return { text, hits };
+  // 原文可以有兩個相鄰命中（「幾名女性隊員」= 「幾名」＋「女性隊員」各 match 一次），
+  // 兩個都換就會貼出「…模糊身影模糊身影之間…」。實測鏡 31 中招。呢個唔係自我遞迴
+  // （CROWD_ANON 本身唔命中 CROWD_PHRASE），係原文重疊，所以要事後合併。
+  const deduped = text.replace(new RegExp(`(?:${CROWD_ANON})(?:\\s*(?:${CROWD_ANON}))+`, "gu"), CROWD_ANON);
+  return { text: deduped, hits };
 }
 
 // 回傳有集體名詞被改寫嘅鏡頭數。shots 就地改寫。
