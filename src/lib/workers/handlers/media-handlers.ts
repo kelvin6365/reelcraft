@@ -17,7 +17,7 @@ import { buildAngleImagePrompt, buildAngleNegativePrompt, buildLocationMainPromp
 import { buildPropMainPrompt, buildPropViewPrompt, buildPropNegativePrompt, type PropTier } from "@/lib/prompts/prop-views";
 import { buildCharacterMainPrompt, buildCharacterViewPrompt, buildCharacterNegativePrompt, buildCharacterFacePrompt, REF_FACE_MATCH_PROMPT } from "@/lib/prompts/character-views";
 import { loadStyle } from "@/lib/prompts/style-pack";
-import { safeAppearancePrompt } from "@/lib/prompts/appearance-filter";
+import { filterBlockingForShot, formatBlocking } from "@/lib/prompts/shot-blocking";
 import { OUTPUT_LANGUAGE_LABEL, resolveOutputLanguage } from "@/lib/prompts/output-language";
 
 const CANDIDATE_COUNT = 3;
@@ -264,21 +264,6 @@ export const propEffectVideoHandler: TaskHandler = async ({ task }) => {
   return { mediaId: media.id };
 };
 
-function formatBlocking(raw: unknown): string {
-  const b = (raw ?? {}) as {
-    cameraAxis?: string;
-    positions?: { name: string; screenSide?: string; facing?: string; placement?: string }[];
-    keyProps?: string[];
-  };
-  if (!b.cameraAxis && !b.positions?.length) return "（無空間契約——保持前後鏡頭的左右關係與視線方向一致，不越軸）";
-  const side = (s?: string) => (s === "left" ? "畫面左" : s === "right" ? "畫面右" : "畫面中");
-  const pos = (b.positions ?? [])
-    .map((p) => `${p.name}=${side(p.screenSide)}${p.facing ? `、${p.facing}` : ""}${p.placement ? `、${p.placement}` : ""}`)
-    .join("；");
-  const props = b.keyProps?.length ? `；道具：${b.keyProps.join("、")}` : "";
-  return `軸線：${b.cameraAxis || "不越軸"}；${pos}${props}`;
-}
-
 export const imageShotHandler: TaskHandler = async ({ task, reportProgress }) => {
   const shot = await prisma.shot.findFirst({ where: { id: task.targetId, userId: task.userId } });
   // Deleted before we could start (cancel raced the delete) — moot, not a failure.
@@ -310,7 +295,27 @@ export const imageShotHandler: TaskHandler = async ({ task, reportProgress }) =>
     scene?.location,
     { episodeId: shot.episodeId, sceneId: shot.sceneId },
   );
-  const blockingKeyProps = ((scene?.blocking as { keyProps?: string[] } | null)?.keyProps ?? []) as string[];
+  // 空間契約逐鏡收窄（見 shot-blocking.ts）：契約係一場一份，塞成份入單鏡 prompt 等於
+  // 叫模型硬性遵守五個人嘅落位同五件道具嘅狀態，繞過咗 characters 層所有防線。
+  // 必須喺 matchShotProps 之前做 —— 未過濾嘅 keyProps 會連唔喺本鏡嘅道具（「艾琳的弓」）
+  // 都掛埋參考圖入嚟，即係 blocking 除咗餵文字，仲會偷偷影響送出去嘅圖。
+  const {
+    blocking: shotBlocking,
+    droppedPositions,
+    droppedProps,
+  } = filterBlockingForShot(
+    scene?.blocking,
+    shotCharNames,
+    lockedCharacters.map((c) => c.name),
+  );
+  if (droppedPositions.length > 0 || droppedProps.length > 0) {
+    console.warn(
+      `[IMAGE_SHOT] shot=${shot.id} 空間契約逐鏡收窄 — 本鏡角色 [${shotCharNames.join("、") || "（無）"}]；` +
+        `剝走落位 [${droppedPositions.join("、") || "（無）"}]、` +
+        `剝走道具 [${droppedProps.join("、") || "（無）"}]（提到唔在本鏡嘅角色）`,
+    );
+  }
+  const blockingKeyProps = shotBlocking.keyProps ?? [];
   const shotProps = matchShotProps(
     blockingKeyProps,
     lockedProps.map((p) => ({ name: p.name, prompt: p.prompt, lockedImageMediaId: p.lockedImageMediaId, views: p.views })),
@@ -337,10 +342,10 @@ export const imageShotHandler: TaskHandler = async ({ task, reportProgress }) =>
   // droppedCharacters（參考圖配額用完）照樣入 block，但明確標明冇圖，
   // 模板規則會禁止用 Image N 指佢哋，逼模型用全文字外貌描述。
   //
-  // 外貌文本先過 safeAppearancePrompt：模板規則要求「照譯勿改寫」，即係 DB 入面嗰句
-  // 原文會逐字去到出圖 provider。有角色個 appearancePrompt 寫住「露出许多皮肤（尤其是
-  // 腰部）」，逐字譯入之後即刻 HTTP_422 content_policy_violation，terminal error 直接
-  // fail 一鏡。過濾只剝審查詞，服裝／髮色／配件（身份錨）一律保留。
+  // 外貌文本**原文照送，一個字都唔改**（用戶決定，2026-08-02）：審查交返畀 provider。
+  // 舊版喺呢度過一層 appearance-filter 剝走審查詞，已經整個模組刪走。取捨要知：
+  // 外貌描述帶審查詞嗰啲鏡（實測「露出许多皮肤」「前凸后翘」各一鏡）會直接食
+  // HTTP_422 content_policy_violation 而 fail —— 用戶明知，寧願 fail 都唔要被改寫過嘅外貌。
   //
   // 輸出語言跟第 1 站原文：中文小說 → 中文 prompt。locked_assets 本身係中文，輸出
   // 同語言即係連翻譯呢一步都冇，凍結文本可以原樣照抄——「照譯勿改寫」只係把漂移
@@ -349,12 +354,9 @@ export const imageShotHandler: TaskHandler = async ({ task, reportProgress }) =>
   const frozenNote = outputLanguage === "zh" ? "凍結文本，原樣照抄勿改" : "凍結文本，照譯勿改寫";
   const lockedAssets =
     [
-      ...refs.map(
-        (a, i) => `${a.label} — Image ${i + 1} — 外貌（${frozenNote}）: ${safeAppearancePrompt(a.label, a.prompt) || "（無描述）"}`,
-      ),
+      ...refs.map((a, i) => `${a.label} — Image ${i + 1} — 外貌（${frozenNote}）: ${a.prompt || "（無描述）"}`),
       ...droppedCharacters.map(
-        (c) =>
-          `${c.name} — NO REFERENCE IMAGE — 外貌（${frozenNote}；唔准用 Image N 指佢）: ${safeAppearancePrompt(c.name, c.appearancePrompt) || "（無描述）"}`,
+        (c) => `${c.name} — NO REFERENCE IMAGE — 外貌（${frozenNote}；唔准用 Image N 指佢）: ${c.appearancePrompt || "（無描述）"}`,
       ),
     ].join("\n") || "（無鎖定資產）";
 
@@ -365,7 +367,7 @@ export const imageShotHandler: TaskHandler = async ({ task, reportProgress }) =>
     "image_prompt_shot",
     {
       shot_json: JSON.stringify(shot.storyboardJson),
-      scene_blocking: formatBlocking(scene?.blocking),
+      scene_blocking: formatBlocking(shotBlocking),
       locked_assets: lockedAssets,
       reference_legend: referenceLegend,
       style_suffix: style.prefix ?? "",

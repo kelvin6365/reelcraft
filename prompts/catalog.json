@@ -44,14 +44,14 @@
     {
       "id": "rewrite_script",
       "path": "pipeline/rewrite_script.zh.txt",
-      "version": "3",
+      "version": "4",
       "variables": [
         "novel_text",
         "style_note",
         "theme",
         "character_bios"
       ],
-      "description": "小說改寫成分場短劇劇本，30-60 秒/場，防偷懶（純文字）。"
+      "description": "小說改寫成分場短劇劇本，30-60 秒/場，防偷懶，非人物聲源用【】標記同人物對白結構上分開（純文字）。"
     },
     {
       "id": "build_scenes",
@@ -65,11 +65,11 @@
     {
       "id": "storyboard_plan",
       "path": "pipeline/storyboard_plan.zh.txt",
-      "version": "6",
+      "version": "7",
       "variables": [
         "scene_text"
       ],
-      "description": "分鏡第①階段規劃：場景切鏡頭清單，約 15 字/鏡，每鏡帶 source_text；subject 必須係可見畫面、一鏡一凝固瞬間（禁時序詞，優先於字數比例）、只准提到 characters 入面嘅人、每鏡 characters 硬性 ≤2（JSON）。"
+      "description": "分鏡第①階段規劃：場景切鏡頭清單，約 15 字/鏡，每鏡帶 source_text；subject 必須係可見畫面、一鏡一凝固瞬間（禁時序詞，優先於字數比例）、只准提到 characters 入面嘅人、每鏡 characters 硬性 ≤2；【】標記嘅非人物聲源唔准當角色；blocking 只准寫全場恆定狀態（JSON）。"
     },
     {
       "id": "storyboard_photography",
@@ -102,12 +102,12 @@
     {
       "id": "voice_analyze",
       "path": "pipeline/voice_analyze.zh.txt",
-      "version": "2",
+      "version": "3",
       "variables": [
         "scene_text",
         "shot_list_json"
       ],
-      "description": "抽對白台詞，標說話者/情緒/情緒強度(≤0.5)/對應鏡頭（JSON）。"
+      "description": "抽對白台詞，標說話者/情緒/情緒強度(≤0.5)/對應鏡頭；【】標記嘅非人物聲源照抽，lineType=vo（JSON）。"
     },
     {
       "id": "image_prompt_shot",

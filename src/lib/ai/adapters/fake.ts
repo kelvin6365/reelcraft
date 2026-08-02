@@ -152,7 +152,10 @@ export const fakeAdapter: TextAdapter = {
     if (meta?.promptId && canned[meta.promptId]) {
       text = JSON.stringify(canned[meta.promptId]);
     } else if (meta?.promptId === "rewrite_script") {
-      text = "【第1場】咖啡店·夜\n林知夏推門而入，雨聲隨門縫灌進來。\n林知夏（壓低聲線）：「你遲到了。」\n陳沉：「路上有事。」\n林知夏（VO・苦笑）：他遲到的理由，我其實早就知道了。\n（兩人對視，沉默三秒）";
+      // 帶埋一行【廣播】：非人物聲源嘅方括號標記係劇本層契約（rewrite_script），
+      // fake 模式行落去嘅分鏡／配音都要食到呢個格式先反映到真實 pipeline。
+      text =
+        "【第1場】咖啡店·夜\n林知夏推門而入，雨聲隨門縫灌進來。\n林知夏（壓低聲線）：「你遲到了。」\n陳沉：「路上有事。」\n【廣播】：本店將於十一時結業。\n林知夏（VO・苦笑）：他遲到的理由，我其實早就知道了。\n（兩人對視，沉默三秒）";
     } else {
       text = `[fake] ${echo.slice(0, 200)}`;
     }

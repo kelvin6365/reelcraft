@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, afterEach } from "vitest";
-import { MAX_SHOT_CHARACTERS, capCrowdedShots } from "@/lib/workers/handlers/text-handlers";
+import { MAX_SHOT_CHARACTERS, capCrowdedShots, stripNonHumanSpeakers } from "@/lib/workers/handlers/text-handlers";
 
 // 同框 ≥3 個角色實測必崩（換面、串衫、法杖掛錯人），而下游每鏡最多只送 2 張角色參考圖。
 // 規則寫喺 prompt 但實測違反率 13.5%，所以呢層做**確定性降級**：截頭 2 個 + 剝走
@@ -133,5 +133,58 @@ describe("capCrowdedShots — subject 提到但漏咗入 characters 嘅角色", 
     expect(capCrowdedShots("s1", shots, ["王楚", "鄭夏雨"])).toBe(0);
     expect(warn).not.toHaveBeenCalled();
     expect(shots[0].characters).toEqual(["王楚"]);
+  });
+});
+
+// 實測「机械音：夏雨战队，用时23分06秒通关…」被寫成 characters:["机械音"]，下游去搵一張
+// 唔存在嘅參考圖，legend 編號指去咗場景圖，出圖憑空捏造一個人。劇本層而家用【機械音】
+// 方括號同人物對白分開，但同 ≤2 同框一樣 —— prompt 擋唔住嘅，喺 handler 硬做。
+describe("stripNonHumanSpeakers", () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  it("removes a non-human speaker and warns with scene id and shot index", () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const shots = [{ index: 7, characters: ["机械音", "王楚"], subject: "王楚抬頭看向頭頂的光幕" }];
+    expect(stripNonHumanSpeakers("scene-9", shots)).toBe(1);
+    expect(shots[0].characters).toEqual(["王楚"]);
+    const msg = warn.mock.calls[0][0] as string;
+    expect(msg).toContain("scene-9");
+    expect(msg).toContain("shot=7");
+    expect(msg).toContain("机械音");
+  });
+
+  it("recognises the script's bracket marker as well as the bare name", () => {
+    vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const shots = [
+      { index: 1, characters: ["【機械音】", "阿May"] },
+      { index: 2, characters: ["【旁白】"] },
+      { index: 3, characters: ["系統", "廣播", "阿Ken"] },
+    ];
+    expect(stripNonHumanSpeakers("s1", shots)).toBe(3);
+    expect(shots[0].characters).toEqual(["阿May"]);
+    expect(shots[1].characters).toEqual([]);
+    expect(shots[2].characters).toEqual(["阿Ken"]);
+  });
+
+  it("stays silent and untouched when every character is a real person", () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const shots = [{ index: 1, characters: ["王楚", "鄭夏雨"] }, { index: 2, characters: [] }, { index: 3 }];
+    expect(stripNonHumanSpeakers("s1", shots)).toBe(0);
+    expect(warn).not.toHaveBeenCalled();
+    expect(shots[0].characters).toEqual(["王楚", "鄭夏雨"]);
+  });
+
+  // 名單刻意全等比對：闊到 substring 就會食走真角色，而角色名冇兜底，剝咗就冇參考圖。
+  it("does not touch a real character whose name merely contains a listed word", () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const shots = [{ index: 1, characters: ["旁白君", "系統管理員老陳"] }];
+    expect(stripNonHumanSpeakers("s1", shots)).toBe(0);
+    expect(warn).not.toHaveBeenCalled();
+    expect(shots[0].characters).toEqual(["旁白君", "系統管理員老陳"]);
+  });
+
+  it("never throws — a bogus speaker must not fail the scene", () => {
+    vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    expect(() => stripNonHumanSpeakers("s1", [{ index: 1, characters: ["旁白"] }])).not.toThrow();
   });
 });

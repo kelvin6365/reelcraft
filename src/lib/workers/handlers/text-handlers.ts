@@ -121,6 +121,55 @@ export function capCrowdedShots(sceneId: string, shots: CappableShot[], known: s
   return crowded;
 }
 
+// 非人物聲源：機械音、系統提示、廣播、旁白 —— 佢哋講嘢，但冇肉身。
+//
+// 根源修喺劇本層：rewrite_script 而家把呢類聲源寫成「【機械音】：內容」，同人物對白嘅
+// 「角色：對白」結構上分開（舊格式兩者一模一樣，下游根本分唔到）。storyboard_plan 亦已
+// 明文禁止把佢哋寫入 characters。但同 ≤2 同框（違反率 13.5%）、時序詞一樣：prompt 擋唔住
+// 嘅嘢要喺 handler 硬做。實測「机械音：夏雨战队，用时23分06秒通关…」被寫入
+// characters: ["机械音"]，buildShotRefAssets 去搵一張唔存在嘅參考圖，legend 編號指去咗
+// 場景圖，出圖憑空捏造咗一個人。
+//
+// 名單刻意寫窄（全等比對，唔做 substring）：漏網一個講法只係出返舊 bug（可見、可補），
+// 闊到誤刪一個真角色就係靜默拆散個鏡頭 —— 角色名冇兜底，剝咗就冇參考圖。
+const NON_HUMAN_SPEAKER = new Set(
+  [
+    "机械音", "機械音", "机器音", "機器音", "电子音", "電子音", "合成音", "机械女声", "機械女聲",
+    "系统", "系統", "系统提示", "系統提示", "系统音", "系統音", "系统播报", "系統播報",
+    "广播", "廣播", "播报", "播報", "播报音", "播報音", "喇叭", "扩音器", "擴音器",
+    "旁白", "旁白音", "画外音", "畫外音", "解说", "解說", "解说员", "解說員",
+    "提示音", "语音", "語音", "ai", "字幕", "音效", "无", "無", "未知",
+  ].map((n) => n.toLowerCase()),
+);
+
+// 劇本層嘅方括號標記（【機械音】）有機會原樣入到 characters，剝走括號先比對。
+const stripSpeakerBrackets = (name: string) => name.trim().replace(/^[【\[［〔（(]+|[】\]］〕）)]+$/gu, "").trim();
+
+// 回傳有非人物講者被剔走嘅鏡頭數。shots 就地改寫。
+//
+// ⚠️ 必須喺 collapseMultiMomentShots / capCrowdedShots **之前**行：一個假角色佔咗 ≤2 兩格
+// 入面一格，cap 就會為咗留住佢而截走一個真角色。characters 可以被清空 —— 空 characters
+// 係合法嘅空鏡／面板鏡，唔係錯誤。
+//
+// 同其他幾層一樣：唔准 throw、唔准令 scene fail。
+export function stripNonHumanSpeakers(sceneId: string, shots: CappableShot[]): number {
+  let affected = 0;
+  for (const shot of shots) {
+    const names = shot.characters ?? [];
+    if (names.length === 0) continue;
+    const bogus = names.filter((n) => NON_HUMAN_SPEAKER.has(stripSpeakerBrackets(n).toLowerCase()));
+    if (bogus.length === 0) continue;
+    affected++;
+    shot.characters = names.filter((n) => !bogus.includes(n));
+    console.warn(
+      `[storyboard] scene=${sceneId} shot=${shot.index} characters 有非人物講者（${bogus.join("、")}）— ` +
+        "已剔走，佢哋冇參考圖，留低會令 legend 編號指去場景圖再憑空捏造一個人；" +
+        `淨返 [${(shot.characters ?? []).join("、") || "（空）"}]`,
+    );
+  }
+  return affected;
+}
+
 // 時序連接詞：明確表示「跟住先發生」。單幀生圖模型冇時間軸，收到兩個時刻就唯有把
 // 兩個時刻並排畫入同一張圖 —— 實測鏡 16 出咗個 2×2 格拼貼，而拼貼喺短劇入面係廢鏡
 // （剪唔入、i2v 動唔到、連唔到戲）。生圖 prompt 尾嗰句 `not a character sheet, grid
@@ -221,7 +270,7 @@ export function collapseMultiMomentShots(sceneId: string, shots: CappableShot[],
 // 個子句 —— 剝走成句就淨返一個冇內容嘅鏡頭，改寫個名詞就保住成場戲，同時令落到生圖
 // prompt 嗰陣根本冇得作可辨認嘅人。
 //
-// 兩層都刻意寫得窄（同 appearance-filter 一樣嘅取捨）：寧願漏一兩個講法（可見 —— 出圖見到
+// 兩層都刻意寫得窄（同 NON_HUMAN_SPEAKER 一樣嘅取捨）：寧願漏一兩個講法（可見 —— 出圖見到
 // 雜兵、可以補 pattern），都好過闊到誤改真戲。
 const CROWD_HEAD =
   "戰隊|战队|隊伍|队伍|小隊|小队|隊員|队员|眾人|众人|群眾|群众|人群|村民|士兵|守衛|守卫|觀眾|观众|路人|圍觀者|围观者";
@@ -726,12 +775,14 @@ export const storyboardRunHandler: TaskHandler = async ({ task, reportProgress }
     const span = 100 / scenes.length;
 
     const plan = await textCallJson(ctx, models.text, "storyboard_plan", { scene_text: scene.content.slice(0, 12_000) });
-    // 就地降級，次序有意：先把 subject 縮返一個凝固瞬間（剝走第二個時刻同無名群眾），
+    // 就地降級，次序有意：先剔走非人物講者（唔剔走就會佔住 ≤2 其中一格，cap 會為咗留住
+    // 一個假角色而截走一個真角色）；再把 subject 縮返一個凝固瞬間（剝走第二個時刻同無名群眾），
     // 再做同框上限（補返漏咗嘅角色、截頭 2 個、剝走剩低嗰啲嘅子句）—— 咁 cap 係對住
     // 真係會入畫嗰段文字做決定；最後先把仲留喺句入面、冇對應資產嘅集體名詞改寫成無名
     // 遠景（前兩層都係「剝」，佢係「改寫」，要對住已經定形嘅 subject 做）。三者都必須喺
     // shotListJson / prisma.shot.create 之前做，令攝影／表演／細節三個階段同埋生圖都食到
     // 降級後嘅版本。
+    stripNonHumanSpeakers(scene.id, plan.shots);
     collapseMultiMomentShots(scene.id, plan.shots, knownCharacterNames);
     capCrowdedShots(scene.id, plan.shots, knownCharacterNames);
     anonymizeCrowdSubjects(scene.id, plan.shots, knownCharacterNames);

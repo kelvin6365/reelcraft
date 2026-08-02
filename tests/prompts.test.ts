@@ -46,6 +46,9 @@ describe("buildPrompt", () => {
     expect(built.text).toContain("lineType");
     expect(built.text).toContain("dialogue／vo／os");
     expect(built.text).toContain("cue");
+    // 【】標記嘅非人物聲源照樣要配音、要出字幕，只係唔可以當佢係一個真人角色
+    expect(built.text).toContain("劇本用方括號標記非人物聲源");
+    expect(built.text).toContain("lineType 一律填 vo");
   });
 
   it("rewrite_script keeps the VO/OS parenthesis contract", () => {
@@ -54,6 +57,18 @@ describe("buildPrompt", () => {
     expect(built.text).toContain("角色（OS）：");
     expect(built.text).toContain("VO、OS 是保留字");
     expect(built.text).toContain("展示不明說");
+  });
+
+  // 雷嘅根源：「机械音：…」同「王楚：…」格式一模一樣，下游分鏡分唔到邊個係人，
+  // 把「机械音」寫入 characters 之後就去搵一張唔存在嘅參考圖，出圖憑空捏造一個人。
+  // 兩種講者一定要喺劇本層結構上分開。
+  it("rewrite_script marks non-human sound sources with brackets, separately from character dialogue", () => {
+    const built = buildPrompt("rewrite_script", { novel_text: "N", style_note: "S", theme: "T", character_bios: "B" });
+    expect(built.text).toContain("非人物聲源必須用方括號標記");
+    expect(built.text).toContain("【聲源】：內容");
+    expect(built.text).toContain("絕對不可以填真人角色名");
+    // 真人即使唔喺畫面都用返 VO/OS —— 佢有肉身、有參考圖，係要畫出嚟嘅人
+    expect(built.text).toContain("真人即使不在畫面內，仍然用「角色（VO）：」或「角色（OS）：」");
   });
 
   it("renders extract_assets v15 with the angles judgment criteria intact", () => {
@@ -108,12 +123,24 @@ describe("buildPrompt", () => {
   // 實測：機械音鏡頭出咗成塊英文 HUD（"...CLEARED EARTH DRAGON LAIR IN 23 MINUTES..."）
   // 連計時器，而本片係中文短劇。根因係 plan 容許 subject 淨寫「機械音提示」，
   // 落到生圖 prompt 就變成「a mechanical voice announces: ...」，模型當然照畫。
-  it("renders storyboard_plan v6 with the no-invisible-subject rule intact", () => {
-    const built = buildPrompt("storyboard_plan", { scene_text: "頭頂傳來機械音：通關成功。" });
-    expect(built.version).toBe("6");
+  it("renders storyboard_plan v7 with the no-invisible-subject rule intact", () => {
+    const built = buildPrompt("storyboard_plan", { scene_text: "【機械音】：通關成功。" });
+    expect(built.version).toBe("7");
     expect(built.text).toContain("嚴禁產生冇可見畫面主體嘅鏡頭");
     expect(built.text).toContain("表面只有發光紋路同幾何邊框，冇任何文字");
     expect(built.text).toContain("嚴禁把「机械音」「旁白」「畫外音」「系統」「AI」呢類非人物寫入 characters");
+    // 根源修喺劇本層：非人物聲源用【】標記，同人物對白「角色：」結構上分開。
+    // 分鏡要識讀呢個標記，唔可以再靠自己判斷邊個係人。
+    expect(built.text).toContain("劇本用方括號標記非人物聲源");
+    expect(built.text).toContain("唔准寫入 blocking.positions");
+  });
+
+  // 空間契約會逐鏡送落生圖並要求硬性遵守 —— 一鏡嘅動作凍結入契約，之後每一鏡都會照畫
+  // （實測「劍=高舉，劍尖聖光沖天，巨龍倒塌」出現喺成場每一鏡）。
+  it("renders storyboard_plan with the scene-wide-only blocking contract rules intact", () => {
+    const built = buildPrompt("storyboard_plan", { scene_text: "鄭夏雨高舉長劍，巨龍倒下。" });
+    expect(built.text).toContain("keyProps 只准寫全場恆定的狀態，嚴禁把某一鏡的動作凍結入契約");
+    expect(built.text).toContain("持有者必須同 positions 一致");
   });
 
   it("renders storyboard_plan with the ≤2 same-frame character cap and its rationale intact", () => {
