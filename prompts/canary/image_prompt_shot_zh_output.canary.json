@@ -30,6 +30,10 @@
     "不得加入本 prompt 未描述的任何角色。",
     "畫面中絕不出現任何文字、字幕、標題或文句。",
     "Render as one single cinematic frame, not a character sheet, grid or collage.",
-    "Never render any text, captions, subtitles or words in the frame."
+    "Never render any text, captions, subtitles or words in the frame.",
+    "寫成連貫敘述段落，唔准寫成逗號分隔嘅詞條列",
+    "唔准出現含糊詞",
+    "參考圖要講明**作用範圍**",
+    "敘述次序寫死"
   ]
 }

@@ -215,7 +215,7 @@ describe("buildPrompt", () => {
     expect(built.text).toContain("blocking 空間契約**只描述現在時空**");
   });
 
-  it("renders image_prompt_shot v12 with the sound-shot carrier rule and text-free surface ban intact", () => {
+  it("renders image_prompt_shot v13 with the sound-shot carrier rule and text-free surface ban intact", () => {
     const built = buildPrompt("image_prompt_shot", {
       shot_json: "{}",
       scene_blocking: "B",
@@ -224,7 +224,7 @@ describe("buildPrompt", () => {
       style_suffix: "S",
       output_language: "英文",
     });
-    expect(built.version).toBe("12");
+    expect(built.version).toBe("13");
     expect(built.text).toContain("聲音本身冇畫面，唔可以直譯");
     expect(built.text).toContain("必須改為描述承載畫面");
     expect(built.text).toContain("必須明確寫成無文字無數字無符號");

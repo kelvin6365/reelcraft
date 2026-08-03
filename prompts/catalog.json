@@ -112,7 +112,7 @@
     {
       "id": "image_prompt_shot",
       "path": "pipeline/image_prompt_shot.zh.txt",
-      "version": "12",
+      "version": "13",
       "variables": [
         "shot_json",
         "scene_blocking",
@@ -121,7 +121,7 @@
         "style_suffix",
         "output_language"
       ],
-      "description": "鏡頭分鏡轉生圖 prompt，輸出語言由第 1 站原文決定（中文原文→中文 prompt，凍結外貌原樣照抄，冇翻譯層漂移）+ Image N 參考綁定 + 角色外貌強制寫入 + 無資產集體名詞只准畫成認唔出樣嘅群眾 + 空間契約連戲 + 聲音類鏡頭改描述無文字承載畫面 + 中英雙版連續性條款。"
+      "description": "鏡頭→生圖 prompt（引用鎖定資產）；連貫敘述段落式（A/B 實測勝逗號詞條列）、參考圖須講明作用範圍、禁含糊詞。"
     }
   ]
 }
