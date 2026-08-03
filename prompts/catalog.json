@@ -25,7 +25,7 @@
     {
       "id": "extract_props",
       "path": "pipeline/extract_props.zh.txt",
-      "version": "6",
+      "version": "7",
       "variables": [
         "script_text",
         "target_name"
