@@ -38,6 +38,22 @@ export function safeParseJson(raw: string): unknown {
       try {
         const repaired = repairTruncatedJson(escaped);
         const value = JSON.parse(repaired);
+        // 修補只可以「救返一部分」，唔可以「無中生有一個空答案」。
+        //
+        // 實測：extract_props 收到嘅 raw 係 `{"props": [` —— 11 個字元，一開頭就斷。
+        // repairTruncatedJson 照樣補成 `{"props": []}`，parse 得過、zod 又過（props 有
+        // 預設空陣列），於是道具抽取靜靜地回咗零個道具，同「呢場戲真係冇道具」完全
+        // 分唔開。呢個唔係救援，係捏造。
+        //
+        // 判斷用「救返嘅內容係咪完全空」而唔係用字數地板：字數地板綁死語言（中文比
+        // 英文密好多），而且真正嘅分界線本來就係語意——救到嘢就有價值，救唔到就唔應該
+        // 扮成功。合法嘅空結果（真係冇道具）第一次 JSON.parse 就會過，永遠行唔到呢度。
+        if (isEmptyPayload(value)) {
+          throw new JsonParseError(
+            `output was truncated to an empty payload — refusing to pass it off as a real result (raw=${raw.length} chars, tail=${JSON.stringify(raw.slice(-120))})`,
+            raw,
+          );
+        }
         // Reaching here means the model's output was cut mid-structure and we
         // silently closed it. The result parses, but is missing however much the
         // model never emitted — so it must leave a trace (this fallback used to
@@ -49,10 +65,22 @@ export function safeParseJson(raw: string): unknown {
         );
         return value;
       } catch (err) {
+        // 空救援嘅判斷已經帶住自己嘅訊息，唔好再包一層「not valid JSON」——佢本來就 parse 到。
+        if (err instanceof JsonParseError) throw err;
         throw new JsonParseError(`output is not valid JSON: ${String(err)}`, raw);
       }
     }
   }
+}
+
+// 「救返嘅嘢係咪完全空」——空物件／空陣列／空字串，以及全部子值都空嘅物件陣列，
+// 一律當空。用嚟分辨「補完之後仲有內容」同「補完之後淨返個殼」。
+function isEmptyPayload(value: unknown): boolean {
+  if (value === null || value === undefined) return true;
+  if (typeof value === "string") return value.trim().length === 0;
+  if (typeof value === "number" || typeof value === "boolean") return false;
+  if (Array.isArray(value)) return value.every(isEmptyPayload);
+  return Object.values(value as Record<string, unknown>).every(isEmptyPayload);
 }
 
 // Strip trailing commas, then balance any brackets/quote left open by a
