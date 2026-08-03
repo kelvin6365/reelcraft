@@ -3,7 +3,7 @@
   "prefix": "cinematic film still, anamorphic lens, natural volumetric lighting, muted teal-and-amber color grade, shallow depth of field, 35mm, high dynamic range, photorealistic detail, natural skin texture without plastic sheen",
   "assetPrefix": "photorealistic, true-to-life natural color, sharp focus throughout, raw unretouched skin texture with visible pores, no beauty-filter smoothing, lifelike flowing hair strands, ultra-fine fabric detail, HDR clarity",
   "locationPrefix": "real-life location photography, cinematic film still, rich fine detail, soft natural lighting, realistic light and shadow, strong sense of depth, shot on ARRI Alexa 35 with Cooke S5/i prime lens, 24mm f/5.6, high resolution",
-  "negativePrompt": "cartoon, illustration, 3d render, plastic skin, oversaturated, harsh flat lighting, blown highlights, extra fingers, deformed hands, text, watermark, logo, half-lit face, harsh split lighting, hard-edged shadow, shadow banding, posterized shading, blown-out face, crushed blacks, stray light blobs, glowing artifacts, color blotches, oily skin, greasy specular highlights, waxy skin, mask-like face, childlike face, baby face, underage appearance, chibi proportions, oversized eyes, ugly face, disfigured face, asymmetrical features, crooked features, broken anatomy, malformed limbs, extra limbs, clothing clipping, see-through clothing, dragon emblem, police badge, military insignia, national flag, national emblem",
+  "negativePrompt": "cartoon, illustration, 3d render, plastic skin, oversaturated, harsh flat lighting, blown highlights, extra fingers, deformed hands, text, watermark, logo, half-lit face, harsh split lighting, hard-edged shadow, shadow banding, posterized shading, blown-out face, crushed blacks, stray light blobs, glowing artifacts, color blotches, oily skin, greasy specular highlights, waxy skin, mask-like face, broken anatomy, malformed limbs, extra limbs, clothing clipping, see-through clothing, dragon emblem, police badge, military insignia, national flag, national emblem",
   "bannedWords": [
     "film grain",
     "grain",
@@ -11,5 +11,6 @@
     "heavy vignette",
     "chromatic aberration"
   ],
-  "notes": "寫實電影感。禁用詞以顆粒/噪點類為主——會在後續換臉與口型對位時放大瑕疵。三種用法：鏡頭圖 prefix 作 style_suffix 接尾（image_prompt_shot）；人物資產用 assetPrefix 行先（教材三段式）——只帶身份層風格；場景資產用 locationPrefix 行先——帶環境層風格（ARRI/Cooke 鏡頭質感），無人物無文字。 交付標準負面詞（光影缺陷／皮膚質感／幼態臉／醜化畸形／敏感標誌）見 docs/plans/2026-08-03-delivery-standards-design.md。"
+  "notes": "寫實電影感。禁用詞以顆粒/噪點類為主——會在後續換臉與口型對位時放大瑕疵。三種用法：鏡頭圖 prefix 作 style_suffix 接尾（image_prompt_shot）；人物資產用 assetPrefix 行先（教材三段式）——只帶身份層風格；場景資產用 locationPrefix 行先——帶環境層風格（ARRI/Cooke 鏡頭質感），無人物無文字。 交付標準負面詞：缺陷類（光影／皮膚／人體結構／敏感標誌）入 negativePrompt 全程生效；美學塑形類（幼態臉／醜化畸形）入 designNegativePrompt，只喺資產設計嗰一步用——落喺照抄參考圖嘅近臉／視角圖會蓋過身份鎖，實測令動畫臉變咗寫實成人臉。詳情見 docs/plans/2026-08-03-delivery-standards-design.md。",
+  "designNegativePrompt": "childlike face, baby face, underage appearance, chibi proportions, oversized eyes, ugly face, disfigured face, asymmetrical features, crooked features"
 }

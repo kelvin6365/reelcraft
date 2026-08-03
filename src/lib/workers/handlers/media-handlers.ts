@@ -211,7 +211,11 @@ function assetImageHandler(kind: "character" | "location" | "prop"): TaskHandler
       kind === "character"
         ? buildCharacterMainPrompt(basePrompt, style, [refFacePrompt, refFaceNote].filter(Boolean))
         : buildLocationMainPrompt(basePrompt, style);
-    const negativePrompt = kind === "location" ? buildAngleNegativePrompt(style) : style.negativePrompt;
+    // 角色正面全身主圖係**設計**呢個角色嗰一步 —— 交付標準嘅美學塑形詞（幼態臉、
+    // 醜化畸形）只喺呢度生效。之後嘅近臉特寫同側／背視角都係照抄呢張圖，帶住美學
+    // 壓力就會蓋過身份鎖（見 style-pack.ts designNegativePrompt）。
+    const negativePrompt =
+      kind === "location" ? buildAngleNegativePrompt(style) : buildCharacterNegativePrompt(style, { design: true });
 
     const mediaIds: string[] = [];
     for (let i = 0; i < candidateCount; i++) {

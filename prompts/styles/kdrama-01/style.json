@@ -3,12 +3,13 @@
   "prefix": "korean drama cinematography, soft naturalistic lighting, muted pastel color grade, shallow depth of field, clean modern interiors, emotional close-up framing, photorealistic, natural soft matte skin texture",
   "assetPrefix": "photorealistic, korean drama styling, natural true-to-life color, sharp focus throughout, raw natural skin texture with visible pores, no over-smoothing, lifelike hair strands, refined fabric detail, HDR clarity",
   "locationPrefix": "real-life korean drama location photography, soft natural lighting, muted pastel color grade, realistic light and shadow, strong sense of depth, cinematic still quality, rich fine detail, high resolution",
-  "negativePrompt": "cartoon, anime, illustration, oversaturated, harsh shadows, low quality, deformed hands, text, watermark, half-lit face, harsh split lighting, hard-edged shadow, shadow banding, posterized shading, blown-out face, crushed blacks, stray light blobs, glowing artifacts, color blotches, oily skin, greasy specular highlights, waxy skin, plastic skin, mask-like face, childlike face, baby face, underage appearance, chibi proportions, oversized eyes, ugly face, disfigured face, asymmetrical features, crooked features, broken anatomy, malformed limbs, extra limbs, clothing clipping, see-through clothing, dragon emblem, police badge, military insignia, national flag, national emblem",
+  "negativePrompt": "cartoon, anime, illustration, oversaturated, harsh shadows, low quality, deformed hands, text, watermark, half-lit face, harsh split lighting, hard-edged shadow, shadow banding, posterized shading, blown-out face, crushed blacks, stray light blobs, glowing artifacts, color blotches, oily skin, greasy specular highlights, waxy skin, plastic skin, mask-like face, broken anatomy, malformed limbs, extra limbs, clothing clipping, see-through clothing, dragon emblem, police badge, military insignia, national flag, national emblem",
   "bannedWords": [
     "film grain",
     "noise",
     "vintage filter",
     "8mm"
   ],
-  "notes": "情感特寫為主，光線柔和自然。禁用詞會令畫面變糊或過度做舊，用 soft cinematic texture 替代。三種用法：鏡頭圖 prefix 接尾；人物資產用 assetPrefix 行先——只帶身份層風格；場景資產用 locationPrefix 行先（教材三段式）——帶環境層風格，無人物無文字。 交付標準負面詞（光影缺陷／皮膚質感／幼態臉／醜化畸形／敏感標誌）見 docs/plans/2026-08-03-delivery-standards-design.md。"
+  "notes": "情感特寫為主，光線柔和自然。禁用詞會令畫面變糊或過度做舊，用 soft cinematic texture 替代。三種用法：鏡頭圖 prefix 接尾；人物資產用 assetPrefix 行先——只帶身份層風格；場景資產用 locationPrefix 行先（教材三段式）——帶環境層風格，無人物無文字。 交付標準負面詞：缺陷類（光影／皮膚／人體結構／敏感標誌）入 negativePrompt 全程生效；美學塑形類（幼態臉／醜化畸形）入 designNegativePrompt，只喺資產設計嗰一步用——落喺照抄參考圖嘅近臉／視角圖會蓋過身份鎖，實測令動畫臉變咗寫實成人臉。詳情見 docs/plans/2026-08-03-delivery-standards-design.md。",
+  "designNegativePrompt": "childlike face, baby face, underage appearance, chibi proportions, oversized eyes, ugly face, disfigured face, asymmetrical features, crooked features"
 }

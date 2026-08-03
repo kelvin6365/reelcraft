@@ -9,6 +9,7 @@ export interface CharacterViewStyle {
   assetPrefix?: string;
   prefix?: string;
   negativePrompt?: string;
+  designNegativePrompt?: string;
 }
 
 // 舊版「多視角設定表」換成單一正面全身圖——側面/背面留返鎖定之後先按需要逐張生成
@@ -68,8 +69,18 @@ export function buildCharacterViewPrompt(basePrompt: string, view: Pick<Location
     .trim();
 }
 
-export function buildCharacterNegativePrompt(style: CharacterViewStyle): string {
-  return [style.negativePrompt, "different character, redesigned character, reinterpreted design, inconsistent character, different face, different outfit"]
+/**
+ * `design: true` 只可以用喺「設計一個新角色」嗰一步（正面全身主圖）。
+ *
+ * 近臉特寫同側／背視角係**照抄參考圖**，唔可以帶美學塑形詞——任何「應該靚成點」
+ * 嘅壓力都會同「照抄」競爭，而且實測係壓力贏。詳見 style-pack.ts designNegativePrompt。
+ */
+export function buildCharacterNegativePrompt(style: CharacterViewStyle, opts: { design?: boolean } = {}): string {
+  return [
+    style.negativePrompt,
+    opts.design ? style.designNegativePrompt : "",
+    "different character, redesigned character, reinterpreted design, inconsistent character, different face, different outfit",
+  ]
     .filter(Boolean)
     .join(", ");
 }

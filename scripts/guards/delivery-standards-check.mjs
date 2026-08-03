@@ -22,11 +22,17 @@ const MEDIA_HANDLERS = "src/lib/workers/handlers/media-handlers.ts";
 const REQUIRED_NEGATIVE_CATEGORIES = {
   "光影缺陷": ["half-lit face", "harsh split lighting", "hard-edged shadow"],
   "皮膚質感": ["oily skin", "waxy skin", "mask-like face"],
-  "幼態臉": ["childlike face", "baby face", "underage appearance"],
-  "醜化畸形": ["ugly face", "disfigured face", "asymmetrical features"],
   "人體結構": ["broken anatomy", "malformed limbs", "clothing clipping"],
   "敏感標誌": ["dragon emblem", "police badge", "military insignia"],
 };
+
+// 美學塑形類分開守：呢批只可以喺 designNegativePrompt，落咗去通用 negativePrompt
+// 就會蓋過近臉／視角圖嘅身份鎖（實測動畫臉變寫實成人臉）。
+const REQUIRED_DESIGN_CATEGORIES = {
+  "幼態體型": ["chibi proportions", "child body proportions"],
+  "醜化畸形": ["ugly face", "disfigured face", "asymmetrical features"],
+};
+const AESTHETIC_LEAK = ["childlike face", "baby face", "underage appearance", "chibi proportions", "ugly face", "disfigured face", "oversized doll eyes", "oversized eyes"];
 
 const hits = [];
 
@@ -52,9 +58,20 @@ for (const pack of packs) {
     continue;
   }
   const negative = String(style.negativePrompt ?? "").toLowerCase();
+  const design = String(style.designNegativePrompt ?? "").toLowerCase();
   for (const [category, terms] of Object.entries(REQUIRED_NEGATIVE_CATEGORIES)) {
     if (!terms.some((t) => negative.includes(t))) {
       hits.push(`${path}: negativePrompt 缺「${category}」類負面詞（至少要有一個：${terms.join(" / ")}）`);
+    }
+  }
+  for (const [category, terms] of Object.entries(REQUIRED_DESIGN_CATEGORIES)) {
+    if (!terms.some((t) => design.includes(t))) {
+      hits.push(`${path}: designNegativePrompt 缺「${category}」類負面詞（至少要有一個：${terms.join(" / ")}）`);
+    }
+  }
+  for (const term of AESTHETIC_LEAK) {
+    if (negative.includes(term)) {
+      hits.push(`${path}: 美學塑形詞「${term}」洩漏咗入通用 negativePrompt —— 只可以放 designNegativePrompt，否則會蓋過近臉／視角圖嘅身份鎖`);
     }
   }
 }

@@ -74,9 +74,9 @@ describe("buildPrompt", () => {
     expect(built.text).toContain("真人即使不在畫面內，仍然用「角色（VO）：」或「角色（OS）：」");
   });
 
-  it("renders extract_assets v16 with the angles judgment criteria intact", () => {
+  it("renders extract_assets v18 with the angles judgment criteria intact", () => {
     const built = buildPrompt("extract_assets", { script_text: "阿May推門而入。", raw_text: "" });
-    expect(built.version).toBe("16");
+    expect(built.version).toBe("18");
     expect(built.text).toContain("重要場景必須輸出至少 2 個 angles；普通場景 angles 一律輸出空陣列");
   });
 
@@ -85,10 +85,11 @@ describe("buildPrompt", () => {
   // 角色鎖定圖同「雙手自然下垂、空手」自相矛盾，把劍再跟住身份參考圖入晒每一鏡。
   it("renders extract_assets with the appearance/wardrobe field bans intact", () => {
     const built = buildPrompt("extract_assets", { script_text: "阿May推門而入。", raw_text: "" });
-    expect(built.text).toContain("appearance 淨係可以講**畫得出嚟嘅外觀**");
-    expect(built.text).toContain("呢個詞畫得出嚟嗎");
-    expect(built.text).toContain("手持嘅武器同道具一律唔准寫入 wardrobe");
-    expect(built.text).toContain("長喺身上、除唔低嘅唔算道具");
+    expect(built.text).toContain("appearance 只准寫**畫得出嚟嘅外觀**");
+    expect(built.text).toContain("畫得出嚟嗎？");
+    expect(built.text).toContain("手持嘅武器器具一律唔准寫");
+    expect(built.text).toContain("長喺身上、除唔低嘅唔算服飾");
+    expect(built.text).toContain("放錯位會令生圖嗰陣對翅膀綁咗去第二個角色身上");
   });
 
   it("renders extract_assets with the character-as-spatial-anchor ban intact — real-browser QA caught 王楚所在位置望向其他队员 leaking a character name straight into the image-gen prompt via label. Kept deliberately minimal (extends the existing enumerated list + existing reverse-example sentence) after a heavier first draft reproducibly destabilized gemini-2.5-flash-lite into malformed JSON on this exact 6-character script — verified via real A/B: v12 baseline succeeded twice, the heavier draft failed twice, this minimal version succeeded", () => {

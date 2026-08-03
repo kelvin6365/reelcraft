@@ -509,6 +509,8 @@ export const extractAssetsHandler: TaskHandler = async ({ task, reportProgress }
 // AI／用戶額外補充嘅具體細節（例如「反面刻有龍紋」），真係有需要先打，唔打都唔會
 // 冇咗「呢個係邊個角度」嘅核心指示。
 const KEY_TIER_VIEW_LABELS = ["正面", "反面", "側面", "細節特寫"];
+// 補抽上限：逐件一次 text call，冇上限就會被一個爛輸出拖住幾十次呼叫。
+const MAX_PROP_RECOVERY = 6;
 
 export const extractPropsHandler: TaskHandler = async ({ task, reportProgress }) => {
   const { episode, project } = await loadEpisodeWithProject(task);
@@ -543,7 +545,8 @@ export const extractPropsHandler: TaskHandler = async ({ task, reportProgress })
     // 少抽一件可以補抽（「漏抽咗？打道具名補抽」），入庫一件冇材質冇尺寸嘅殼就要人手執。
     const missing = missingRequiredPropFields(p);
     if (missing.length > 0) {
-      skippedIncomplete.push(`${p.name}（缺 ${missing.join("、")}）`);
+      skippedIncomplete.push(p.name);
+      console.warn(`[extract_props] 「${p.name}」缺 ${missing.join("、")}，稍後補抽`);
       continue;
     }
 
@@ -575,14 +578,55 @@ export const extractPropsHandler: TaskHandler = async ({ task, reportProgress })
     });
     created++;
   }
+  // 必填欄位唔齊唔可以就咁掉 —— 角色 wardrobe 嗰邊已經把手持武器剝走，如果道具呢邊
+  // 又擋咗，把劍法杖弓就兩邊都冇，整條 pipeline 從此見唔到（實測「法杖」「弓」中招）。
+  // 所以逐件自動補抽一次：prompt 本身支援 target_name 專注模式，逐件問輸出短好多，
+  // 模型填齊 material／dimensions 嘅機會高好多。補完仲係唔齊先至真係放棄。
+  let recovered = 0;
+  const stillIncomplete: string[] = [];
+  for (const name of skippedIncomplete.slice(0, MAX_PROP_RECOVERY)) {
+    try {
+      const retry = await textCallJson(
+        { userId: task.userId, taskId: task.id, projectId: project.id, episodeId: episode.id, oneOff: promptOverridesFromTask(task) },
+        models.text,
+        "extract_props",
+        { script_text: source.slice(0, 30_000), target_name: name },
+      );
+      const p = retry.props.find((x) => x.name === name) ?? retry.props[0];
+      if (!p || missingRequiredPropFields(p).length > 0) {
+        stillIncomplete.push(name);
+        continue;
+      }
+      if (await prisma.prop.findFirst({ where: { projectId: project.id, name: p.name } })) continue;
+      let views = p.views.map((v) => ({ ...v, mediaId: null as string | null }));
+      if (p.tier === "key" && views.length < 4) {
+        views = KEY_TIER_VIEW_LABELS.map((label, i) => views[i] ?? { label, prompt: "", mediaId: null });
+      }
+      const matchedLocation = p.sceneName ? locations.find((l) => l.name.startsWith(p.sceneName)) : undefined;
+      await prisma.prop.create({
+        data: {
+          id: newId(), userId: task.userId, projectId: project.id,
+          name: p.name, tier: p.tier, summary: p.description, prompt: p.description,
+          material: p.material, dimensions: p.dimensions, physicalParams: p.physicalParams,
+          locationId: matchedLocation?.id, views,
+        },
+      });
+      created++;
+      recovered++;
+    } catch (err) {
+      stillIncomplete.push(name);
+      console.warn(`[extract_props] 「${name}」補抽失敗：${String(err).slice(0, 160)}`);
+    }
+  }
   if (skippedIncomplete.length > 0) {
     console.warn(
-      `[extract_props] episode=${episode.id} 跳過 ${skippedIncomplete.length} 件必填欄位唔齊嘅道具：${skippedIncomplete.join("；")}` +
-        ` — 唔入庫，可以用「補抽」逐件再試`,
+      `[extract_props] episode=${episode.id} ${skippedIncomplete.length} 件必填欄位唔齊：${skippedIncomplete.join("；")}` +
+        ` — 補抽救返 ${recovered} 件` +
+        (stillIncomplete.length > 0 ? `，仍然唔齊唔入庫：${stillIncomplete.join("、")}` : ""),
     );
   }
   reportProgress(95);
-  return { props: out.props.length, created, skippedIncomplete: skippedIncomplete.length };
+  return { props: out.props.length, created, recovered, stillIncomplete: stillIncomplete.length };
 };
 
 // ⚠️ 呢度以前有一層 splitFlashbackScenes：認括號旁白註記（闪回／回忆／梦境／倒叙），
