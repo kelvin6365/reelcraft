@@ -18,8 +18,11 @@
 | `capability-catalog-check` | `standards/capabilities.json` schema 驗證 + modelKey 格式 | 03-provider |
 | `template-check` | `standards/templates/*.json` 結構驗證（宣告式媒體模板） | 03-provider §M2 |
 | `env-example-sync` | `src/lib/env.ts` zod keys ⊆ `.env.example` | 07-deployment |
+| `flashback-shot-isolation` | 閃回鏡必須同母場的場景參考圖／空間契約隔離（`pickShotLocation` + `filterBlockingForShot` 兩個 call site） | #8 |
+| `sqlite-schema-sync` | `prisma/schema.sqlite.prisma` 必須是 `prisma/schema.prisma` 的轉換輸出，不得手改或轉舊 | #8 |
+| `delivery-standards-check` | 四個 style pack 的 `negativePrompt` 必須齊備交付標準各缺陷類別；鏡頭生圖的 `referenceMediaIds` 必須由審計後的 refs 派生（孤兒參考圖守衛） | #8 · [交付標準](../plans/2026-08-03-delivery-standards-design.md) |
 
-以上 12 個 guard 已全部掛載於 `npm run check`。舊清單中的 `no-model-key-guess` / `no-plaintext-key-response` / `queue-route-exhaustive` / `no-polling` **未見對應腳本**，留待 orchestrator 決定是重新補寫還是移除這幾條要求。
+以上 guard 已全部掛載於 `npm run check`（`scripts/check.mjs` 自動掃描 `scripts/guards/*.mjs`，新增檔案即自動生效，無須註冊）。舊清單中的 `no-model-key-guess` / `no-plaintext-key-response` / `queue-route-exhaustive` / `no-polling` **未見對應腳本**，留待 orchestrator 決定是重新補寫還是移除這幾條要求。
 
 ## Canary（06-prompts.md）
 

@@ -15,12 +15,12 @@
     {
       "id": "extract_assets",
       "path": "pipeline/extract_assets.zh.txt",
-      "version": "15",
+      "version": "16",
       "variables": [
         "script_text",
         "raw_text"
       ],
-      "description": "從劇本抽角色與場景資產，含去重與外貌字數量化規則；raw_text 人物小傳段優先於 script_text 判斷客觀事實（JSON）。"
+      "description": "從劇本抽角色與場景資產，含去重與外貌字數量化規則；appearance 只准寫畫得出嘅外觀、wardrobe 只准寫著戴喺身上嘅嘢（手持武器歸道具）；raw_text 人物小傳段優先於 script_text 判斷客觀事實（JSON）。"
     },
     {
       "id": "extract_props",

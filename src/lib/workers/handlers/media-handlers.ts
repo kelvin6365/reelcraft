@@ -18,6 +18,7 @@ import { buildPropMainPrompt, buildPropViewPrompt, buildPropNegativePrompt, type
 import { buildCharacterMainPrompt, buildCharacterViewPrompt, buildCharacterNegativePrompt, buildCharacterFacePrompt, REF_FACE_MATCH_PROMPT } from "@/lib/prompts/character-views";
 import { loadStyle } from "@/lib/prompts/style-pack";
 import { filterBlockingForShot, formatBlocking } from "@/lib/prompts/shot-blocking";
+import { auditShotPrompt, dropOrphanRefs, hasIssues } from "@/lib/prompts/shot-prompt-audit";
 import { OUTPUT_LANGUAGE_LABEL, resolveOutputLanguage } from "@/lib/prompts/output-language";
 
 const CANDIDATE_COUNT = 3;
@@ -108,7 +109,9 @@ function assetImageHandler(kind: "character" | "location" | "prop"): TaskHandler
         {
           modelKey: models.image,
           prompt: facePrompt,
-          negativePrompt: style.negativePrompt,
+          // 面部特寫係圖生圖（以鎖定主圖做唯一參考），同 view 圖一樣要帶身份類負面詞 ——
+          // 佢係之後每一鏡嘅首選 identity anchor，喺呢一格走樣就成集走樣。
+          negativePrompt: buildCharacterNegativePrompt(style),
           aspectRatio: "1:1",
           resolution: "4K",
           keyPrefix: `projects/${project.id}/characters/${row.id}`,
@@ -326,10 +329,6 @@ export const imageShotHandler: TaskHandler = async ({ task, reportProgress }) =>
   );
 
   const { refs, droppedCharacters } = buildShotRefAssets(shotCharacters, shotLocation, shotProps);
-  // 帶住 identityAnchor 落 outbound-image：近臉特寫走高解析／低壓縮路徑（2048 / q92 /
-  // 4:4:4），唔會壓落 1024。塊臉係身份訊號嘅唯一載體 —— 壓完 IED 剩返 30-40px，
-  // 低過 ISO/IEC 39794-5 最低 90px 一半，等於送咗張圖但鎖唔到身份。
-  const referenceMediaIds = refs.map((a) => ({ mediaId: a.mediaId, identityAnchor: a.identityAnchor === true }));
 
   // Legend 用英文 `Image N`，唔再用 `@图N`/`图片N`：命名 token（@name）只有 Runway
   // 支援，而且係 API 一級欄位；Gemini / FLUX / Seedream / Qwen 全部認英文序數
@@ -365,27 +364,73 @@ export const imageShotHandler: TaskHandler = async ({ task, reportProgress }) =>
     ].join("\n") || "（無鎖定資產）";
 
   reportProgress(10);
-  const out = await textCallJson(
-    { userId: task.userId, taskId: task.id, projectId: project.id, episodeId: episode.id, oneOff: promptOverridesFromTask(task) },
-    models.text,
-    "image_prompt_shot",
-    {
-      shot_json: JSON.stringify(shot.storyboardJson),
-      // 閃回鏡冇場景參考圖，環境完全押喺呢段文字上面（見 shot-blocking.ts flashbackLine）
-      scene_blocking: formatBlocking(shotBlocking, { flashback: shot.flashback, locationOverride: shot.locationOverride }),
-      locked_assets: lockedAssets,
-      reference_legend: referenceLegend,
-      style_suffix: style.prefix ?? "",
-      output_language: OUTPUT_LANGUAGE_LABEL[outputLanguage],
-    },
-  );
+  const callImagePrompt = () =>
+    textCallJson(
+      { userId: task.userId, taskId: task.id, projectId: project.id, episodeId: episode.id, oneOff: promptOverridesFromTask(task) },
+      models.text,
+      "image_prompt_shot",
+      {
+        shot_json: JSON.stringify(shot.storyboardJson),
+        // 閃回鏡冇場景參考圖，環境完全押喺呢段文字上面（見 shot-blocking.ts flashbackLine）
+        scene_blocking: formatBlocking(shotBlocking, { flashback: shot.flashback, locationOverride: shot.locationOverride }),
+        locked_assets: lockedAssets,
+        reference_legend: referenceLegend,
+        style_suffix: style.prefix ?? "",
+        output_language: OUTPUT_LANGUAGE_LABEL[outputLanguage],
+      },
+    );
+
+  let out = await callImagePrompt();
+
+  // L2 確定性守衛（根因同實測事故見 shot-prompt-audit.ts 頂部）。
+  // 先原樣重試一次：漏寫角色係隨機性失敗，唔係 prompt 寫錯，重試成本遠低過出錯一張圖。
+  // 重試都唔掂先至剝圖 —— 剝圖保住咗「唔會亂認人」，但補唔返個角色，所以係下策唔係首選。
+  const textOnlyNames = droppedCharacters.map((c) => c.name);
+  const auditOpts = { checkNames: outputLanguage === "zh" };
+  let issues = auditShotPrompt(out.prompt, refs, textOnlyNames, auditOpts);
+  if (hasIssues(issues)) {
+    console.warn(
+      `[IMAGE_SHOT] shot=${shot.id} prompt 審計唔過 — ` +
+        `孤兒參考圖 [${issues.orphanLabels.join("、") || "（無）"}]、` +
+        `漏寫角色 [${issues.missingNames.join("、") || "（無）"}] — 原樣重試一次`,
+    );
+    const retry = await callImagePrompt();
+    const retryIssues = auditShotPrompt(retry.prompt, refs, textOnlyNames, auditOpts);
+    // 只喺重試真係好過原本先換 —— 唔好用一份更差嘅輸出蓋走一份冇咁差嘅。
+    if (retryIssues.orphanLabels.length + retryIssues.missingNames.length < issues.orphanLabels.length + issues.missingNames.length) {
+      out = retry;
+      issues = retryIssues;
+    }
+  }
+
+  // 孤兒參考圖一律剝走並重新編號：送一張冇文字錨定嘅身份圖，比唔送差好多 ——
+  // 冇圖模型會照文字描述畫，有孤兒圖就會攞去亂認人（鏡 25 四個複製人）。
+  const audited = dropOrphanRefs(out.prompt, refs);
+  if (audited.droppedLabels.length > 0 || audited.strayIndexes.length > 0) {
+    console.warn(
+      `[IMAGE_SHOT] shot=${shot.id} 剝走孤兒參考圖 [${audited.droppedLabels.join("、") || "（無）"}]（prompt 冇 Image N 綁住）` +
+        (audited.strayIndexes.length > 0
+          ? `；prompt 引用咗唔存在嘅編號 [${audited.strayIndexes.map((n) => `Image ${n}`).join("、")}]`
+          : ""),
+    );
+  }
+  if (issues.missingNames.length > 0) {
+    console.warn(
+      `[IMAGE_SHOT] shot=${shot.id} 重試後仍然漏寫角色 [${issues.missingNames.join("、")}]（呢批冇參考圖，身份只能靠文字交代）`,
+    );
+  }
+
+  // 帶住 identityAnchor 落 outbound-image：近臉特寫走高解析／低壓縮路徑（2048 / q92 /
+  // 4:4:4），唔會壓落 1024。塊臉係身份訊號嘅唯一載體 —— 壓完 IED 剩返 30-40px，
+  // 低過 ISO/IEC 39794-5 最低 90px 一半，等於送咗張圖但鎖唔到身份。
+  const referenceMediaIds = audited.refs.map((a) => ({ mediaId: a.mediaId, identityAnchor: a.identityAnchor === true }));
 
   reportProgress(40);
   const media = await generateImage(
     { userId: task.userId, taskId: task.id, projectId: project.id, episodeId: episode.id },
     {
       modelKey: models.image,
-      prompt: out.prompt,
+      prompt: audited.prompt,
       negativePrompt: mergeNegatives(out.negativePrompt, style.negativePrompt, style.bannedWords),
       aspectRatio: project.videoRatio,
       keyPrefix: `projects/${project.id}/shots/${shot.id}`,
@@ -398,7 +443,8 @@ export const imageShotHandler: TaskHandler = async ({ task, reportProgress }) =>
   // removed it — so complete quietly rather than crashing on "record not found".
   const saved = await prisma.shot.updateMany({
     where: { id: shot.id },
-    data: { imagePrompt: out.prompt, imageMediaId: media.id, status: "ready" },
+    // 存審計後嘅 prompt：DB 入面嗰條要同真正送出去嗰條一致，否則之後查事故會對唔上 Image N。
+    data: { imagePrompt: audited.prompt, imageMediaId: media.id, status: "ready" },
   });
   if (saved.count === 0) {
     console.warn(`[IMAGE_SHOT] shot ${shot.id} deleted mid-generation — media ${media.id} orphaned`);
