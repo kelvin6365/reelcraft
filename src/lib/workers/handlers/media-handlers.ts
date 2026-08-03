@@ -115,7 +115,11 @@ function assetImageHandler(kind: "character" | "location" | "prop"): TaskHandler
           aspectRatio: "1:1",
           resolution: "4K",
           keyPrefix: `projects/${project.id}/characters/${row.id}`,
-          referenceMediaIds: [row.lockedImageMediaId],
+          // ⚠️ 一定要 identityAnchor + cropAnchor:"top"。鎖定圖係 9:16 全身站姿
+          // （768×1344），近臉出圖係 1:1 —— 唔標就會行 center-crop，攞到 768×768
+          // 中段腰腹，**完全冇頭冇臉**，而 prompt 同時叫模型照抄參考圖嘅臉同髮型。
+          // 模型冇臉可抄唯有作，實測近臉同主圖眼色／髮長／服裝全部唔同（走哂樣）。
+          referenceMediaIds: [{ mediaId: row.lockedImageMediaId, identityAnchor: true, cropAnchor: "top" as const }],
         },
       );
       await prisma.character.update({ where: { id: row.id }, data: { faceImageMediaId: media.id } });

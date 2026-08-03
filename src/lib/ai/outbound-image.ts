@@ -37,6 +37,15 @@ export interface ReferenceImageInput {
   // 標明呢張係「身份錨定圖」（角色近臉特寫）：走高解析度／低壓縮路徑，
   // 而且唔會按出圖比例 center-crop（怕切走塊臉）。
   identityAnchor?: boolean;
+  // 逼不得已要 crop 嗰陣由邊度切起。預設 centre —— 鏡頭生圖嘅參考圖本身已經係
+  // 近臉特寫，中間就係塊臉。
+  //
+  // ⚠️ "top" 係畀「由全身鎖定圖生近臉特寫」呢條路用嘅。角色鎖定圖係 9:16 全身
+  // 正面站姿（768×1344），近臉出圖係 1:1 —— center-crop 落去攞到嘅係 768×768
+  // **中段腰腹，完全冇頭冇臉**，而 prompt 同時叫模型「照抄參考圖嘅臉同髮型」。
+  // 模型冇臉可抄就唯有作一個，實測近臉特寫同主圖眼色、髮長、服裝全部唔同。
+  // 站姿正面圖塊頭一定喺頂部，所以由頂切。
+  cropAnchor?: "centre" | "top";
 }
 
 export type ReferenceImageRef = string | ReferenceImageInput;
@@ -53,6 +62,7 @@ interface EncodeOptions {
   identityAnchor: boolean;
   // 係咪陣列最後一張——決定咗佢使唔使為咗比例正確性犧牲面部保真度，見 planEncode。
   isLast: boolean;
+  cropAnchor?: "centre" | "top";
 }
 
 // 兩個比例差幾多先當「唔同」。5% 嘅相對差足以放行編碼上嘅零頭（角色資產原生
@@ -127,6 +137,7 @@ export async function encodeReferenceImage(raw: Buffer, opts: EncodeOptions): Pr
   const src = await sourceSize(raw);
   const plan = planEncode({ ...opts, sourceRatio: src ? src.width / src.height : null });
   const identityJpeg = { quality: IDENTITY_JPEG_QUALITY, chromaSubsampling: "4:4:4" } as const;
+  const position = opts.cropAnchor ?? "centre";
 
   switch (plan) {
     case "identity":
@@ -140,13 +151,13 @@ export async function encodeReferenceImage(raw: Buffer, opts: EncodeOptions): Pr
       // 照舊行高規格，讓步嘅淨係「唔 crop」。
       // biome-ignore lint/style/noNonNullAssertion: planEncode 只喺兩者皆非 null 先會回呢個 plan
       return pipeline
-        .resize({ ...cropBox(src!, opts.targetRatio!, IDENTITY_MAX_EDGE), fit: "cover", position: "centre" })
+        .resize({ ...cropBox(src!, opts.targetRatio!, IDENTITY_MAX_EDGE), fit: "cover", position })
         .jpeg(identityJpeg)
         .toBuffer();
     case "crop":
       // biome-ignore lint/style/noNonNullAssertion: 同上
       return pipeline
-        .resize({ ...cropBox(src!, opts.targetRatio!, MAX_EDGE), fit: "cover", position: "centre" })
+        .resize({ ...cropBox(src!, opts.targetRatio!, MAX_EDGE), fit: "cover", position })
         .jpeg({ quality: JPEG_QUALITY })
         .toBuffer();
     default:
@@ -177,6 +188,7 @@ async function toDataUri(
     const jpeg = await encodeReferenceImage(raw, {
       targetRatio: parseAspectRatio(opts.aspectRatio),
       identityAnchor: ref.identityAnchor === true,
+      cropAnchor: ref.cropAnchor,
       isLast,
     });
     return `data:image/jpeg;base64,${jpeg.toString("base64")}`;
@@ -194,9 +206,14 @@ export function dedupeReferenceRefs(refs: (ReferenceImageRef | null | undefined)
     const mediaId = typeof r === "string" ? r : r?.mediaId;
     if (!mediaId) continue;
     const identityAnchor = typeof r === "object" && r !== null && r.identityAnchor === true;
+    const cropAnchor = typeof r === "object" && r !== null ? r.cropAnchor : undefined;
     const prev = byId.get(mediaId);
-    if (prev) prev.identityAnchor = prev.identityAnchor || identityAnchor;
-    else byId.set(mediaId, { mediaId, identityAnchor });
+    if (prev) {
+      prev.identityAnchor = prev.identityAnchor || identityAnchor;
+      // 一旦有任何一處要求由頂切，就跟佢——"top" 係「唔好切走塊頭」嘅明示要求，
+      // 而 centre 只係預設值，兩者衝突時保守嗰邊（保住塊臉）贏。
+      prev.cropAnchor = prev.cropAnchor ?? cropAnchor;
+    } else byId.set(mediaId, { mediaId, identityAnchor, cropAnchor });
   }
   const all = [...byId.values()];
   if (all.length > MAX_REFS) {
