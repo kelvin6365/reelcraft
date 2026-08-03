@@ -1118,8 +1118,26 @@ export function ScriptPanel({ view, progress }: PanelProps) {
   const checkup = useAction(qk.episode(epId));
   const review = view.episode.scriptReview;
   const hasReview = !!review && Array.isArray((review as { scenes?: unknown[] }).scenes);
-  const anyBusy = save.busy || regen.busy || checkup.busy;
+  const generating = typeof progress.script === "number";
+  const anyBusy = save.busy || regen.busy || checkup.busy || generating;
   const isEmpty = view.episode.scriptText.length === 0 && !dirty;
+  const [regenConfirmOpen, setRegenConfirmOpen] = useState(false);
+
+  const staleClauses = [
+    (view.characters.length > 0 || view.locations.length > 0 || view.props.length > 0) && "角色／場景／道具資產",
+    view.shots.length > 0 && "分鏡表同已生成嘅圖像／視頻",
+    view.voiceLines.length > 0 && "配音",
+    view.episode.exportUrl && "已合成影片",
+  ].filter((c): c is string => typeof c === "string");
+
+  function runRegen() {
+    return regen.run(() => api.post(`/api/episodes/${epId}/rewrite-script`));
+  }
+
+  function handleRegenClick() {
+    if (staleClauses.length > 0) setRegenConfirmOpen(true);
+    else runRegen();
+  }
 
   return (
     <Station
@@ -1148,10 +1166,24 @@ export function ScriptPanel({ view, progress }: PanelProps) {
               variant="outline"
               disabled={anyBusy}
               aria-busy={regen.busy}
-              onClick={() => regen.run(() => api.post(`/api/episodes/${epId}/rewrite-script`))}
+              onClick={handleRegenClick}
             >
               {regen.busy ? <Loader2 className="animate-spin" /> : "重新生成"}
             </Button>
+            <ConfirmDialog
+              open={regenConfirmOpen}
+              onOpenChange={setRegenConfirmOpen}
+              title="重新生成劇本？"
+              description={
+                <>
+                  重新生成劇本後，新劇本可能同以下已生成內容唔一致：<b>{staleClauses.join("、")}</b>。
+                  呢啲內容唔會自動更新，需要你自己判斷係咪要重抽。
+                </>
+              }
+              destructive
+              confirmLabel="確定重新生成"
+              onConfirm={runRegen}
+            />
             <Button
               size="sm"
               variant="outline"
@@ -1198,6 +1230,8 @@ export function StoryboardPanel({ view, progress }: PanelProps) {
   const spentSoFar = view.cost?.projectSpendUsd;
   const downstream = view.cost?.downstream;
   const assistedAutoAdvance = view.episode.autoAdvance?.enabled && view.episode.autoAdvance.mode === "assisted";
+  const generating = typeof progress.storyboard === "number";
+  const anyBusy = regen.busy || confirm.busy || generating;
 
   function runConfirmStoryboard() {
     confirm.run(() =>
@@ -1216,7 +1250,7 @@ export function StoryboardPanel({ view, progress }: PanelProps) {
             {}
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button variant="ghost" size="icon" disabled={regen.busy || confirm.busy} aria-label="更多分鏡操作">
+                <Button variant="ghost" size="icon" disabled={anyBusy} aria-label="更多分鏡操作">
                   {regen.busy ? <Loader2 className="animate-spin" /> : <MoreHorizontal />}
                 </Button>
               </DropdownMenuTrigger>
@@ -1247,7 +1281,7 @@ export function StoryboardPanel({ view, progress }: PanelProps) {
             />
             <Button
               size="sm"
-              disabled={confirm.busy || regen.busy}
+              disabled={anyBusy}
               aria-busy={confirm.busy}
               onClick={() => setConfirmStoryboardOpen(true)}
             >
