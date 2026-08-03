@@ -32,20 +32,29 @@ const JPEG_QUALITY = 80;
 const IDENTITY_MAX_EDGE = 2048;
 const IDENTITY_JPEG_QUALITY = 92;
 
+// 由全身站姿圖切頭肩框：取高度嘅 1/3（塊頭本身約佔 1/7～1/8，1/3 覆蓋到頭＋肩＋上胸，
+// 留返夠上下文畀模型認出係邊個，又唔會又切返成個身落去）。
+const HEAD_BOX_FRACTION = 1 / 3;
+
 export interface ReferenceImageInput {
   mediaId: string;
   // 標明呢張係「身份錨定圖」（角色近臉特寫）：走高解析度／低壓縮路徑，
   // 而且唔會按出圖比例 center-crop（怕切走塊臉）。
   identityAnchor?: boolean;
-  // 逼不得已要 crop 嗰陣由邊度切起。預設 centre —— 鏡頭生圖嘅參考圖本身已經係
-  // 近臉特寫，中間就係塊臉。
+  // 逼不得已要 crop 嗰陣點切。預設 centre —— 鏡頭生圖嘅參考圖本身已經係近臉特寫，
+  // 中間就係塊臉。
   //
-  // ⚠️ "top" 係畀「由全身鎖定圖生近臉特寫」呢條路用嘅。角色鎖定圖係 9:16 全身
+  // ⚠️ "head" 係畀「由全身鎖定圖生近臉特寫」呢條路用嘅。角色鎖定圖係 9:16 全身
   // 正面站姿（768×1344），近臉出圖係 1:1 —— center-crop 落去攞到嘅係 768×768
   // **中段腰腹，完全冇頭冇臉**，而 prompt 同時叫模型「照抄參考圖嘅臉同髮型」。
-  // 模型冇臉可抄就唯有作一個，實測近臉特寫同主圖眼色、髮長、服裝全部唔同。
-  // 站姿正面圖塊頭一定喺頂部，所以由頂切。
-  cropAnchor?: "centre" | "top";
+  // 模型冇臉可抄就唯有作一個，實測近臉同主圖眼色、髮長、服裝全部唔同。
+  //
+  // 但淨係「由頂切」都唔夠：768 闊嘅方框入面塊頭得約 180px 高，瞳距約 30px，
+  // 而 cropBox 唔會放大，所以送出去仍然係 30px IED —— 低過 ISO/IEC 39794-5 最低
+  // 90px 三分一。實測身份大致啱返（髮型／服裝／畫風／年齡）但眼色照樣飄。
+  // 所以 "head" 唔止改錨點，仲會切個**頭肩方框**（高度嘅 HEAD_BOX_FRACTION，
+  // 水平置中）再放大到 IDENTITY_MAX_EDGE，令塊臉真係佔到夠像素。
+  cropAnchor?: "centre" | "head";
 }
 
 export type ReferenceImageRef = string | ReferenceImageInput;
@@ -62,7 +71,7 @@ interface EncodeOptions {
   identityAnchor: boolean;
   // 係咪陣列最後一張——決定咗佢使唔使為咗比例正確性犧牲面部保真度，見 planEncode。
   isLast: boolean;
-  cropAnchor?: "centre" | "top";
+  cropAnchor?: "centre" | "head";
 }
 
 // 兩個比例差幾多先當「唔同」。5% 嘅相對差足以放行編碼上嘅零頭（角色資產原生
@@ -137,7 +146,18 @@ export async function encodeReferenceImage(raw: Buffer, opts: EncodeOptions): Pr
   const src = await sourceSize(raw);
   const plan = planEncode({ ...opts, sourceRatio: src ? src.width / src.height : null });
   const identityJpeg = { quality: IDENTITY_JPEG_QUALITY, chromaSubsampling: "4:4:4" } as const;
-  const position = opts.cropAnchor ?? "centre";
+
+  // 頭肩框：先 extract 出頂部嘅正方形頭肩區域，再放大到高解析度路徑。
+  // 一定要行喺 planEncode 之前 —— 呢度已經係「切定咗」嘅圖，落面照 identity 路徑走。
+  if (opts.cropAnchor === "head" && src) {
+    const side = Math.max(1, Math.min(src.width, Math.round(src.height * HEAD_BOX_FRACTION)));
+    return sharp(raw)
+      .rotate()
+      .extract({ left: Math.round((src.width - side) / 2), top: 0, width: side, height: side })
+      .resize(IDENTITY_MAX_EDGE, IDENTITY_MAX_EDGE, { fit: "inside" })
+      .jpeg(identityJpeg)
+      .toBuffer();
+  }
 
   switch (plan) {
     case "identity":
@@ -151,13 +171,13 @@ export async function encodeReferenceImage(raw: Buffer, opts: EncodeOptions): Pr
       // 照舊行高規格，讓步嘅淨係「唔 crop」。
       // biome-ignore lint/style/noNonNullAssertion: planEncode 只喺兩者皆非 null 先會回呢個 plan
       return pipeline
-        .resize({ ...cropBox(src!, opts.targetRatio!, IDENTITY_MAX_EDGE), fit: "cover", position })
+        .resize({ ...cropBox(src!, opts.targetRatio!, IDENTITY_MAX_EDGE), fit: "cover", position: "centre" })
         .jpeg(identityJpeg)
         .toBuffer();
     case "crop":
       // biome-ignore lint/style/noNonNullAssertion: 同上
       return pipeline
-        .resize({ ...cropBox(src!, opts.targetRatio!, MAX_EDGE), fit: "cover", position })
+        .resize({ ...cropBox(src!, opts.targetRatio!, MAX_EDGE), fit: "cover", position: "centre" })
         .jpeg({ quality: JPEG_QUALITY })
         .toBuffer();
     default:

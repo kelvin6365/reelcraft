@@ -190,7 +190,7 @@ describe("dedupeReferenceRefs", () => {
 // 根因唔喺 prompt，喺參考圖：鎖定圖係 9:16 全身站姿（768×1344），近臉出圖係 1:1，
 // center-crop 落去攞到嘅係 768×768 中段腰腹，完全冇頭冇臉，而 prompt 同時叫模型
 // 「照抄參考圖嘅臉同髮型」。模型冇臉可抄唯有作一個。
-describe("cropAnchor — 由全身圖生近臉唔可以 center-crop", () => {
+describe("cropAnchor:head — 由全身圖生近臉唔可以 center-crop", () => {
   const FULL_BODY = { width: 768, height: 1344 }; // 角色鎖定圖實際尺寸
   const SQUARE = 1; // 1:1
 
@@ -204,21 +204,23 @@ describe("cropAnchor — 由全身圖生近臉唔可以 center-crop", () => {
 
   // 標咗 identityAnchor 都仲係會切（最後一張要夾出圖比例，見 planEncode 論證），
   // 所以單靠 identityAnchor 救唔到 —— 一定要同時指定由頂切。
-  it("identityAnchor + 最後一張 + 比例唔啱 → identity-crop，照樣要靠 cropAnchor 保住塊臉", () => {
+  // 註：cropAnchor:"head" 喺 encodeReferenceImage 入面行喺 planEncode 之前，
+  // 所以呢個 plan 對佢冇影響 —— 呢個 case 記錄嘅係「單靠 identityAnchor 救唔到」。
+  it("identityAnchor + 最後一張 + 比例唔啱 → identity-crop，照樣切走塊頭", () => {
     expect(mod.planEncode({ identityAnchor: true, isLast: true, targetRatio: SQUARE, sourceRatio: 768 / 1344 })).toBe("identity-crop");
   });
 
-  it("dedupe 保留 cropAnchor，唔會喺去重嗰陣跌咗", () => {
-    const [ref] = mod.dedupeReferenceRefs([{ mediaId: "m1", identityAnchor: true, cropAnchor: "top" }]);
-    expect(ref.cropAnchor).toBe("top");
+  it("dedupe 保留 cropAnchor:head，唔會喺去重嗰陣跌咗", () => {
+    const [ref] = mod.dedupeReferenceRefs([{ mediaId: "m1", identityAnchor: true, cropAnchor: "head" }]);
+    expect(ref.cropAnchor).toBe("head");
   });
 
-  it("同一張圖被要求過由頂切，就唔會被之後嘅預設值蓋返 centre", () => {
+  it("同一張圖被要求過切頭肩框，就唔會被之後嘅預設值蓋返 centre", () => {
     const [ref] = mod.dedupeReferenceRefs([
-      { mediaId: "m1", cropAnchor: "top" },
+      { mediaId: "m1", cropAnchor: "head" },
       { mediaId: "m1", identityAnchor: true },
     ]);
-    expect(ref.cropAnchor).toBe("top");
+    expect(ref.cropAnchor).toBe("head");
     expect(ref.identityAnchor).toBe(true);
   });
 });
