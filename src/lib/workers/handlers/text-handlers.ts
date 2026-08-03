@@ -18,6 +18,7 @@ import {
 } from "@/lib/workers/handlers/shared";
 import type { Character, Prisma } from "@prisma/client";
 import { DEFAULT_CHARACTER_VIEWS } from "@/lib/prompts/character-views";
+import { missingRequiredPropFields } from "@/lib/prompts/prop-views";
 
 // 分鏡三個補完階段（攝影／表演／細節）各自獨立呼叫，逐鏡對應 plan 嘅 index。
 // 模型少交鏡時下面會寫入 null，該鏡就冇布光／表演／景別依據 —— 生圖階段唯有自己作，
@@ -535,7 +536,17 @@ export const extractPropsHandler: TaskHandler = async ({ task, reportProgress })
   const locations = await prisma.location.findMany({ where: { projectId: project.id }, select: { id: true, name: true }, orderBy: { id: "asc" } });
 
   let created = 0;
+  const skippedIncomplete: string[] = [];
   for (const p of out.props) {
+    // 必填欄位唔齊就唔入庫（用戶交付要求：要抽就要抽齊）。prompt 一直有寫「唔可以寫未知」，
+    // 實測照樣出「材質：未知・尺寸：未知」，而嗰兩個字會原樣串入生圖 prompt 變成空槽。
+    // 少抽一件可以補抽（「漏抽咗？打道具名補抽」），入庫一件冇材質冇尺寸嘅殼就要人手執。
+    const missing = missingRequiredPropFields(p);
+    if (missing.length > 0) {
+      skippedIncomplete.push(`${p.name}（缺 ${missing.join("、")}）`);
+      continue;
+    }
+
     const existing = await prisma.prop.findFirst({ where: { projectId: project.id, name: p.name } });
     if (existing) continue; // skip — 唔覆寫用戶已改嘅 views／已生成圖（同 locations 一致）
 
@@ -564,8 +575,14 @@ export const extractPropsHandler: TaskHandler = async ({ task, reportProgress })
     });
     created++;
   }
+  if (skippedIncomplete.length > 0) {
+    console.warn(
+      `[extract_props] episode=${episode.id} 跳過 ${skippedIncomplete.length} 件必填欄位唔齊嘅道具：${skippedIncomplete.join("；")}` +
+        ` — 唔入庫，可以用「補抽」逐件再試`,
+    );
+  }
   reportProgress(95);
-  return { props: out.props.length, created };
+  return { props: out.props.length, created, skippedIncomplete: skippedIncomplete.length };
 };
 
 // ⚠️ 呢度以前有一層 splitFlashbackScenes：認括號旁白註記（闪回／回忆／梦境／倒叙），

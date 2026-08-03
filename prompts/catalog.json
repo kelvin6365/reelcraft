@@ -25,12 +25,12 @@
     {
       "id": "extract_props",
       "path": "pipeline/extract_props.zh.txt",
-      "version": "5",
+      "version": "6",
       "variables": [
         "script_text",
         "target_name"
       ],
-      "description": "從劇本抽道具資產，AI 判斷三級分類（關鍵敘事/場景填充/動態特效）+ 實物/抽象前置過濾，支援指定單一道具名補抽（JSON）。"
+      "description": "從劇本抽道具資產，AI 判斷三級分類（關鍵敘事/場景填充/動態特效）+ 實物/抽象前置過濾；服裝歸角色 wardrobe 唔抽做道具、description 禁人物、必填欄位抽唔齊就唔抽；支援指定單一道具名補抽（JSON）。"
     },
     {
       "id": "script_review",

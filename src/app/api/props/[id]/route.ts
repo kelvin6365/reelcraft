@@ -65,3 +65,19 @@ export const PATCH = withAuth(
   },
   { auditAction: "asset.edit" },
 );
+
+// 刪除道具資產。道具係三種資產入面唯一可以「抽多咗」嘅一種——角色同場景由劇本結構決定，
+// 道具係判斷題（服裝被當成道具、抽象效果、重複命名），所以要有得刪。
+//
+// 唔連帶刪 MediaObject：媒體係 content-addressed（sha256）並且可以被其他資產共用，
+// 由 storage GC 統一處理，喺呢度刪會刪咗人哋嗰份。Shot 唔會 FK 指向 Prop
+// （道具係經 keyProps 名字匹配入鏡，見 matchShotProps），所以刪走唔會孤兒化任何鏡頭。
+export const DELETE = withAuth(
+  async ({ userId, params }) => {
+    const row = await prisma.prop.findFirst({ where: { id: params.id, userId }, select: { id: true } });
+    if (!row) throw new ApiError("NOT_FOUND", 404);
+    await prisma.prop.delete({ where: { id: row.id } });
+    return ok({ deleted: true });
+  },
+  { auditAction: "asset.delete" },
+);

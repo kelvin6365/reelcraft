@@ -39,6 +39,44 @@ const EFFECT_VISIBILITY_NOTE =
 
 export type PropTier = "key" | "scene" | "effect";
 
+// 佔位字眼 —— LLM 答唔到就填呢啲。extract_props.zh.txt 一直明文禁止（key tier 寫住
+// 「唔可以留空或者寫『未知』」，scene tier 都有），實測照樣出「材質：未知・尺寸：未知」，
+// 而 buildPropMainPrompt 嘅 filter(Boolean) 只擋到空字串，擋唔到「未知」兩個字 ——
+// 於是 prompt 變成 `…浴袍。 未知, 未知. clean product-reference sheet…`，兩個叫模型
+// 自由發揮嘅空槽，出圖冇一致錨點，下次重生又係另一個樣。
+//
+// 同 crowd／孤兒參考圖同一套：prompt 講咗擋唔住，就喺 code 做確定性判定。
+const PLACEHOLDER_VALUES = new Set([
+  "未知", "不明", "不詳", "不详", "未提及", "未說明", "未说明", "無", "无", "沒有", "没有",
+  "n/a", "na", "none", "unknown", "unspecified", "-", "—", "?", "？",
+]);
+
+/** 空白或者佔位字眼都當「冇填」。 */
+export function isPlaceholderValue(v: string | null | undefined): boolean {
+  const s = (v ?? "").trim();
+  return s.length === 0 || PLACEHOLDER_VALUES.has(s.toLowerCase());
+}
+
+/**
+ * 呢件道具嘅必填欄位齊唔齊 —— 唔齊就唔應該入庫（用戶交付要求：要抽就要抽齊）。
+ * effect tier 冇實體尺寸，改為要求 physicalParams。
+ */
+export function missingRequiredPropFields(p: {
+  tier: string;
+  material: string;
+  dimensions: string;
+  physicalParams: string;
+}): string[] {
+  const missing: string[] = [];
+  if (isPlaceholderValue(p.material)) missing.push("material");
+  if (p.tier === "effect") {
+    if (isPlaceholderValue(p.physicalParams)) missing.push("physicalParams");
+  } else if (isPlaceholderValue(p.dimensions)) {
+    missing.push("dimensions");
+  }
+  return missing;
+}
+
 // 固定角度指示，唔靠 AI／用戶一定要填 view.prompt 先至知係邊個角度——AI 之前成日
 // 填類似「可能刻有符文或紋飾」呢類含糊句子，加埋落 prompt 反而幫倒忙。而家 view.prompt
 // 淨係當「額外補充」，得用戶／AI 有實質具體細節先值得填，冇填都唔會冇咗「呢個係邊個角
@@ -52,7 +90,8 @@ const VIEW_ANGLE_HINTS: Record<string, string> = {
 
 export function buildPropMainPrompt(basePrompt: string, material: string, dimensions: string, tier: PropTier, style: PropViewStyle): string {
   const stylePart = style.assetPrefix ?? style.prefix ?? "";
-  const metadata = [material, dimensions].filter(Boolean).join(", ");
+  // 佔位字眼唔准入 prompt（見 PLACEHOLDER_VALUES）——舊版 filter(Boolean) 只擋空字串。
+  const metadata = [material, dimensions].filter((v) => !isPlaceholderValue(v)).join(", ");
   return [stylePart, basePrompt, metadata, PROP_REF_FRAMING, tier === "effect" ? EFFECT_VISIBILITY_NOTE : ""]
     .filter(Boolean)
     .join(". ")

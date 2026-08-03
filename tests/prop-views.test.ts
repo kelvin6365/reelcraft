@@ -1,5 +1,12 @@
 import { describe, it, expect } from "vitest";
-import { buildPropMainPrompt, buildPropViewPrompt, buildPropNegativePrompt, PROP_REF_FRAMING } from "@/lib/prompts/prop-views";
+import {
+  buildPropMainPrompt,
+  buildPropViewPrompt,
+  buildPropNegativePrompt,
+  isPlaceholderValue,
+  missingRequiredPropFields,
+  PROP_REF_FRAMING,
+} from "@/lib/prompts/prop-views";
 
 describe("buildPropMainPrompt — 白底標準（Prop asset design）", () => {
   it("always includes the pure-white-background framing, no 'neutral' fallback", () => {
@@ -72,5 +79,51 @@ describe("buildPropNegativePrompt", () => {
     const negative = buildPropNegativePrompt({});
     expect(negative).toContain("different object");
     expect(negative).toContain("redesigned object");
+  });
+});
+
+// 交付標準：要抽就要抽齊（用戶 2026-08-03）。實測 UI 出「材質：未知 ・ 尺寸：未知」，
+// 而 buildPropMainPrompt 舊版 filter(Boolean) 只擋空字串，「未知」兩個字會原樣串入
+// prompt 變成兩個叫模型自由發揮嘅空槽。
+describe("isPlaceholderValue", () => {
+  it("空白同佔位字眼都當冇填", () => {
+    for (const v of ["", "   ", "未知", "不詳", "未提及", "N/A", "none", "-", "？"]) {
+      expect(isPlaceholderValue(v), v).toBe(true);
+    }
+  });
+
+  it("真實值唔會誤殺", () => {
+    for (const v of ["羊脂白玉", "約 90 公分長", "聖銀", "藍白色能量流光"]) {
+      expect(isPlaceholderValue(v), v).toBe(false);
+    }
+  });
+});
+
+describe("missingRequiredPropFields", () => {
+  it("key/scene 要 material + dimensions", () => {
+    expect(missingRequiredPropFields({ tier: "key", material: "聖銀", dimensions: "約 90 公分", physicalParams: "" })).toEqual([]);
+    expect(missingRequiredPropFields({ tier: "scene", material: "未知", dimensions: "未知", physicalParams: "" })).toEqual([
+      "material",
+      "dimensions",
+    ]);
+  });
+
+  // 光效冇實體尺寸，逼佢填 dimensions 只會逼模型作嘢；改為要求 physicalParams。
+  it("effect 唔要 dimensions，改要 physicalParams", () => {
+    expect(missingRequiredPropFields({ tier: "effect", material: "藍白色能量流光", dimensions: "", physicalParams: "亮度高、持續 2 秒" })).toEqual([]);
+    expect(missingRequiredPropFields({ tier: "effect", material: "藍白色能量流光", dimensions: "", physicalParams: "" })).toEqual(["physicalParams"]);
+  });
+});
+
+describe("buildPropMainPrompt metadata", () => {
+  it("佔位字眼唔准入 prompt", () => {
+    const out = buildPropMainPrompt("白色浴袍", "未知", "未知", "scene", {});
+    expect(out).not.toContain("未知");
+  });
+
+  it("真實 metadata 照樣入 prompt", () => {
+    const out = buildPropMainPrompt("聖銀長劍", "聖銀", "約 90 公分", "key", {});
+    expect(out).toContain("聖銀");
+    expect(out).toContain("約 90 公分");
   });
 });

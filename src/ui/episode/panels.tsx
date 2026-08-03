@@ -338,6 +338,9 @@ function PropsSection({ view, live }: { view: EpisodeView; live?: LiveTaskMap })
                 lastError={p.lastError}
                 locked={p.locked}
                 lockPath="/api/props"
+                // 只有道具畀刪：角色同場景由劇本結構決定，道具係判斷題（服裝被當成道具、
+                // 抽象效果、重複命名），抽多咗要有得執。
+                deletePath="/api/props"
                 liveState={live?.[`IMAGE_PROP:${p.id}`] ?? live?.[`VIDEO_PROP:${p.id}`] ?? p.activeTask ?? null}
                 candidateUrlById={candidateUrlById}
                 episodeId={episodeId}
@@ -386,6 +389,8 @@ function AssetCard(props: {
   lastError?: { code: string | null; message: string | null; humanized: string; failedAt: string | null } | null;
   locked: boolean;
   lockPath: string;
+  /** 有值先顯示刪除掣（目前只有道具）。 */
+  deletePath?: string;
   liveState: { progress?: number } | null;
   candidateUrlById: Record<string, string>;
   episodeId: string;
@@ -396,6 +401,7 @@ function AssetCard(props: {
   const [promptDraft, setPromptDraft] = useState(props.prompt);
   const [lightbox, setLightbox] = useState<MediaLightboxMedia | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [deleteOpen, setDeleteOpen] = useState(false);
   useEffect(() => {
     if (!editing) setPromptDraft(props.prompt);
   }, [props.prompt, editing]);
@@ -482,6 +488,36 @@ function AssetCard(props: {
             >
               重新揀圖
             </Button>
+          )}
+          {props.deletePath && (
+            <>
+              <Button
+                variant="ghost"
+                size="sm"
+                disabled={disabled}
+                title="刪除呢件資產"
+                aria-label={`刪除 ${props.name}`}
+                onClick={() => setDeleteOpen(true)}
+              >
+                <Trash2 />
+              </Button>
+              <ConfirmDialog
+                open={deleteOpen}
+                onOpenChange={setDeleteOpen}
+                title={`刪除「${props.name}」？`}
+                description={
+                  <>
+                    會連埋已生成嘅候選圖同視圖一齊刪走，唔可以復原。
+                    {props.locked && <> 呢件資產已鎖定。</>}
+                    <br />
+                    劇本入面仲有呢件道具嘅話，之後「重抽道具」會再抽返出嚟。
+                  </>
+                }
+                destructive
+                confirmLabel="確定刪除"
+                onConfirm={() => run(() => api.del(`${props.deletePath}/${props.id}`))}
+              />
+            </>
           )}
         </div>
       </div>
