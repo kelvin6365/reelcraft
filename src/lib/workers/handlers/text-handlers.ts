@@ -8,6 +8,7 @@ import { parseSrt } from "@/lib/srt";
 import { matchReusableAudio } from "@/lib/voice/reuse-audio";
 import { planResume } from "@/lib/storyboard/resume";
 import { markFlashbackShots } from "@/lib/storyboard/flashback";
+import { shouldLinkToNext } from "@/lib/storyboard/frame-chain";
 import type { TaskHandler } from "@/lib/workers/lifecycle";
 import {
   resolveTaskModels,
@@ -786,6 +787,30 @@ export const storyboardRunHandler: TaskHandler = async ({ task, reportProgress }
     for (const [i, shot] of plan.shots.entries()) {
       globalIndex++;
       const mark = flashbackMarks[i] ?? { flashback: false, locationOverride: "" };
+      // 首尾幀鏈接：本鏡條片可唔可以用下一鏡嘅分鏡圖做尾幀。喺呢度計而唔係生片時計，
+      // 係因為呢一刻先同時攞到本鏡同下一鏡嘅 detail（運鏡）同閃回標記；判定規則同理由
+      // 見 storyboard/frame-chain.ts。下一鏡喺同一場之內先有得鏈 —— plan.shots 就係
+      // 本場嘅鏡頭清單，所以 nextMark 亦由同一個 flashbackMarks 取。
+      const nextShot = plan.shots[i + 1];
+      const nextMark = flashbackMarks[i + 1] ?? { flashback: false, locationOverride: "" };
+      const linkedToNext = nextShot
+        ? shouldLinkToNext(
+            {
+              sceneId: scene.id,
+              shotIndex: globalIndex,
+              camera: detailByIdx.get(shot.index)?.camera ?? "",
+              flashback: mark.flashback,
+              locationOverride: mark.locationOverride,
+            },
+            {
+              sceneId: scene.id,
+              shotIndex: globalIndex + 1,
+              camera: detailByIdx.get(nextShot.index)?.camera ?? "",
+              flashback: nextMark.flashback,
+              locationOverride: nextMark.locationOverride,
+            },
+          )
+        : false;
       await prisma.shot.create({
         data: {
           id: newId(),
@@ -794,6 +819,7 @@ export const storyboardRunHandler: TaskHandler = async ({ task, reportProgress }
           sceneId: scene.id,
           shotIndex: globalIndex,
           durationMs: 3000,
+          linkedToNext,
           // 閃回標記落 Shot 欄位而唔係淨留喺 storyboardJson 入面：生圖層要靠佢做
           // 硬性決定（唔畀場景參考圖、剝走空間契約），呢類決定唔應該去挖一個 Json blob。
           flashback: mark.flashback,

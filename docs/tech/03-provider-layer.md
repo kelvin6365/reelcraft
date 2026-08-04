@@ -53,7 +53,7 @@ system（code 常數，真實模型）← user（user_model_defaults 表，於 /
 
 ### fal（媒體主力）
 - Queue API：`POST https://queue.fal.run/{modelId}` → `{request_id}` → poll `/requests/{id}/status`。
-- image：nano-banana 系；video：Kling / Wan / Veo（以 i2v 為主，首尾幀模式列入 M2）；TTS：IndexTTS-2（reference audio 聲音克隆）；lip-sync 列入 M2。
+- image：nano-banana 系；video：Kling / Wan / Veo（以 i2v 為主，首尾幀見下方「尾幀錨定」）；TTS：IndexTTS-2（reference audio 聲音克隆）；lip-sync 列入 M2。
 - 參考圖放入 request：使用 MediaObject 簽名 URL（若 fal 能拉取到公網 URL 則不需要 base64）。
 
 ### atlascloud（媒體副選）
@@ -73,7 +73,17 @@ system（code 常數，真實模型）← user（user_model_defaults 表，於 /
 
 - 提交任務時校驗選項是否合法（不合法即 throw，不應讓錯誤傳到 provider 端才爆發）。
 - pricing 是 AiCallLog 單價快照的來源——**用戶自報價格永不納入計費**。
-- Guard：`capability-catalog-check` 驗證 JSON schema + modelKey 格式。
+- Guard：`capability-catalog-check` 驗證 JSON schema + modelKey 格式。該 guard 的 `CAP_KEYS` 是 `src/lib/ai/capabilities.ts` 中 `.strict()` zod schema 的硬編碼鏡像，**新增能力欄位必須同步兩處**，否則 CI 立即失敗。
+- 注意 `modes`（`["i2v"]` 等）目前**不被任何邏輯讀取**，純為展示用 metadata；真正會被讀取的能力旗是 `supportsReferenceImages` 與 `supportsEndFrame`。
+
+## 尾幀錨定（首尾幀）
+
+生成 shot N 的影片時，起幀為 shot N 自己的分鏡圖，尾幀為 shot N+1 的分鏡圖；shot N+1 的影片再由同一張圖開始——兩段影片在接口處的畫格完全相同，剪接時零跳動。
+
+- **不採用「抽取前一段影片末幀餵給下一段」的做法**：那會丟棄 shot N+1 精心組裝的分鏡圖（連同其身份參考、空間契約、風格詞），強制影片串行生成，且末幀本身帶動態模糊與編碼損耗、模型於片尾最易漂移，長鏈會累積走樣。`docs/plans/2026-08-03-storyboard-prompt-research.md` 已記錄「前鏡餵後鏡」是已知的身份漂移反模式。尾幀錨定所需的兩張圖在生成影片前皆已存在，因此**並行結構完全不變**。
+- 能力旗：`capabilities.supportsEndFrame`。目前 Seedance 2.0 全家（mini／fast／正式版）已核實支援 optional `last_image`（含系統預設 mini）；fal Kling 的 `tail_image_url` 映射已寫好但**未標旗**（v3/standard 未經核實），核實後標旗即通電。
+- 降級規則：模型未聲明 `supportsEndFrame` 時，`generateVideo` 靜默不傳尾幀並 `console.warn`，照常生成影片——**不 throw、不使鏡頭失敗**。尾幀是錦上添花的連戲手段，不值得因換 model 而令整批鏡頭失敗。
+- 哪兩鏡可鏈由 `src/lib/storyboard/frame-chain.ts` 的純函數 `shouldLinkToNext` 確定性判定，於分鏡建立時寫入 `Shot.linkedToNext`。**判定刻意收窄至「本鏡本身是運動鏡頭（推／拉／搖／移／跟）」**：接口畫格相同會使剪接點變成連續運鏡，這對「中景推入變近景」是好事，但對正反打對話戲是災難——鏡頭會在片中途甩開自己的構圖游向下一鏡。跨場、跨閃回、跨閃回地點、非相鄰索引一律不鏈。
 
 ## 金鑰
 

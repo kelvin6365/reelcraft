@@ -5,7 +5,15 @@ const CATALOG = "standards/capabilities.json";
 const API_TYPES = new Set(["text", "image", "video", "tts"]);
 const FLAT_UNITS = new Set(["image", "second", "character"]);
 const MODEL_KEY_RE = /^[^:]+::.+$/;
-const CAP_KEYS = new Set(["durationsSec", "resolutions", "aspectRatios", "modes", "supportsReferenceImages"]);
+// 必須同 src/lib/ai/capabilities.ts 嘅 capabilitiesSchema（.strict()）逐個 key 對齊。
+const CAP_KEYS = new Set([
+  "durationsSec",
+  "resolutions",
+  "aspectRatios",
+  "modes",
+  "supportsReferenceImages",
+  "supportsEndFrame",
+]);
 const PRICE_SOURCES = new Set(["openrouter-api", "manual"]);
 
 const hits = [];

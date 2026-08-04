@@ -9,6 +9,11 @@ const capabilitiesSchema = z
     aspectRatios: z.array(z.string()).optional(),
     modes: z.array(z.string()).optional(),
     supportsReferenceImages: z.boolean().optional(),
+    // 首尾幀：i2v 除咗起幀之外仲收唔收一張尾幀（生成嘅片會由起幀過渡到尾幀）。
+    // 唔用上面個 `modes` 表達 —— `modes` 由頭到尾都冇被任何邏輯讀過（純展示用
+    // metadata），借佢做能力閘會令人以為 modes 有語義。呢個旗會喺 generateVideo
+    // 度真係被讀，冇聲明就靜默唔傳尾幀（降級生片，唔會 fail）。
+    supportsEndFrame: z.boolean().optional(),
   })
   .strict();
 

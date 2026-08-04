@@ -198,6 +198,7 @@ export interface FalVideoArgs {
   modelId: string;
   prompt: string;
   imageUrl?: string;
+  endImageUrl?: string;
   durationSec: number;
   aspectRatio: string;
   apiKey: string;
@@ -214,6 +215,10 @@ export async function falVideo(args: FalVideoArgs): Promise<{ url: string; provi
   };
   if (args.modelId.includes("kling")) input.cfg_scale = 0.5;
   if (args.imageUrl) input.image_url = args.imageUrl;
+  // 尾幀（首尾幀）：Kling 收 `tail_image_url`。能力閘喺 generate-media.ts —— 現時
+  // standards/capabilities.json 冇任何 fal model 標 supportsEndFrame（v3/standard
+  // 未核實過），所以呢條實際上未通電；核實到邊個 fal model 支援就標旗開通。
+  if (args.endImageUrl) input.tail_image_url = args.endImageUrl;
   const { url, requestId } = await runQueue(args.modelId, args.apiKey, input, ["video"]);
   return { url, providerRequestId: requestId };
 }

@@ -122,6 +122,7 @@ export interface AtlasVideoArgs {
   modelId: string;
   prompt: string;
   imageUrl?: string;
+  endImageUrl?: string;
   durationSec: number;
   aspectRatio: string;
   apiKey: string;
@@ -153,6 +154,10 @@ export async function atlasVideo(args: AtlasVideoArgs): Promise<{ url: string; p
     if (isSeedance) body.image = args.imageUrl;
     else body.image_url = args.imageUrl;
   }
+  // 尾幀（首尾幀）：Seedance 2.0 全家（mini／fast／正式版）收 optional `last_image`，
+  // 條片會由 `image` 過渡到佢。legacy 分支冇呢個參數，多傳會被 provider 拒，所以只喺
+  // Seedance 分支寫。能力閘喺 generate-media.ts，行到呢度即係已經確認支援。
+  if (args.endImageUrl && isSeedance) body.last_image = args.endImageUrl;
   const id = await submit("generateVideo", args.apiKey, body);
   const url = await pollForOutput(id, args.apiKey);
   return { url, providerRequestId: id };

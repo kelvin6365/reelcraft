@@ -475,6 +475,19 @@ export const videoShotHandler: TaskHandler = async ({ task, reportProgress }) =>
   const durationSec = Math.max(2, Math.round(shot.durationMs / 1000) || 3);
   const videoPrompt = shot.videoPrompt || sb.detail?.video_prompt || sb.plan?.subject || shot.imagePrompt;
 
+  // 首尾幀錨定：本鏡條片以下一鏡嘅分鏡圖收尾，兩條片喺接口嗰格一樣，剪埋一齊零跳。
+  // 邊兩鏡可以鏈由 storyboard 階段確定性判定並寫入 linkedToNext（見 frame-chain.ts）。
+  // 下一鏡未出圖就當唔鏈 —— 批量生成前面嘅圖階段一定行完，但單鏡重生可以喺任何時候
+  // 觸發，嗰陣下一鏡可能仲係 pending。冇尾幀照生片，唔會 fail。
+  let endImageMediaId: string | undefined;
+  if (shot.linkedToNext) {
+    const next = await prisma.shot.findUnique({
+      where: { episodeId_shotIndex: { episodeId: shot.episodeId, shotIndex: shot.shotIndex + 1 } },
+      select: { imageMediaId: true },
+    });
+    endImageMediaId = next?.imageMediaId ?? undefined;
+  }
+
   reportProgress(20);
   const media = await generateVideo(
     { userId: task.userId, taskId: task.id, projectId: project.id, episodeId: episode.id },
@@ -482,6 +495,7 @@ export const videoShotHandler: TaskHandler = async ({ task, reportProgress }) =>
       modelKey: models.video,
       prompt: videoPrompt,
       sourceImageMediaId: shot.imageMediaId,
+      endImageMediaId,
       durationSec,
       aspectRatio: project.videoRatio,
       keyPrefix: `projects/${project.id}/shots/${shot.id}`,

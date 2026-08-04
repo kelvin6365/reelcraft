@@ -202,7 +202,8 @@
       "aspectRatios": [
         "9:16",
         "16:9"
-      ]
+      ],
+      "supportsEndFrame": true
     },
     "pricing": {
       "mode": "flat",
@@ -242,7 +243,8 @@
       "aspectRatios": [
         "9:16",
         "16:9"
-      ]
+      ],
+      "supportsEndFrame": true
     },
     "pricing": {
       "mode": "flat",
@@ -282,7 +284,8 @@
       "aspectRatios": [
         "9:16",
         "16:9"
-      ]
+      ],
+      "supportsEndFrame": true
     },
     "pricing": {
       "mode": "flat",

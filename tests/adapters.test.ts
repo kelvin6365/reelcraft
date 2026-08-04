@@ -143,6 +143,37 @@ describe("fal adapter — Queue submit→poll→completed", () => {
     expect(body).toMatchObject({ aspect_ratio: "9:16", duration: "5", image_url: "https://signed/frame.png" });
   });
 
+  // Kling 收 tail_image_url 做尾幀。呢條路徑而家未通電（capabilities.json 冇任何 fal
+  // model 標 supportsEndFrame），但參數映射要係啱嘅，核實到就標旗即用。
+  it("falVideo passes tail_image_url when an end frame is supplied", async () => {
+    const fetchMock = stubFalQueue({ result: { video: { url: "https://cdn.fal/out.mp4" } } });
+    await falVideo({
+      modelId: "fal-ai/kling-video/v3/standard/image-to-video",
+      prompt: "pan across",
+      imageUrl: "https://signed/a.png",
+      endImageUrl: "https://signed/b.png",
+      durationSec: 5,
+      aspectRatio: "9:16",
+      apiKey: "k",
+    });
+    const body = JSON.parse(fetchMock.mock.calls[0][1]?.body as string);
+    expect(body.image_url).toBe("https://signed/a.png");
+    expect(body.tail_image_url).toBe("https://signed/b.png");
+  });
+
+  it("falVideo omits tail_image_url when no end frame is supplied", async () => {
+    const fetchMock = stubFalQueue({ result: { video: { url: "https://cdn.fal/out.mp4" } } });
+    await falVideo({
+      modelId: "fal-ai/kling-video/v3/standard/image-to-video",
+      prompt: "x",
+      imageUrl: "https://signed/a.png",
+      durationSec: 5,
+      aspectRatio: "9:16",
+      apiKey: "k",
+    });
+    expect(JSON.parse(fetchMock.mock.calls[0][1]?.body as string).tail_image_url).toBeUndefined();
+  });
+
   it("falTts returns url and optional seconds from result.duration", async () => {
     stubFalQueue({ result: { audio: { url: "https://cdn.fal/out.m4a" }, duration: 3.5 } });
 
@@ -240,6 +271,51 @@ describe("atlascloud adapter — seedance & edit mappings", () => {
     });
     expect(body.aspect_ratio).toBeUndefined();
     expect(body.image_url).toBeUndefined();
+  });
+
+  // 首尾幀錨定：條片由 image 過渡到 last_image，令下一鏡條片可以由同一格開始。
+  it("sends last_image for seedance when an end frame is supplied", async () => {
+    const fetchMock = stubAtlas("https://cdn.atlas/v.mp4");
+    await atlasVideo({
+      modelId: "bytedance/seedance-2.0-mini/image-to-video",
+      prompt: "push in",
+      imageUrl: "https://signed/a.png",
+      endImageUrl: "https://signed/b.png",
+      durationSec: 5,
+      aspectRatio: "9:16",
+      apiKey: "k",
+    });
+    const body = JSON.parse(fetchMock.mock.calls[0][1]?.body as string);
+    expect(body.image).toBe("https://signed/a.png");
+    expect(body.last_image).toBe("https://signed/b.png");
+  });
+
+  it("omits last_image when no end frame is supplied", async () => {
+    const fetchMock = stubAtlas("https://cdn.atlas/v.mp4");
+    await atlasVideo({
+      modelId: "bytedance/seedance-2.0-mini/image-to-video",
+      prompt: "x",
+      imageUrl: "https://signed/a.png",
+      durationSec: 5,
+      aspectRatio: "9:16",
+      apiKey: "k",
+    });
+    expect(JSON.parse(fetchMock.mock.calls[0][1]?.body as string).last_image).toBeUndefined();
+  });
+
+  // legacy 分支冇 last_image 呢個參數，多傳會被 provider 拒 —— 唔可以順手照傳。
+  it("never sends last_image on the legacy (non-seedance) shape", async () => {
+    const fetchMock = stubAtlas("https://cdn.atlas/v.mp4");
+    await atlasVideo({
+      modelId: "kling-v2.0",
+      prompt: "x",
+      imageUrl: "https://cdn/f.png",
+      endImageUrl: "https://cdn/g.png",
+      durationSec: 5,
+      aspectRatio: "9:16",
+      apiKey: "k",
+    });
+    expect(JSON.parse(fetchMock.mock.calls[0][1]?.body as string).last_image).toBeUndefined();
   });
 
   it("keeps the legacy shape for non-seedance models", async () => {

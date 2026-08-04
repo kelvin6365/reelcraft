@@ -59,6 +59,10 @@ export interface VideoGenRequest {
   modelKey: string;
   prompt: string;
   sourceImageMediaId?: string;
+  // 尾幀錨定（首尾幀）：條片會由 sourceImageMediaId 過渡到呢張圖。用落一鏡嘅分鏡圖做
+  // 尾幀，兩條片喺接口嗰格完全一樣，剪埋一齊零跳。模型能力表冇聲明 supportsEndFrame
+  // 就會被靜默剝走（照生片，唔會令任務失敗）—— 同 resolution 一樣嘅降級風格。
+  endImageMediaId?: string;
   durationSec: number;
   aspectRatio: string;
   keyPrefix: string;
@@ -197,6 +201,17 @@ export async function generateImage(ctx: CallContext, req: ImageGenRequest): Pro
   });
 }
 
+// 尾幀能力閘：模型冇聲明 supportsEndFrame 就唔傳，照生片。刻意唔 throw —— 尾幀係
+// 錦上添花嘅連戲手段，唔值得因為換咗個 model 就令成批鏡頭 fail。留 warn 等切模型之後
+// 「點解啲片突然接唔順」查得返。
+async function getOutboundEndImageUrl(modelKey: string, mediaId: string): Promise<string | null> {
+  if (!getCapabilities(modelKey)?.supportsEndFrame) {
+    console.warn(`[generate-media] ${modelKey} 冇聲明 supportsEndFrame，尾幀錨定已跳過`);
+    return null;
+  }
+  return getOutboundImageUrl(mediaId);
+}
+
 function clampDuration(modelKey: string, requested: number): number {
   const caps = getCapabilities(modelKey);
   const allowed = caps?.durationsSec;
@@ -215,11 +230,13 @@ export async function generateVideo(ctx: CallContext, req: VideoGenRequest): Pro
     if (provider === "fal" || provider === "atlascloud") {
       const apiKey = await getProviderKey(ctx.userId, provider);
       const imageUrl = req.sourceImageMediaId ? await getOutboundImageUrl(req.sourceImageMediaId) : null;
+      const endImageUrl = req.endImageMediaId ? await getOutboundEndImageUrl(req.modelKey, req.endImageMediaId) : null;
       const gen = provider === "fal" ? falVideo : atlasVideo;
       const { url, providerRequestId } = await gen({
         modelId,
         prompt: req.prompt,
         imageUrl: imageUrl ?? undefined,
+        endImageUrl: endImageUrl ?? undefined,
         durationSec: req.durationSec,
         aspectRatio: req.aspectRatio,
         apiKey,
