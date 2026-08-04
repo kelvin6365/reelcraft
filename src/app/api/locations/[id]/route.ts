@@ -1,5 +1,5 @@
 // Edit a location's generation prompt (資產提示詞可改 — regen uses the edit),
-// or edit one AI-suggested angle's label/prompt (extract_assets v3).
+// or edit one AI-suggested angle's label/prompt (extract_locations).
 import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
 import { withAuth } from "@/lib/api/with-auth";

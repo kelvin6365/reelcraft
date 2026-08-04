@@ -200,7 +200,7 @@ export function AssetsPanel({ view, progress, live }: PanelProps) {
   const episodeId = view.episode.id;
   const empty = characters.length === 0 && locations.length === 0;
   return (
-    <Station stage="assets" progress={progress} episodeId={episodeId} promptIds={["extract_assets", "extract_props"]}>
+    <Station stage="assets" progress={progress} episodeId={episodeId} promptIds={["extract_characters", "extract_locations", "extract_props"]}>
       {empty ? (
         <EmptyState view={view} stage="assets">仲未抽到角色／場景，系統會由劇本讀出人物同地點。</EmptyState>
       ) : (

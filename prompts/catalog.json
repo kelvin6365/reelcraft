@@ -13,14 +13,23 @@
       "description": "長篇原文切分集邊界 + 每集自評風險，回傳起訖錨點（JSON）。"
     },
     {
-      "id": "extract_assets",
-      "path": "pipeline/extract_assets.zh.txt",
-      "version": "18",
+      "id": "extract_characters",
+      "path": "pipeline/extract_characters.zh.txt",
+      "version": "1",
       "variables": [
         "script_text",
         "raw_text"
       ],
-      "description": "從劇本抽角色與場景資產，含去重與外貌字數量化規則；appearance 只准寫畫得出嘅外觀、wardrobe 只准寫著戴喺身上嘅嘢（手持武器歸道具）；raw_text 人物小傳段優先於 script_text 判斷客觀事實（JSON）。"
+      "description": "從劇本抽角色資產，含去重與外貌字數量化規則；appearance 只准寫畫得出嘅外觀、wardrobe 只准寫著戴喺身上嘅嘢（手持武器歸道具、翅膀獸耳歸 appearance）；raw_text 人物小傳段優先於 script_text 判斷客觀事實（JSON）。"
+    },
+    {
+      "id": "extract_locations",
+      "path": "pipeline/extract_locations.zh.txt",
+      "version": "1",
+      "variables": [
+        "script_text"
+      ],
+      "description": "從劇本抽場景資產，地點＋時段去重；description 同 angles 嘅 label／prompt 一律禁人物（label 會原封不動變成生圖嘅 reposition the camera to 內容）；重要場景至少 2 個 angles，prompt 預設留空靠圖生圖（JSON）。"
     },
     {
       "id": "extract_props",

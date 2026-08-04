@@ -445,16 +445,23 @@ export const extractAssetsHandler: TaskHandler = async ({ task, reportProgress }
   const models = await resolveTaskModels(task, project);
 
   reportProgress(10);
-  const out = await textCallJson(
-    { userId: task.userId, taskId: task.id, projectId: project.id, episodeId: episode.id, oneOff: promptOverridesFromTask(task) },
-    models.text,
-    "extract_assets",
-    { script_text: source.slice(0, 30_000), raw_text: episode.rawText.slice(0, 30_000) },
-  );
+  // 角色同場景各自一個 prompt，並行呼叫：兩套規則零交集，夾埋一個 prompt 曾經令
+  // flash-lite 出爛 JSON（見 prompts/ 嘅拆分理由同 shared.ts 嘅 3-attempt 註釋）。
+  // 用 Promise.all 而唔用 allSettled 係刻意嘅：一邊失敗就成個 task fail、兩邊都唔寫。
+  // 半寫（角色成功、場景失敗）會令 next-action.ts 嘅 assetsTotal === 0 閘門失效，
+  // 「抽取角色與場景」按鈕消失，用戶得個零場景 episode 而且冇路徑補抽。
+  const ctx = { userId: task.userId, taskId: task.id, projectId: project.id, episodeId: episode.id, oneOff: promptOverridesFromTask(task) };
+  const [charsOut, locsOut] = await Promise.all([
+    textCallJson(ctx, models.text, "extract_characters", {
+      script_text: source.slice(0, 30_000),
+      raw_text: episode.rawText.slice(0, 30_000),
+    }),
+    textCallJson(ctx, models.text, "extract_locations", { script_text: source.slice(0, 30_000) }),
+  ]);
 
   reportProgress(60);
   let created = 0;
-  for (const c of out.characters) {
+  for (const c of charsOut.characters) {
     const bio = { age: c.age, occupation: c.occupation, personality: c.personality, painPoint: c.painPoint, backstory: c.backstory, note: c.note };
     const existing = await prisma.character.findFirst({ where: { projectId: project.id, name: c.name } });
     if (existing) {
@@ -479,7 +486,7 @@ export const extractAssetsHandler: TaskHandler = async ({ task, reportProgress }
       created++;
     }
   }
-  for (const l of out.locations) {
+  for (const l of locsOut.locations) {
     const name = `${l.name}·${l.timeOfDay}`;
     const existing = await prisma.location.findFirst({ where: { projectId: project.id, name } });
     if (!existing) {
@@ -499,7 +506,7 @@ export const extractAssetsHandler: TaskHandler = async ({ task, reportProgress }
     // existing: skip — 唔覆寫用戶已改嘅 angles／已生成圖
   }
   reportProgress(95);
-  return { characters: out.characters.length, locations: out.locations.length, created };
+  return { characters: charsOut.characters.length, locations: locsOut.locations.length, created };
 };
 
 // key tier 要求剛好 4 個 view label（正/反/側/細節特寫）——views 數量直接影響下游 UI

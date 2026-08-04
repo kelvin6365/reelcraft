@@ -5,7 +5,8 @@ import {
   VoiceAnalyzeOutput,
   ScenesOutput,
   ScriptReviewOutput,
-  ExtractAssetsOutput,
+  ExtractCharactersOutput,
+  ExtractLocationsOutput,
   PhotographyOutput,
   ActingOutput,
   DetailOutput,
@@ -74,17 +75,32 @@ describe("buildPrompt", () => {
     expect(built.text).toContain("真人即使不在畫面內，仍然用「角色（VO）：」或「角色（OS）：」");
   });
 
-  it("renders extract_assets v18 with the angles judgment criteria intact", () => {
-    const built = buildPrompt("extract_assets", { script_text: "阿May推門而入。", raw_text: "" });
-    expect(built.version).toBe("18");
+  it("renders extract_locations v1 with the angles judgment criteria intact", () => {
+    const built = buildPrompt("extract_locations", { script_text: "阿May推門而入。" });
+    expect(built.version).toBe("1");
     expect(built.text).toContain("重要場景必須輸出至少 2 個 angles；普通場景 angles 一律輸出空陣列");
+  });
+
+  // 角色同場景由一個 extract_assets 拆成兩個 prompt 之後，每個 prompt 只得一個頂層鍵。
+  // flash-lite 掉整條 top-level key 嘅老問題（shared.ts 3-attempt 註釋）由「半殘但過
+  // schema」變成「即刻 parse 失敗重試」——所以呢兩條要分別鎖住自己嗰個鍵。
+  it("renders extract_characters with a characters-only output contract", () => {
+    const built = buildPrompt("extract_characters", { script_text: "阿May推門而入。", raw_text: "" });
+    expect(built.text).toContain("只輸出 characters 一個頂層鍵");
+    expect(built.text).not.toContain("locations");
+  });
+
+  it("renders extract_locations with a locations-only output contract", () => {
+    const built = buildPrompt("extract_locations", { script_text: "阿May推門而入。" });
+    expect(built.text).toContain("只輸出 locations 一個頂層鍵");
+    expect(built.text).not.toContain("appearance");
   });
 
   // 交付標準第一片（docs/plans/2026-08-03-delivery-standards-design.md §3.1 / §3.4）。
   // appearance 混入小傳令生圖模型摘取內容、核心外貌特徵蒸發；wardrobe 混入手持武器令
   // 角色鎖定圖同「雙手自然下垂、空手」自相矛盾，把劍再跟住身份參考圖入晒每一鏡。
-  it("renders extract_assets with the appearance/wardrobe field bans intact", () => {
-    const built = buildPrompt("extract_assets", { script_text: "阿May推門而入。", raw_text: "" });
+  it("renders extract_characters with the appearance/wardrobe field bans intact", () => {
+    const built = buildPrompt("extract_characters", { script_text: "阿May推門而入。", raw_text: "" });
     expect(built.text).toContain("appearance 只准寫**畫得出嚟嘅外觀**");
     expect(built.text).toContain("畫得出嚟嗎？");
     expect(built.text).toContain("手持嘅武器器具一律唔准寫");
@@ -92,14 +108,14 @@ describe("buildPrompt", () => {
     expect(built.text).toContain("放錯位會令生圖嗰陣對翅膀綁咗去第二個角色身上");
   });
 
-  it("renders extract_assets with the character-as-spatial-anchor ban intact — real-browser QA caught 王楚所在位置望向其他队员 leaking a character name straight into the image-gen prompt via label. Kept deliberately minimal (extends the existing enumerated list + existing reverse-example sentence) after a heavier first draft reproducibly destabilized gemini-2.5-flash-lite into malformed JSON on this exact 6-character script — verified via real A/B: v12 baseline succeeded twice, the heavier draft failed twice, this minimal version succeeded", () => {
-    const built = buildPrompt("extract_assets", { script_text: "阿May推門而入。", raw_text: "" });
+  it("renders extract_locations with the character-as-spatial-anchor ban intact — real-browser QA caught 王楚所在位置望向其他队员 leaking a character name straight into the image-gen prompt via label. Kept deliberately minimal (extends the existing enumerated list + existing reverse-example sentence) after a heavier first draft reproducibly destabilized gemini-2.5-flash-lite into malformed JSON on this exact 6-character script — verified via real A/B: v12 baseline succeeded twice, the heavier draft failed twice, this minimal version succeeded", () => {
+    const built = buildPrompt("extract_locations", { script_text: "阿May推門而入。" });
     expect(built.text).toContain("用角色個人或者隊伍做參照點都算");
     expect(built.text).toContain("王楚所在位置望向其他队员");
   });
 
-  it("renders extract_assets with the angle-is-spatial-only-no-plot-events instruction intact", () => {
-    const built = buildPrompt("extract_assets", { script_text: "阿May推門而入。", raw_text: "" });
+  it("renders extract_locations with the angle-is-spatial-only-no-plot-events instruction intact", () => {
+    const built = buildPrompt("extract_locations", { script_text: "阿May推門而入。" });
     expect(built.text).toContain("唔可以用場口事件或劇情動作命名");
     expect(built.text).toContain("亦唔可以出現任何指涉人物嘅字眼");
     expect(built.text).toContain("prompt 預設留空");
@@ -108,29 +124,29 @@ describe("buildPrompt", () => {
     expect(built.text).toContain("填 reason");
   });
 
-  it("renders extract_assets with the label-feeds-directly-into-generateImage warning and dedicated label self-check intact — real-browser QA caught 眾人 leaking through reposition the camera to: {label}", () => {
-    const built = buildPrompt("extract_assets", { script_text: "阿May推門而入。", raw_text: "" });
+  it("renders extract_locations with the label-feeds-directly-into-generateImage warning and dedicated label self-check intact — real-browser QA caught 眾人 leaking through reposition the camera to: {label}", () => {
+    const built = buildPrompt("extract_locations", { script_text: "阿May推門而入。" });
     expect(built.text).toContain("reposition the camera to");
     expect(built.text).toContain("眾人所在區域");
     expect(built.text).toContain("label 同 prompt 各自逐個檢查一次");
   });
 
-  it("renders extract_assets with the location description no-people instruction intact — description feeds directly into every image gen call as basePrompt", () => {
-    const built = buildPrompt("extract_assets", { script_text: "阿May推門而入。", raw_text: "" });
+  it("renders extract_locations with the location description no-people instruction intact — description feeds directly into every image gen call as basePrompt", () => {
+    const built = buildPrompt("extract_locations", { script_text: "阿May推門而入。" });
     expect(built.text).toContain("場景 description 判斷準則");
     expect(built.text).toContain("呢個欄位會直接原封不動傳落去生圖做主圖嘅 base prompt");
     expect(built.text).toContain("陈琳娜站在窗边，后有敲门声");
   });
 
-  it("renders extract_assets with raw_text priority-of-source instructions intact", () => {
-    const built = buildPrompt("extract_assets", { script_text: "阿May推門而入。", raw_text: "阿May：女，黑髮黑瞳。" });
+  it("renders extract_characters with raw_text priority-of-source instructions intact", () => {
+    const built = buildPrompt("extract_characters", { script_text: "阿May推門而入。", raw_text: "阿May：女，黑髮黑瞳。" });
     expect(built.text).toContain("客觀事實類資訊");
     expect(built.text).toContain("一律以 raw_text 入面嘅人物設定段落為準");
     expect(built.text).toContain("阿May：女，黑髮黑瞳。");
   });
 
-  it("renders extract_assets with the gender-first appearance instruction intact", () => {
-    const built = buildPrompt("extract_assets", { script_text: "阿May推門而入。", raw_text: "" });
+  it("renders extract_characters with the gender-first appearance instruction intact", () => {
+    const built = buildPrompt("extract_characters", { script_text: "阿May推門而入。", raw_text: "" });
     expect(built.text).toContain("性別、年齡、髮色");
     expect(built.text).toContain("外貌描述必須以性別開頭");
   });
@@ -367,9 +383,8 @@ describe("schema parsing", () => {
     expect(() => parseWithSchema(raw, VoiceAnalyzeOutput)).toThrow();
   });
 
-  it("parses extract_assets locations with angles — important scene ≥2, normal scene empty", () => {
+  it("parses extract_locations with angles — important scene ≥2, normal scene empty", () => {
     const raw = JSON.stringify({
-      characters: [],
       locations: [
         {
           name: "咖啡店",
@@ -383,37 +398,56 @@ describe("schema parsing", () => {
         { name: "便利店", timeOfDay: "日", description: "普通便利店", angles: [] },
       ],
     });
-    const out = parseWithSchema(raw, ExtractAssetsOutput);
+    const out = parseWithSchema(raw, ExtractLocationsOutput);
     expect(out.locations[0].angles).toHaveLength(2);
     expect(out.locations[1].angles).toHaveLength(0);
   });
 
-  it("defaults extract_assets angles to [] when the model omits the field (backward-compatible with v2 output)", () => {
+  it("defaults extract_locations angles to [] when the model omits the field (backward-compatible with v2 output)", () => {
     const raw = JSON.stringify({
-      characters: [],
       locations: [{ name: "天台", timeOfDay: "夜", description: "天台" }],
     });
-    const out = parseWithSchema(raw, ExtractAssetsOutput);
+    const out = parseWithSchema(raw, ExtractLocationsOutput);
     expect(out.locations[0].angles).toEqual([]);
   });
 
-  it("rejects an extract_assets angle with an empty label", () => {
+  it("rejects an extract_locations angle with an empty label", () => {
     const badLabel = JSON.stringify({
-      characters: [],
       locations: [{ name: "天台", timeOfDay: "夜", description: "天台", angles: [{ label: "", prompt: "細節描述" }] }],
     });
-    expect(() => parseWithSchema(badLabel, ExtractAssetsOutput)).toThrow();
+    expect(() => parseWithSchema(badLabel, ExtractLocationsOutput)).toThrow();
   });
 
-  it("allows an extract_assets angle with an empty prompt/reason — img2img needs no redundant description", () => {
+  it("allows an extract_locations angle with an empty prompt/reason — img2img needs no redundant description", () => {
     const raw = JSON.stringify({
-      characters: [],
       locations: [{ name: "天台", timeOfDay: "夜", description: "天台", angles: [{ label: "遠望", prompt: "", reason: "" }] }],
     });
-    const out = parseWithSchema(raw, ExtractAssetsOutput);
+    const out = parseWithSchema(raw, ExtractLocationsOutput);
     const angles = out.locations[0]?.angles ?? [];
     expect(angles[0]?.prompt).toBe("");
     expect(angles[0]?.reason).toBe("");
+  });
+
+  // 角色側之前零 schema 覆蓋——拆分後 characters 自成一個頂層鍵，level enum 同
+  // optionalText 嘅 null→"" transform 係下游 Character.bio 直接依賴嘅兩件事。
+  it("parses extract_characters and coerces null bio fields to empty strings", () => {
+    const raw = JSON.stringify({
+      characters: [
+        { name: "林知夏", level: "lead", appearance: "女，26歲，黑髮黑瞳", wardrobe: "白襯衫", note: null, age: null, occupation: "編輯", personality: null, painPoint: null, backstory: null },
+      ],
+    });
+    const out = parseWithSchema(raw, ExtractCharactersOutput);
+    expect(out.characters[0].aliases).toEqual([]);
+    expect(out.characters[0].note).toBe("");
+    expect(out.characters[0].backstory).toBe("");
+    expect(out.characters[0].occupation).toBe("編輯");
+  });
+
+  it("rejects an extract_characters level outside lead/supporting/extra", () => {
+    const raw = JSON.stringify({
+      characters: [{ name: "路人", level: "cameo", appearance: "男，中年", wardrobe: "" }],
+    });
+    expect(() => parseWithSchema(raw, ExtractCharactersOutput)).toThrow();
   });
 
   it("parses a valid build_scenes output", () => {

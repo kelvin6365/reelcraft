@@ -38,7 +38,7 @@ export function matchShotCharacters(shotCharNames: string[], locked: RefCharacte
   });
 }
 
-// 鎖定 Location 嘅名係 extract_assets 砌出嚟嘅 `地點·時段`（text-handlers.ts:143），
+// 鎖定 Location 嘅名係 extract_locations 抽完之後由 handler 砌出嚟嘅 `地點·時段`，
 // 但劇本原文／build_scenes 嘅 scene.location 唔會帶時段後綴。兩邊都剝走先可以比。
 const stripTimeOfDay = (s: string) => s.replace(/[·・‧](?:早|日|黃昏|黄昏|夜)\s*$/u, "");
 const baseName = (s: string) => norm(stripTimeOfDay(s));

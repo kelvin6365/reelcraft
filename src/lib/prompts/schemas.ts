@@ -38,14 +38,19 @@ export const EpisodeSplitOutput = z.object({
 });
 export type EpisodeSplitOutput = z.infer<typeof EpisodeSplitOutput>;
 
-// extract_assets
+// extract_characters / extract_locations
 // Models sometimes emit null instead of omitting an optional free-text field
 // (observed on locations.note after the v3 prompt change) — treat null as "".
 const optionalText = z
   .string()
   .nullish()
   .transform((v) => v ?? "");
-export const ExtractAssetsOutput = z.object({
+// Split out of the former single extract_assets call: one top-level key per
+// prompt. flash-lite drops an entire top-level key often enough that the
+// corrective loop in textCallJson needs 3 attempts (shared.ts) — with one key
+// per schema a dropped key is an outright parse failure that retries, instead
+// of a half-empty result that validates clean and silently loses one asset type.
+export const ExtractCharactersOutput = z.object({
   characters: z.array(
     z.object({
       name: z.string().min(1),
@@ -62,6 +67,10 @@ export const ExtractAssetsOutput = z.object({
       backstory: optionalText, // 前史 2-3 句
     }),
   ),
+});
+export type ExtractCharactersOutput = z.infer<typeof ExtractCharactersOutput>;
+
+export const ExtractLocationsOutput = z.object({
   locations: z.array(
     z.object({
       name: z.string().min(1),
@@ -78,9 +87,10 @@ export const ExtractAssetsOutput = z.object({
     }),
   ),
 });
-export type ExtractAssetsOutput = z.infer<typeof ExtractAssetsOutput>;
+export type ExtractLocationsOutput = z.infer<typeof ExtractLocationsOutput>;
 
-// extract_props — independent from extract_assets (retry isolation: a props
+// extract_props — independent from the extract_characters/extract_locations
+// pass (retry isolation: a props
 // parse failure must not force-retry the already-stable characters/locations
 // pass). target_name lets the caller ask for one specific prop (手動補抽);
 // the conditional instruction lives in the prompt template itself, not here.
@@ -301,7 +311,8 @@ export type ImagePromptShotOutput = z.infer<typeof ImagePromptShotOutput>;
 // Registry — promptId → schema, for generic parse-and-validate flows.
 export const outputSchemas = {
   episode_split: EpisodeSplitOutput,
-  extract_assets: ExtractAssetsOutput,
+  extract_characters: ExtractCharactersOutput,
+  extract_locations: ExtractLocationsOutput,
   extract_props: ExtractPropsOutput,
   build_scenes: ScenesOutput,
   storyboard_plan: StoryboardPlanOutput,

@@ -31,7 +31,9 @@ import { Textarea } from "@/components/ui/textarea";
 // round-trip to /api/prompts (slice 4), since this sheet only needs the
 // handful of promptIds a station wires in via `promptIds`.
 const PROMPT_LABEL: Record<string, string> = {
-  extract_assets: "抽取資產",
+  extract_characters: "抽取角色",
+  extract_locations: "抽取場景",
+  extract_props: "抽取道具",
   rewrite_script: "改寫劇本",
   script_review: "劇本體檢",
   build_scenes: "分場",
