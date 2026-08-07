@@ -23,6 +23,8 @@ export interface TimelineChipModel {
   globalStartMs: number;
   audioDurationMs: number;
   overflow: boolean; // 超出鏡尾，合成時會被截
+  dead: boolean; // 成句都喺鏡尾之後——合成完全唔會出聲，預覽照樣靜音
+  row: number; // 配音行內嘅堆疊行——時間上重疊嘅 chip 落唔同行，唔准疊埋
 }
 
 export interface TimelineModel {
@@ -30,6 +32,7 @@ export interface TimelineModel {
   chips: TimelineChipModel[];
   unmatched: VoiceLineView[]; // 有音但未綁鏡——喺托盤度俾人拖入去
   totalMs: number;
+  laneRows: number; // 配音行要幾多層先冇重疊
 }
 
 export function shotDuration(shot: ShotView, measured: Record<string, number>): number {
@@ -84,6 +87,8 @@ export function buildTimelineModel(
         globalStartMs: s.startMs + p.startMs,
         audioDurationMs: p.endMs - p.startMs,
         overflow: p.truncatedAtMs !== null,
+        dead: p.startMs >= s.durationMs,
+        row: 0, // 下面統一做 interval stacking
       });
     }
   }
@@ -92,7 +97,22 @@ export function buildTimelineModel(
     if (!eff.matchedShotId || !shotById.has(eff.matchedShotId)) unmatched.push(v);
   }
 
-  return { shots, chips, unmatched, totalMs: cursor };
+  // Interval stacking：時間上重疊嘅 chip 落唔同行（greedy——搵第一行結尾唔阻住佢嘅）。
+  // chip 闊度以「全局起點 + 真音長」計，即係會伸出鏡尾，所以要跨鏡一齊排。
+  const rowEnds: number[] = [];
+  for (const chip of [...chips].sort((a, b) => a.globalStartMs - b.globalStartMs)) {
+    const end = chip.globalStartMs + chip.audioDurationMs;
+    let row = rowEnds.findIndex((e) => e <= chip.globalStartMs);
+    if (row === -1) {
+      row = rowEnds.length;
+      rowEnds.push(end);
+    } else {
+      rowEnds[row] = end;
+    }
+    chip.row = row;
+  }
+
+  return { shots, chips, unmatched, totalMs: cursor, laneRows: Math.max(1, rowEnds.length) };
 }
 
 export function useTimelineModel(

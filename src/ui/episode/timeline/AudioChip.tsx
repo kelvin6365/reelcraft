@@ -63,17 +63,25 @@ export function AudioChip({ chip, shots, pxPerSec, laneEl, busy, onPreview, onCo
     <button
       type="button"
       aria-busy={busy}
-      aria-label={`${label}，第 ${shot.shot.shotIndex + 1} 鏡，${(chip.localStartMs / 1000).toFixed(1)} 秒${chip.overflow ? "，超出鏡尾會被截斷" : ""}`}
-      title={chip.overflow ? "呢句配音超出鏡頭長度，合成時會喺鏡頭尾被截斷" : label}
+      aria-label={`${label}，第 ${shot.shot.shotIndex + 1} 鏡，${(chip.localStartMs / 1000).toFixed(1)} 秒${chip.dead ? "，完全超出鏡尾唔會出聲" : chip.overflow ? "，超出鏡尾會被截斷" : ""}`}
+      title={
+        chip.dead
+          ? "呢句成句都喺鏡尾之後——合成完全唔會出聲，拖返入鏡內先有效"
+          : chip.overflow
+            ? "呢句配音超出鏡頭長度，合成時會喺鏡頭尾被截斷"
+            : label
+      }
       className={cn(
-        "absolute top-1 flex h-8 cursor-grab touch-none items-center gap-1 overflow-hidden rounded-md border px-1.5 text-xs select-none",
-        chip.overflow
-          ? "border-amber-500/70 bg-amber-500/20 text-amber-900 dark:text-amber-200"
-          : "border-primary/50 bg-primary/15 text-foreground",
+        "absolute flex h-8 cursor-grab touch-none items-center gap-1 overflow-hidden rounded-md border px-1.5 text-xs select-none",
+        chip.dead
+          ? "border-destructive/70 bg-destructive/15 text-destructive line-through"
+          : chip.overflow
+            ? "border-amber-500/70 bg-amber-500/20 text-amber-900 dark:text-amber-200"
+            : "border-primary/50 bg-primary/15 text-foreground",
         dragging && "z-10 cursor-grabbing ring-2 ring-primary",
         busy && "opacity-60",
       )}
-      style={{ left: leftPx, width: widthPx }}
+      style={{ left: leftPx, width: widthPx, top: 4 + chip.row * 36 }}
       onPointerDown={(e) => {
         if (busy) return;
         e.currentTarget.setPointerCapture(e.pointerId);

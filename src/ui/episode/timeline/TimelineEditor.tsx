@@ -1,7 +1,7 @@
 "use client";
 // 成片時間軸編輯器：合成前預覽 + 配音 chip 拖拉。所有擺位行 placeLines
 //（同 worker 合成共用），所以拖完見到嘅位置就係合成出嚟嘅位置。
-import { useMemo, useRef, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import { Pause, Play, ZoomIn, ZoomOut } from "lucide-react";
 import { api } from "@/ui/api";
 import { useAction } from "@/ui/planning/useAction";
@@ -35,10 +35,17 @@ export function TimelineEditor({ view }: { view: EpisodeView }) {
     [view],
   );
   const measured = useMediaDurations(probeItems);
+  // 播放池 loadedmetadata 回報嘅真時長——優先過 probe hook（同一來源都得，遲到嗰個贏冇所謂，值一樣）
+  const [reported, setReported] = useState<Record<string, number>>({});
+  const combined = useMemo(() => ({ ...measured, ...reported }), [measured, reported]);
 
-  const model = useTimelineModel(view, measured, overrides);
+  const model = useTimelineModel(view, combined, overrides);
   const playback = usePreviewPlayback(model.totalMs);
-  const lineAudio = useLineAudio(model, playback.timeMs, playback.playing);
+  const onDuration = useCallback(
+    (lineId: string, ms: number) => setReported((r) => (r[lineId] === ms ? r : { ...r, [lineId]: ms })),
+    [],
+  );
+  const lineAudio = useLineAudio(model, playback.timeMs, playback.playing, onDuration);
 
   const msToPx = (ms: number) => (ms / 1000) * pxPerSec;
 
@@ -139,8 +146,8 @@ export function TimelineEditor({ view }: { view: EpisodeView }) {
             ))}
           </div>
 
-          {/* 配音行 */}
-          <div className="relative h-10 bg-background">
+          {/* 配音行：重疊 chip 分層堆疊，行高跟層數 */}
+          <div className="relative bg-background" style={{ height: 8 + model.laneRows * 36 }}>
             {model.chips.map((chip) => (
               <AudioChip
                 key={chip.line.id}

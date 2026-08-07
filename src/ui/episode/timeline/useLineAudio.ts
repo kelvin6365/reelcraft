@@ -19,7 +19,14 @@ async function refreshUrl(mediaId: string | null): Promise<string | null> {
   }
 }
 
-export function useLineAudio(model: TimelineModel, timeMs: number, playing: boolean): { prime: () => void } {
+export function useLineAudio(
+  model: TimelineModel,
+  timeMs: number,
+  playing: boolean,
+  // 播放池載入到 metadata 就回報真時長——DB 冇 durationMs 嘅舊音靠呢度修正
+  // 2 秒 fallback，唔會再「當佢短咗、播一半收聲」
+  onDuration?: (lineId: string, ms: number) => void,
+): { prime: () => void } {
   const pool = useRef(new Map<string, HTMLAudioElement>());
   const refreshedOnce = useRef(new Set<string>());
 
@@ -32,6 +39,10 @@ export function useLineAudio(model: TimelineModel, timeMs: number, playing: bool
         el = new Audio();
         el.preload = "auto";
         el.src = chip.line.audioUrl;
+        el.onloadedmetadata = () => {
+          const ms = Math.round((el?.duration ?? 0) * 1000);
+          if (Number.isFinite(ms) && ms > 0) onDuration?.(lineId, ms);
+        };
         el.onerror = () => {
           if (refreshedOnce.current.has(lineId)) return;
           refreshedOnce.current.add(lineId);
@@ -44,7 +55,7 @@ export function useLineAudio(model: TimelineModel, timeMs: number, playing: bool
       }
       return el;
     },
-    [model],
+    [model, onDuration],
   );
 
   // 一定要喺 user gesture handler 入面同步call（撳播放嗰下）
@@ -78,7 +89,8 @@ export function useLineAudio(model: TimelineModel, timeMs: number, playing: bool
       const inWindow = playing && timeMs >= start && timeMs < end;
       if (inWindow) {
         const local = (timeMs - start) / 1000;
-        if (Math.abs(el.currentTime - local) > DRIFT_TOLERANCE_S) el.currentTime = local;
+        // metadata 未載到（readyState 0）就唔好 seek——部分瀏覽器會出 InvalidState
+        if (el.readyState >= 1 && Math.abs(el.currentTime - local) > DRIFT_TOLERANCE_S) el.currentTime = local;
         if (el.paused) void el.play().catch(() => {});
       } else if (!el.paused) {
         el.pause();
