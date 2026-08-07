@@ -32,6 +32,7 @@ import { STATION_BY_KEY } from "./stations";
 import { useStationNav } from "./station-nav";
 import { SavedHint, useAutosaveField, useSavedFlash } from "./SavedHint";
 import { ShotWorkbench } from "./ShotWorkbench";
+import { TimelineEditor } from "./timeline/TimelineEditor";
 import { shortModelName, isFakeModel } from "@/ui/model-format";
 import { formatUsdDisplay } from "./cost-confirm";
 import { cn } from "@/lib/utils";
@@ -1652,32 +1653,41 @@ function VoiceLineRow({
 export function ExportPanel({ view, progress }: PanelProps) {
   const url = view.episode.exportUrl;
   const [lightbox, setLightbox] = useState<MediaLightboxMedia | null>(null);
+  // 有畫面嘅鏡先有得預覽／執位；一個都冇就照舊只顯示 EmptyState
+  const hasTimeline = view.shots.some((s) => s.videoUrl || s.imageUrl);
   return (
     <Station stage="export" progress={progress}>
-      {url ? (
-        <div className="space-y-4 text-center">
-          <div className="relative mx-auto w-full max-w-90">
-            <video src={url} controls className="w-full rounded-lg bg-black" />
-            <button
-              type="button"
-              aria-label="全螢幕檢視"
-              title="全螢幕檢視"
-              onClick={() => setLightbox({ src: url, type: "video", title: "成片" })}
-              className="absolute top-1 right-1 z-10 flex size-6 items-center justify-center rounded-md bg-black/60 text-white"
-            >
-              <Maximize2 className="size-3.5" />
-            </button>
+      <div className="space-y-6">
+        {hasTimeline && <TimelineEditor view={view} />}
+        {url ? (
+          <div className="space-y-4 text-center">
+            <div className="relative mx-auto w-full max-w-90">
+              <video src={url} controls className="w-full rounded-lg bg-black" />
+              <button
+                type="button"
+                aria-label="全螢幕檢視"
+                title="全螢幕檢視"
+                onClick={() => setLightbox({ src: url, type: "video", title: "成片" })}
+                className="absolute top-1 right-1 z-10 flex size-6 items-center justify-center rounded-md bg-black/60 text-white"
+              >
+                <Maximize2 className="size-3.5" />
+              </button>
+            </div>
+            <Button asChild>
+              <a href={url} download>
+                下載成片 MP4
+              </a>
+            </Button>
+            <MediaLightbox open={!!lightbox} onOpenChange={(o) => !o && setLightbox(null)} media={lightbox} />
           </div>
-          <Button asChild>
-            <a href={url} download>
-              下載成片 MP4
-            </a>
-          </Button>
-          <MediaLightbox open={!!lightbox} onOpenChange={(o) => !o && setLightbox(null)} media={lightbox} />
-        </div>
-      ) : (
-        <EmptyState view={view} stage="export">仲未合成。完成前面各站之後，會把鏡頭、配音同字幕拼成一條 MP4。</EmptyState>
-      )}
+        ) : (
+          <EmptyState view={view} stage="export">
+            {hasTimeline
+              ? "上面預覽執好位之後，就可以合成整集導出 MP4。"
+              : "仲未合成。完成前面各站之後，會把鏡頭、配音同字幕拼成一條 MP4。"}
+          </EmptyState>
+        )}
+      </div>
     </Station>
   );
 }
