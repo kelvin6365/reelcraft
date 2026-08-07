@@ -19,6 +19,7 @@ import {
 } from "@/lib/workers/handlers/shared";
 import type { Character, Prisma } from "@prisma/client";
 import { DEFAULT_CHARACTER_VIEWS } from "@/lib/prompts/character-views";
+import { estimateShotDurationMs } from "@/lib/storyboard/duration";
 import { missingRequiredPropFields } from "@/lib/prompts/prop-views";
 
 // 分鏡三個補完階段（攝影／表演／細節）各自獨立呼叫，逐鏡對應 plan 嘅 index。
@@ -818,7 +819,9 @@ export const storyboardRunHandler: TaskHandler = async ({ task, reportProgress }
           episodeId: episode.id,
           sceneId: scene.id,
           shotIndex: globalIndex,
-          durationMs: 3000,
+          // 按對白字數估時長（唔再一律 3s）——對白長鏡先唔會生 4-5s 短片
+          // 出嚟迫合成凍幀補時。SRT 路線唔行呢度（cue 長度係真時長）。
+          durationMs: estimateShotDurationMs(shot.dialogue),
           linkedToNext,
           // 閃回標記落 Shot 欄位而唔係淨留喺 storyboardJson 入面：生圖層要靠佢做
           // 硬性決定（唔畀場景參考圖、剝走空間契約），呢類決定唔應該去挖一個 Json blob。
