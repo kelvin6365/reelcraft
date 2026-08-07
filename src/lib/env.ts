@@ -67,6 +67,12 @@ const schema = z.object({
   RATE_LIMIT_READ_MAX: z.coerce.number().int().positive().default(600),
   RATE_LIMIT_WRITE_MAX: z.coerce.number().int().positive().default(120),
 
+  // Explicit ffmpeg/ffprobe binary paths. Empty = auto-resolve: probe common
+  // install dirs (Homebrew, /usr/bin for the apk-based worker image) then fall
+  // back to PATH. Set explicitly if the binary lives somewhere unusual.
+  FFMPEG_PATH: z.string().optional().default(""),
+  FFPROBE_PATH: z.string().optional().default(""),
+
   BILLING_MODE: z.enum(["OFF", "SHADOW", "ENFORCE"]).default("SHADOW"),
   LOG_LEVEL: z.enum(["debug", "info", "warn", "error"]).default("info"),
 });

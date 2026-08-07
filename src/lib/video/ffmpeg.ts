@@ -1,14 +1,37 @@
 // FFmpeg helpers for episode composition (docs/tech/02 COMPOSE_EPISODE).
 // Runs the system ffmpeg binary; worker image installs it (docs/tech/07).
 import { execFile } from "node:child_process";
+import { existsSync } from "node:fs";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
+import { env } from "@/lib/env";
 import { TaskError } from "@/lib/task/types";
 
 const exec = promisify(execFile);
 const FFMPEG_TIMEOUT_MS = 10 * 60_000;
+
+// Dev servers launched from GUI terminals often miss Homebrew's PATH entry,
+// so a bare "ffmpeg" spawn dies with ENOENT even when the binary is installed.
+const FALLBACK_BIN_DIRS = ["/opt/homebrew/bin", "/usr/local/bin", "/usr/bin"];
+const binCache = new Map<string, string>();
+
+function resolveBin(name: "ffmpeg" | "ffprobe"): string {
+  const cached = binCache.get(name);
+  if (cached) return cached;
+  const fromEnv = name === "ffmpeg" ? env.FFMPEG_PATH : env.FFPROBE_PATH;
+  const resolved =
+    fromEnv ||
+    FALLBACK_BIN_DIRS.map((d) => join(d, name)).find((p) => existsSync(p)) ||
+    name; // last resort: trust PATH
+  binCache.set(name, resolved);
+  return resolved;
+}
+
+export function ffmpegBin(): string {
+  return resolveBin("ffmpeg");
+}
 
 // Some ffmpeg builds (e.g. Homebrew without libfreetype) lack drawtext.
 // Detect once; subtitle burning degrades gracefully when unavailable.
@@ -16,7 +39,7 @@ let drawtextAvailable: boolean | null = null;
 export async function hasDrawtext(): Promise<boolean> {
   if (drawtextAvailable !== null) return drawtextAvailable;
   try {
-    const { stdout } = await exec("ffmpeg", ["-hide_banner", "-filters"]);
+    const { stdout } = await exec(ffmpegBin(), ["-hide_banner", "-filters"]);
     drawtextAvailable = stdout.includes(" drawtext ");
   } catch {
     drawtextAvailable = false;
@@ -26,7 +49,7 @@ export async function hasDrawtext(): Promise<boolean> {
 
 async function runFfmpeg(args: string[]): Promise<void> {
   try {
-    await exec("ffmpeg", ["-y", "-hide_banner", "-loglevel", "error", ...args], {
+    await exec(ffmpegBin(), ["-y", "-hide_banner", "-loglevel", "error", ...args], {
       timeout: FFMPEG_TIMEOUT_MS,
       maxBuffer: 16 * 1024 * 1024,
     });
@@ -108,7 +131,7 @@ export async function concatAudio(inputs: string[], outPath: string): Promise<vo
 
 export async function probeDurationMs(path: string): Promise<number> {
   try {
-    const { stdout } = await exec("ffprobe", [
+    const { stdout } = await exec(resolveBin("ffprobe"), [
       "-v", "error", "-show_entries", "format=duration", "-of", "default=noprint_wrappers=1:nokey=1", path,
     ]);
     return Math.round(parseFloat(stdout.trim()) * 1000) || 0;
