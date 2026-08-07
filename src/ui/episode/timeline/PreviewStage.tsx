@@ -1,7 +1,7 @@
 "use client";
 // 預覽舞台：單一 <video>（鏡頭切換時換 src）或 <img>（純圖鏡），媒體元素被動
-// 跟隨 usePreviewPlayback 嘅主時鐘；每句配音一個 Audio 物件，入窗即播、出窗即停,
-// 鏡尾強制停（同合成 atrim 語義一致）。字幕係 HTML overlay 模擬——真字幕以成片為準。
+// 跟隨 usePreviewPlayback 嘅主時鐘。配音播放喺 useLineAudio（要 gesture prime，
+// 唔可以擺呢度）。字幕係 HTML overlay 模擬——真字幕以成片為準。
 import { useEffect, useMemo, useRef } from "react";
 import { api } from "@/ui/api";
 import type { TimelineChipModel, TimelineModel } from "./useTimelineModel";
@@ -28,7 +28,6 @@ interface Props {
 
 export function PreviewStage({ model, timeMs, playing, videoRatio }: Props) {
   const videoRef = useRef<HTMLVideoElement>(null);
-  const audioRefs = useRef(new Map<string, HTMLAudioElement>());
   const refreshedOnce = useRef(new Set<string>());
 
   const active = useMemo(() => {
@@ -55,47 +54,6 @@ export function PreviewStage({ model, timeMs, playing, videoRatio }: Props) {
     if (playing && el.paused) void el.play().catch(() => {});
     if (!playing && !el.paused) el.pause();
   }, [active, localMs, playing]);
-
-  // 配音同步：入窗即播（seek 到窗內位置）、出窗／過鏡尾即停
-  useEffect(() => {
-    for (const chip of model.chips) {
-      const shot = model.shots.find((s) => s.shot.id === chip.shotId);
-      if (!shot || !chip.line.audioUrl) continue;
-      let el = audioRefs.current.get(chip.line.id);
-      if (!el) {
-        el = new Audio();
-        el.preload = "auto";
-        el.src = chip.line.audioUrl;
-        el.onerror = () => {
-          if (refreshedOnce.current.has(chip.line.id)) return;
-          refreshedOnce.current.add(chip.line.id);
-          void refreshUrl(chip.line.audioMediaId).then((url) => {
-            if (url && el) el.src = url;
-          });
-        };
-        audioRefs.current.set(chip.line.id, el);
-      }
-      const start = chip.globalStartMs;
-      // 鏡尾截斷：有效結尾 = min(句尾, 鏡尾)——同合成 atrim 一致
-      const end = Math.min(start + chip.audioDurationMs, shot.startMs + shot.durationMs);
-      const inWindow = playing && timeMs >= start && timeMs < end;
-      if (inWindow) {
-        const local = (timeMs - start) / 1000;
-        if (Math.abs(el.currentTime - local) > DRIFT_TOLERANCE_MS / 1000) el.currentTime = local;
-        if (el.paused) void el.play().catch(() => {});
-      } else if (!el.paused) {
-        el.pause();
-      }
-    }
-  }, [model, timeMs, playing]);
-
-  // 卸載時全部收聲
-  useEffect(() => {
-    const refs = audioRefs.current;
-    return () => {
-      for (const el of refs.values()) el.pause();
-    };
-  }, []);
 
   // 視頻 src 過期重試（一次）
   useEffect(() => {

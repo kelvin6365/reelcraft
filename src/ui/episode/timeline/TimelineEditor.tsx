@@ -11,6 +11,7 @@ import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { AudioChip, type ChipCommit } from "./AudioChip";
 import { PreviewStage } from "./PreviewStage";
+import { useLineAudio } from "./useLineAudio";
 import { useMediaDurations, type DurationProbeItem } from "./useMediaDurations";
 import { usePreviewPlayback } from "./usePreviewPlayback";
 import { useTimelineModel } from "./useTimelineModel";
@@ -37,6 +38,7 @@ export function TimelineEditor({ view }: { view: EpisodeView }) {
 
   const model = useTimelineModel(view, measured, overrides);
   const playback = usePreviewPlayback(model.totalMs);
+  const lineAudio = useLineAudio(model, playback.timeMs, playback.playing);
 
   const msToPx = (ms: number) => (ms / 1000) * pxPerSec;
 
@@ -61,7 +63,16 @@ export function TimelineEditor({ view }: { view: EpisodeView }) {
       <PreviewStage model={model} timeMs={playback.timeMs} playing={playback.playing} videoRatio={view.episode.project.videoRatio} />
 
       <div className="flex items-center gap-2">
-        <Button variant="outline" size="sm" onClick={playback.toggle} aria-label={playback.playing ? "暫停預覽" : "播放預覽"}>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => {
+            // prime 一定要喺 gesture handler 入面同步做，先解到 autoplay 鎖
+            lineAudio.prime();
+            playback.toggle();
+          }}
+          aria-label={playback.playing ? "暫停預覽" : "播放預覽"}
+        >
           {playback.playing ? <Pause className="size-4" /> : <Play className="size-4" />}
         </Button>
         <span className="text-xs text-muted-foreground tabular-nums">
