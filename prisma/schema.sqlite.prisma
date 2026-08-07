@@ -340,6 +340,8 @@ model VoiceLine {
   audioMedia      MediaObject? @relation("VoiceLineAudio", fields: [audioMediaId], references: [id])
   matchedShotId   String?
   matchedShot     Shot?   @relation(fields: [matchedShotId], references: [id], onDelete: SetNull)
+  // null = auto（順序排位，legacy compose）；用戶喺成片時間軸拖拉 chip 先會設呢個值
+  offsetMs        Int?
 
   @@unique([episodeId, lineIndex])
   @@map("voice_lines")

@@ -178,6 +178,9 @@ export interface ShotView {
   videoUrl: string | null;
   status: string;
   durationMs: number;
+  // 實際生成影片嘅時長（worker 探測寫入 MediaObject；舊資料可能 null）。
+  // 時間軸用 videoDurationMs ?? durationMs 做鏡頭闊度。
+  videoDurationMs: number | null;
   activeImageTask: ActiveTaskView | null;
   activeVideoTask: ActiveTaskView | null;
 }
@@ -210,6 +213,11 @@ export interface VoiceLineView {
   emotionStrength: number;
   audioMediaId: string | null;
   audioUrl: string | null;
+  // 成片時間軸欄位：chip 屬邊個鏡（matchedShotId）、釘死位置（offsetMs，null = auto
+  // 順序排）、實際音長（舊資料可能 null，前端 loadedmetadata 補底）
+  matchedShotId: string | null;
+  offsetMs: number | null;
+  audioDurationMs: number | null;
   activeTask?: ActiveTaskView | null;
 }
 

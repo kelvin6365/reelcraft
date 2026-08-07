@@ -185,6 +185,21 @@ export async function buildEpisodeView(userId: string, episodeId: string) {
   const candidateUrlById: Record<string, string> = {};
   for (const m of candidateMedia) candidateUrlById[m.id] = await storage.getSignedUrl(m.storageKey, 3600);
 
+  // 成片時間軸要靠實際媒體時長計 chip 位置；durationMs 由 worker 生成後探測寫入，
+  // 舊資料可能係 null——前端會用 loadedmetadata 補底。
+  const durationMediaIds = [
+    ...voiceLines.map((v) => v.audioMediaId).filter((id): id is string => !!id),
+    ...shots.map((sh) => sh.videoMediaId).filter((id): id is string => !!id),
+  ];
+  const durationById: Record<string, number | null> = {};
+  if (durationMediaIds.length) {
+    const rows = await prisma.mediaObject.findMany({
+      where: { id: { in: durationMediaIds } },
+      select: { id: true, durationMs: true },
+    });
+    for (const r of rows) durationById[r.id] = r.durationMs;
+  }
+
   return {
     candidateUrlById,
     imageRefSupported,
@@ -249,11 +264,17 @@ export async function buildEpisodeView(userId: string, episodeId: string) {
     }),
     shots: shotsWithUrls.map((sh) => ({
       ...sh,
+      videoDurationMs: (sh as { videoMediaId: string | null }).videoMediaId
+        ? (durationById[(sh as { videoMediaId: string }).videoMediaId] ?? null)
+        : null,
       activeImageTask: activeByKey.get(`IMAGE_SHOT:${(sh as { id: string }).id}`) ?? null,
       activeVideoTask: activeByKey.get(`VIDEO_SHOT:${(sh as { id: string }).id}`) ?? null,
     })),
     voiceLines: voiceLinesWithUrls.map((v) => ({
       ...v,
+      audioDurationMs: (v as { audioMediaId: string | null }).audioMediaId
+        ? (durationById[(v as { audioMediaId: string }).audioMediaId] ?? null)
+        : null,
       activeTask: activeByKey.get(`TTS_LINE:${(v as { id: string }).id}`) ?? null,
     })),
     stages: computeStages(snapshot),

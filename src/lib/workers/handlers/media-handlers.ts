@@ -507,8 +507,32 @@ export const videoShotHandler: TaskHandler = async ({ task, reportProgress }) =>
     console.warn(`[VIDEO_SHOT] shot ${shot.id} deleted mid-generation — media ${media.id} orphaned`);
     return { skipped: "shot-deleted" };
   }
+  await probeAndStoreMediaDuration(media.id);
   return { mediaId: media.id };
 };
+
+// 幫 MediaObject 補 durationMs：TTS／影片生成完即刻探測，成片時間軸先有得計 chip 位置。
+// 只有 worker 有 ffprobe（app image 冇裝 ffmpeg），所以探測一定要喺 handler 層做。
+// 探測失敗唔算 task 失敗——靜靜吞咗，durationMs 留 null，前端會用 loadedmetadata 補底。
+async function probeAndStoreMediaDuration(mediaId: string): Promise<number | null> {
+  const dir = await mkdtemp(join(tmpdir(), "rc-probe-"));
+  try {
+    const media = await prisma.mediaObject.findUnique({ where: { id: mediaId } });
+    if (!media) return null;
+    const buf = await getStorage().getObjectBuffer(media.storageKey);
+    const ext = media.mimeType.includes("audio") ? "m4a" : "mp4";
+    const tmpPath = join(dir, `probe.${ext}`);
+    await writeFile(tmpPath, buf);
+    const durationMs = await probeDurationMs(tmpPath);
+    if (durationMs <= 0) return null;
+    await prisma.mediaObject.update({ where: { id: mediaId }, data: { durationMs } });
+    return durationMs;
+  } catch {
+    return null;
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+}
 
 export const ttsLineHandler: TaskHandler = async ({ task }) => {
   const line = await prisma.voiceLine.findFirst({ where: { id: task.targetId, userId: task.userId } });
@@ -536,6 +560,7 @@ export const ttsLineHandler: TaskHandler = async ({ task }) => {
   );
 
   await prisma.voiceLine.update({ where: { id: line.id }, data: { audioMediaId: media.id } });
+  await probeAndStoreMediaDuration(media.id);
   return { mediaId: media.id };
 };
 
