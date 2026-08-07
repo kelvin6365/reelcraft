@@ -59,6 +59,17 @@ async function runFfmpeg(args: string[]): Promise<void> {
   }
 }
 
+// escape drawtext metacharacters incl. % (text-macro expansion like %{pts})
+export function escapeDrawtextText(text: string): string {
+  return text
+    .replace(/\\/g, "\\\\")
+    .replace(/'/g, "\\'")
+    .replace(/:/g, "\\:")
+    .replace(/%/g, "\\%");
+}
+
+const DRAWTEXT_STYLE = "fontcolor=white:fontsize=h/18:borderw=2:bordercolor=black@0.8:x=(w-text_w)/2:y=h-text_h-h/12";
+
 export interface ComposeShotInput {
   videoPath: string; // local file path of the shot video
   audioPath?: string; // optional TTS audio to overlay
@@ -72,15 +83,7 @@ export async function composeShot(input: ComposeShotInput, outPath: string): Pro
 
   const filters: string[] = [];
   if (input.subtitle && (await hasDrawtext())) {
-    // escape drawtext metacharacters incl. % (text-macro expansion like %{pts})
-    const safe = input.subtitle
-      .replace(/\\/g, "\\\\")
-      .replace(/'/g, "\\'")
-      .replace(/:/g, "\\:")
-      .replace(/%/g, "\\%");
-    filters.push(
-      `drawtext=text='${safe}':fontcolor=white:fontsize=h/18:borderw=2:bordercolor=black@0.8:x=(w-text_w)/2:y=h-text_h-h/12`,
-    );
+    filters.push(`drawtext=text='${escapeDrawtextText(input.subtitle)}':${DRAWTEXT_STYLE}`);
   }
   if (filters.length) args.push("-vf", filters.join(","));
 
@@ -89,6 +92,68 @@ export async function composeShot(input: ComposeShotInput, outPath: string): Pro
   }
   args.push("-c:v", "libx264", "-preset", "fast", "-crf", "20", "-c:a", "aac", "-pix_fmt", "yuv420p", outPath);
   await runFfmpeg(args);
+}
+
+// Offset-aware compose: each voice line lands at its placed startMs (adelay),
+// mixed together (amix), then hard-trimmed + padded to the clip length so the
+// VIDEO is always the master duration — 冇 -shortest，音長極其量喺鏡尾被截，
+// 唔會反過嚟截視頻。Subtitles get per-line drawtext enable windows.
+export interface TimedComposeInput {
+  videoPath: string;
+  clipDurationMs: number;
+  audio: { path: string; startMs: number }[];
+  subtitles: { text: string; startMs: number; endMs: number }[];
+}
+
+const sec = (ms: number) => (ms / 1000).toFixed(3);
+
+// Pure args builder — unit-tested without running ffmpeg. `drawtext` mirrors
+// hasDrawtext(): callers pass false to degrade to no-subtitle output.
+export function buildTimedComposeArgs(input: TimedComposeInput, outPath: string, drawtext: boolean): string[] {
+  const args: string[] = ["-i", input.videoPath];
+  for (const a of input.audio) args.push("-i", a.path);
+
+  const clipSec = sec(input.clipDurationMs);
+  const chains: string[] = [];
+
+  // video chain: burn each subtitle inside its own time window
+  const windows = drawtext
+    ? input.subtitles
+        .map((s) => ({ ...s, endMs: Math.min(s.endMs, input.clipDurationMs) }))
+        .filter((s) => s.text && s.endMs > s.startMs)
+    : [];
+  const hasVout = windows.length > 0;
+  if (hasVout) {
+    const draws = windows
+      .map((s) => `drawtext=text='${escapeDrawtextText(s.text)}':enable='between(t,${sec(s.startMs)},${sec(s.endMs)})':${DRAWTEXT_STYLE}`)
+      .join(",");
+    chains.push(`[0:v]${draws}[vout]`);
+  }
+
+  // audio chain: adelay each line to its start, mix, then trim+pad to clip length
+  const hasAout = input.audio.length > 0;
+  if (hasAout) {
+    input.audio.forEach((a, i) => {
+      chains.push(`[${i + 1}:a:0]adelay=${Math.max(0, Math.round(a.startMs))}:all=1[a${i}]`);
+    });
+    const mixed =
+      input.audio.length > 1
+        ? (chains.push(`${input.audio.map((_, i) => `[a${i}]`).join("")}amix=inputs=${input.audio.length}:normalize=0[am]`), "[am]")
+        : "[a0]";
+    chains.push(`${mixed}atrim=end=${clipSec},apad=whole_dur=${clipSec}[aout]`);
+  }
+
+  if (chains.length) args.push("-filter_complex", chains.join(";"));
+  args.push("-map", hasVout ? "[vout]" : "0:v:0");
+  if (hasAout) args.push("-map", "[aout]");
+  args.push("-c:v", "libx264", "-preset", "fast", "-crf", "20");
+  if (hasAout) args.push("-c:a", "aac");
+  args.push("-pix_fmt", "yuv420p", outPath);
+  return args;
+}
+
+export async function composeShotTimed(input: TimedComposeInput, outPath: string): Promise<void> {
+  await runFfmpeg(buildTimedComposeArgs(input, outPath, input.subtitles.length > 0 && (await hasDrawtext())));
 }
 
 // Concat composed shots into one episode file (re-encode for uniform params).

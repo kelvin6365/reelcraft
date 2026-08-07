@@ -7,7 +7,8 @@ import { newId } from "@/lib/ids";
 import { generateImage, generateTts, generateVideo } from "@/lib/ai/generate-media";
 import { getStorage } from "@/lib/storage";
 import { createMediaFromBuffer } from "@/lib/media/service";
-import { composeShot, concatAudio, concatShots, imageToVideoClip, probeDurationMs } from "@/lib/video/ffmpeg";
+import { composeShot, composeShotTimed, concatShots, imageToVideoClip, probeDurationMs } from "@/lib/video/ffmpeg";
+import { placeLines } from "@/lib/timeline/placement";
 import { TaskError } from "@/lib/task/types";
 import type { TaskHandler } from "@/lib/workers/lifecycle";
 import { resolveTaskModels, loadEpisodeWithProject, textCallJson, promptOverridesFromTask } from "@/lib/workers/handlers/shared";
@@ -593,27 +594,57 @@ export const composeEpisodeHandler: TaskHandler = async ({ task, reportProgress 
         continue;
       }
 
+      // 實際 clip 長度做時間軸基準（探測失敗先退返 storyboard 意圖值）
+      const probedClip = await probeDurationMs(clipPath);
+      const clipDurationMs = probedClip > 0 ? probedClip : shot.durationMs || 3000;
+
       const linesWithAudio = shot.voiceLines.filter((l) => l.audioMediaId);
-      let audioPath: string | undefined;
-      if (linesWithAudio.length > 0) {
-        const partPaths: string[] = [];
+      const outPath = join(dir, `composed-${i}.mp4`);
+      if (linesWithAudio.length === 0) {
+        // 冇音冇字幕：照舊 passthrough 重編碼（唔加靜音軌）
+        await composeShot({ videoPath: clipPath }, outPath);
+      } else {
+        const lineAudio: { line: (typeof linesWithAudio)[number]; path: string; durationMs: number }[] = [];
         for (let k = 0; k < linesWithAudio.length; k++) {
           const media = await prisma.mediaObject.findUniqueOrThrow({ where: { id: linesWithAudio[k].audioMediaId! } });
           const p = join(dir, `aud-${i}-${k}.m4a`);
           await writeFile(p, await storage.getObjectBuffer(media.storageKey));
-          partPaths.push(p);
+          // 舊資料 durationMs 係 null——就地探測兼回填，等時間軸 UI 下次有得用
+          let durationMs = media.durationMs ?? 0;
+          if (durationMs <= 0) {
+            durationMs = await probeDurationMs(p);
+            if (durationMs > 0) {
+              await prisma.mediaObject.update({ where: { id: media.id }, data: { durationMs } }).catch(() => {});
+            }
+          }
+          lineAudio.push({ line: linesWithAudio[k], path: p, durationMs: durationMs > 0 ? durationMs : 2000 });
         }
-        if (partPaths.length === 1) {
-          audioPath = partPaths[0];
-        } else {
-          audioPath = join(dir, `aud-${i}.m4a`);
-          await concatAudio(partPaths, audioPath);
-        }
-      }
-      const subtitle = linesWithAudio.map((l) => l.content).join(" ") || undefined;
 
-      const outPath = join(dir, `composed-${i}.mp4`);
-      await composeShot({ videoPath: clipPath, audioPath, subtitle }, outPath);
+        // placeLines 係擺位單一真相（同瀏覽器預覽共用）——null offset 順序排，
+        // 有 offset 釘死；字幕窗口 = 音嘅實際時間窗
+        const placed = placeLines(
+          lineAudio.map((la) => ({
+            id: la.line.id,
+            lineIndex: la.line.lineIndex,
+            offsetMs: la.line.offsetMs,
+            audioDurationMs: la.durationMs,
+          })),
+          clipDurationMs,
+        );
+        const startById = new Map(placed.map((p) => [p.lineId, p]));
+        await composeShotTimed(
+          {
+            videoPath: clipPath,
+            clipDurationMs,
+            audio: lineAudio.map((la) => ({ path: la.path, startMs: startById.get(la.line.id)!.startMs })),
+            subtitles: lineAudio.map((la) => {
+              const pl = startById.get(la.line.id)!;
+              return { text: la.line.content, startMs: pl.startMs, endMs: pl.endMs };
+            }),
+          },
+          outPath,
+        );
+      }
       composedPaths.push(outPath);
       reportProgress((i / shots.length) * 80);
     }
