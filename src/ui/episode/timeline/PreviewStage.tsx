@@ -70,13 +70,14 @@ export function PreviewStage({ model, timeMs, playing, videoRatio }: Props) {
     return () => el.removeEventListener("error", onErr);
   }, [active]);
 
-  const activeSubtitles: TimelineChipModel[] = useMemo(() => {
-    if (!active) return [];
-    const shotEnd = active.startMs + active.durationMs;
-    return model.chips.filter(
-      (c) => c.shotId === active.shot.id && timeMs >= c.globalStartMs && timeMs < Math.min(c.globalStartMs + c.audioDurationMs, shotEnd),
-    );
-  }, [model, active, timeMs]);
+  // CapCut 語義：字幕跟音嘅全局時間窗行，跨鏡繼續顯示（唔綁死喺所屬鏡）
+  const activeSubtitles: TimelineChipModel[] = useMemo(
+    () =>
+      model.chips.filter(
+        (c) => timeMs >= c.globalStartMs && timeMs < Math.min(c.globalStartMs + c.audioDurationMs, model.totalMs),
+      ),
+    [model, timeMs],
+  );
 
   const portrait = videoRatio !== "16:9";
   return (

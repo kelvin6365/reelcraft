@@ -578,6 +578,10 @@ export const composeEpisodeHandler: TaskHandler = async ({ task, reportProgress 
   const dir = await mkdtemp(join(tmpdir(), "rc-compose-"));
   try {
     const composedPaths: string[] = [];
+    // 全局音軌／字幕收集（CapCut 語義：音獨立於鏡頭切換，跨鏡照播）
+    const episodeAudio: { path: string; startMs: number }[] = [];
+    const episodeSubtitles: { text: string; startMs: number; endMs: number }[] = [];
+    let globalCursorMs = 0;
     for (let i = 0; i < shots.length; i++) {
       const shot = shots[i];
       if (!shot.videoMediaId && !shot.imageMediaId) continue;
@@ -623,39 +627,62 @@ export const composeEpisodeHandler: TaskHandler = async ({ task, reportProgress 
       const probedClip = await probeDurationMs(clipPath);
       const clipDurationMs = probedClip > 0 ? probedClip : shot.durationMs || 3000;
 
+      // 【CapCut 語義】音同字幕唔再逐鏡燒死——呢一步只出淨畫面（連凍幀補時），
+      // 全部配音／字幕收集起嚟，拼接完先以全局時間軸一 pass 疊上去，
+      // 令音可以跨鏡繼續播，唔會喺鏡尾被斬。
+      const { placed, paddedMs } = placeLinesPadded(lineInputs, clipDurationMs);
       const outPath = join(dir, `composed-${i}.mp4`);
-      if (linesWithAudio.length === 0) {
-        // 冇音冇字幕：照舊 passthrough 重編碼（唔加靜音軌）
-        await composeShot({ videoPath: clipPath }, outPath);
-      } else {
-        // placeLinesPadded 係擺位＋凍幀補時嘅單一真相（同瀏覽器預覽共用）——
-        // null offset 順序排、有 offset 釘死；音溢出鏡尾就 tpad 凍幀補時（有封頂）
-        const { placed, paddedMs } = placeLinesPadded(lineInputs, clipDurationMs);
-        const startById = new Map(placed.map((p) => [p.lineId, p]));
+      if (paddedMs > clipDurationMs) {
         await composeShotTimed(
-          {
-            videoPath: clipPath,
-            clipDurationMs,
-            paddedDurationMs: paddedMs,
-            audio: lineAudio.map((la) => ({ path: la.path, startMs: startById.get(la.line.id)!.startMs })),
-            subtitles: lineAudio.map((la) => {
-              const pl = startById.get(la.line.id)!;
-              return { text: la.line.content, startMs: pl.startMs, endMs: pl.endMs };
-            }),
-          },
+          { videoPath: clipPath, clipDurationMs, paddedDurationMs: paddedMs, audio: [], subtitles: [] },
           outPath,
         );
+      } else {
+        // 冇需要補時：照舊 passthrough 重編碼
+        await composeShot({ videoPath: clipPath }, outPath);
       }
+      // 全局位置以「實際 render 出嚟嘅 composed clip」長度累加——避免 tpad／
+      // 編碼捨入令預估同實際有偏差
+      const composedMs = (await probeDurationMs(outPath)) || paddedMs;
+      const startById = new Map(placed.map((p) => [p.lineId, p]));
+      for (const la of lineAudio) {
+        const pl = startById.get(la.line.id)!;
+        episodeAudio.push({ path: la.path, startMs: globalCursorMs + pl.startMs });
+        episodeSubtitles.push({
+          text: la.line.content,
+          startMs: globalCursorMs + pl.startMs,
+          endMs: globalCursorMs + pl.startMs + la.durationMs,
+        });
+      }
+      globalCursorMs += composedMs;
       composedPaths.push(outPath);
-      reportProgress((i / shots.length) * 80);
+      reportProgress((i / shots.length) * 70);
     }
 
     if (composedPaths.length === 0) throw new TaskError("NO_VISUALS", "no shots had image/video to compose", false);
 
-    reportProgress(85);
-    const finalPath = join(dir, "episode.mp4");
-    await concatShots(composedPaths, finalPath);
-    const durationMs = await probeDurationMs(finalPath);
+    reportProgress(75);
+    const silentPath = join(dir, "episode-silent.mp4");
+    await concatShots(composedPaths, silentPath);
+    const totalMs = (await probeDurationMs(silentPath)) || globalCursorMs;
+
+    // 最終 pass：全部配音 adelay 到全局位置一次過疊落成集（amix 容許跨鏡／
+    // 重疊），字幕同樣用全局時間窗燒——只有成集結尾先會截音
+    let finalPath = silentPath;
+    if (episodeAudio.length > 0) {
+      finalPath = join(dir, "episode.mp4");
+      await composeShotTimed(
+        {
+          videoPath: silentPath,
+          clipDurationMs: totalMs,
+          audio: episodeAudio,
+          subtitles: episodeSubtitles.map((s) => ({ ...s, endMs: Math.min(s.endMs, totalMs) })),
+        },
+        finalPath,
+      );
+    }
+    reportProgress(90);
+    const durationMs = (await probeDurationMs(finalPath)) || totalMs;
 
     const media = await createMediaFromBuffer({
       userId: task.userId,

@@ -63,12 +63,12 @@ export function AudioChip({ chip, shots, pxPerSec, laneEl, busy, onPreview, onCo
     <button
       type="button"
       aria-busy={busy}
-      aria-label={`${label}，第 ${shot.shot.shotIndex + 1} 鏡，${(chip.localStartMs / 1000).toFixed(1)} 秒${chip.dead ? "，完全超出鏡尾唔會出聲" : chip.overflow ? "，超出鏡尾會被截斷" : ""}`}
+      aria-label={`${label}，第 ${shot.shot.shotIndex + 1} 鏡，${(chip.localStartMs / 1000).toFixed(1)} 秒${chip.dead ? "，完全超出成集結尾唔會出聲" : chip.overflow ? "，去到成集結尾會被截" : ""}`}
       title={
         chip.dead
-          ? "呢句成句都喺鏡尾之後——合成完全唔會出聲，拖返入鏡內先有效"
+          ? "呢句成句都喺成集結尾之後——合成唔會出聲，拖返前啲先有效"
           : chip.overflow
-            ? "呢句配音超出鏡頭長度，合成時會喺鏡頭尾被截斷"
+            ? "呢句去到成集結尾都未播完，尾段會被截"
             : label
       }
       className={cn(

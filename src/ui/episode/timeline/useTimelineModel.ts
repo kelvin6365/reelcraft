@@ -24,8 +24,9 @@ export interface TimelineChipModel {
   localEndMs: number;
   globalStartMs: number;
   audioDurationMs: number;
-  overflow: boolean; // 超出鏡尾，合成時會被截
-  dead: boolean; // 成句都喺鏡尾之後——合成完全唔會出聲，預覽照樣靜音
+  // CapCut 語義下跨鏡係正常行為，唔警告；只有成集結尾先會截音
+  overflow: boolean; // 去到成集結尾都未播完——尾段會被截
+  dead: boolean; // 成句都喺成集結尾之後——完全唔會出聲
   row: number; // 配音行內嘅堆疊行——時間上重疊嘅 chip 落唔同行，唔准疊埋
 }
 
@@ -88,11 +89,16 @@ export function buildTimelineModel(
         localEndMs: p.endMs,
         globalStartMs: s.startMs + p.startMs,
         audioDurationMs: p.endMs - p.startMs,
-        overflow: p.truncatedAtMs !== null,
-        dead: p.startMs >= paddedMs,
+        overflow: false, // 成集總長知道咗先計（下面補）
+        dead: false,
         row: 0, // 下面統一做 interval stacking
       });
     }
+  }
+  // 跨鏡係正常（CapCut 語義）；只有相對成集結尾先有截音／唔出聲
+  for (const chip of chips) {
+    chip.dead = chip.globalStartMs >= cursor;
+    chip.overflow = !chip.dead && chip.globalStartMs + chip.audioDurationMs > cursor;
   }
   const unmatched: VoiceLineView[] = [];
   for (const v of audioLines) {

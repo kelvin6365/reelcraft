@@ -78,14 +78,14 @@ export function useLineAudio(
     }
   }, [model, ensure]);
 
-  // 時鐘同步：入窗即播（seek 到窗內位置）、出窗／過鏡尾即停（同合成 atrim 一致）
+  // 時鐘同步：入窗即播（seek 到窗內位置）。CapCut 語義——音獨立於鏡頭切換，
+  // 跨鏡照播，只有成集結尾先會截（同合成最終 pass 嘅 atrim 一致）
   useEffect(() => {
     for (const chip of model.chips) {
-      const shot = model.shots.find((s) => s.shot.id === chip.shotId);
       const el = pool.current.get(chip.line.id) ?? (playing ? ensure(chip.line.id) : null);
-      if (!shot || !el) continue;
+      if (!el) continue;
       const start = chip.globalStartMs;
-      const end = Math.min(start + chip.audioDurationMs, shot.startMs + shot.durationMs);
+      const end = Math.min(start + chip.audioDurationMs, model.totalMs);
       const inWindow = playing && timeMs >= start && timeMs < end;
       if (inWindow) {
         const local = (timeMs - start) / 1000;
