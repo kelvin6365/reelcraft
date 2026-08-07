@@ -125,6 +125,44 @@ describe("buildTimedComposeArgs", () => {
     expect(args).not.toContain("[aout]");
   });
 
+  it("pad only → tpad chain and [vout] map, audio trims at padded length", () => {
+    const args = buildTimedComposeArgs(
+      { ...base, paddedDurationMs: 8000, audio: [{ path: "/tmp/a0.m4a", startMs: 0 }], subtitles: [] },
+      "/tmp/out.mp4",
+      false,
+    );
+    const graph = graphOf(args);
+    expect(graph).toContain("[0:v]tpad=stop_mode=clone:stop_duration=2.000[vout]");
+    expect(graph).toContain("atrim=end=8.000,apad=whole_dur=8.000[aout]");
+    expect(args[args.indexOf("-map") + 1]).toBe("[vout]");
+  });
+
+  it("pad + drawtext → tpad precedes drawtext; subtitle window clamps to paddedMs", () => {
+    const args = buildTimedComposeArgs(
+      {
+        ...base,
+        paddedDurationMs: 8000,
+        audio: [{ path: "/tmp/a0.m4a", startMs: 5000 }],
+        subtitles: [{ text: "尾句", startMs: 5000, endMs: 9000 }], // 超 padded 8s → clamp
+      },
+      "/tmp/out.mp4",
+      true,
+    );
+    const graph = graphOf(args);
+    expect(graph).toContain("[0:v]tpad=stop_mode=clone:stop_duration=2.000,drawtext=");
+    expect(graph).toContain("enable='between(t,5.000,8.000)'");
+  });
+
+  it("paddedDurationMs equal to clip → no tpad, behaves as before", () => {
+    const args = buildTimedComposeArgs(
+      { ...base, paddedDurationMs: 6000, audio: [], subtitles: [] },
+      "/tmp/out.mp4",
+      false,
+    );
+    expect(graphOf(args)).toBe("");
+    expect(args[args.indexOf("-map") + 1]).toBe("0:v:0");
+  });
+
   it("negative/fractional startMs is clamped and rounded in adelay", () => {
     const args = buildTimedComposeArgs(
       { ...base, audio: [{ path: "/tmp/a0.m4a", startMs: -100.6 }], subtitles: [] },

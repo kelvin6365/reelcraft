@@ -139,6 +139,14 @@ export function TimelineEditor({ view }: { view: EpisodeView }) {
                   // eslint-disable-next-line @next/next/no-img-element
                   <img src={s.shot.imageUrl} alt="" className="size-full object-cover opacity-60" />
                 )}
+                {s.padMs > 0 && (
+                  // 凍幀延長區：合成時呢一截係定格畫面（tpad／still 拉長）
+                  <div
+                    className="absolute inset-y-0 right-0 bg-[repeating-linear-gradient(-45deg,transparent,transparent_4px,rgba(255,255,255,0.25)_4px,rgba(255,255,255,0.25)_8px)] backdrop-brightness-75"
+                    style={{ width: msToPx(s.padMs) }}
+                    title={`定格延長 ${(s.padMs / 1000).toFixed(1)}s——對白長過鏡頭，合成時凍住最後一幀補時`}
+                  />
+                )}
                 <span className="absolute top-0.5 left-1 rounded bg-black/50 px-1 text-[10px] text-white tabular-nums">
                   {s.shot.shotIndex + 1}
                 </span>

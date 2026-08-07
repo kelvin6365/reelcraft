@@ -101,6 +101,9 @@ export async function composeShot(input: ComposeShotInput, outPath: string): Pro
 export interface TimedComposeInput {
   videoPath: string;
   clipDurationMs: number;
+  // 凍幀補時後嘅目標長度（>= clipDurationMs）。缺省 = 唔補。差額用 tpad
+  // clone 最後一幀填——音溢出鏡尾嗰截先有畫面可以行完。
+  paddedDurationMs?: number;
   audio: { path: string; startMs: number }[];
   subtitles: { text: string; startMs: number; endMs: number }[];
 }
@@ -113,24 +116,28 @@ export function buildTimedComposeArgs(input: TimedComposeInput, outPath: string,
   const args: string[] = ["-i", input.videoPath];
   for (const a of input.audio) args.push("-i", a.path);
 
-  const clipSec = sec(input.clipDurationMs);
+  const paddedMs = Math.max(input.paddedDurationMs ?? input.clipDurationMs, input.clipDurationMs);
+  const padMs = paddedMs - input.clipDurationMs;
+  const paddedSec = sec(paddedMs);
   const chains: string[] = [];
 
-  // video chain: burn each subtitle inside its own time window
+  // video chain：tpad 行先（凍住最後一幀補時）、drawtext 行後（字幕可以疊喺凍幀尾上）
   const windows = drawtext
     ? input.subtitles
-        .map((s) => ({ ...s, endMs: Math.min(s.endMs, input.clipDurationMs) }))
+        .map((s) => ({ ...s, endMs: Math.min(s.endMs, paddedMs) }))
         .filter((s) => s.text && s.endMs > s.startMs)
     : [];
-  const hasVout = windows.length > 0;
+  const hasVout = windows.length > 0 || padMs > 0;
   if (hasVout) {
-    const draws = windows
-      .map((s) => `drawtext=text='${escapeDrawtextText(s.text)}':enable='between(t,${sec(s.startMs)},${sec(s.endMs)})':${DRAWTEXT_STYLE}`)
-      .join(",");
-    chains.push(`[0:v]${draws}[vout]`);
+    const steps: string[] = [];
+    if (padMs > 0) steps.push(`tpad=stop_mode=clone:stop_duration=${sec(padMs)}`);
+    for (const s of windows) {
+      steps.push(`drawtext=text='${escapeDrawtextText(s.text)}':enable='between(t,${sec(s.startMs)},${sec(s.endMs)})':${DRAWTEXT_STYLE}`);
+    }
+    chains.push(`[0:v]${steps.join(",")}[vout]`);
   }
 
-  // audio chain: adelay each line to its start, mix, then trim+pad to clip length
+  // audio chain: adelay each line to its start, mix, then trim+pad to padded length
   const hasAout = input.audio.length > 0;
   if (hasAout) {
     input.audio.forEach((a, i) => {
@@ -140,7 +147,7 @@ export function buildTimedComposeArgs(input: TimedComposeInput, outPath: string,
       input.audio.length > 1
         ? (chains.push(`${input.audio.map((_, i) => `[a${i}]`).join("")}amix=inputs=${input.audio.length}:normalize=0[am]`), "[am]")
         : "[a0]";
-    chains.push(`${mixed}atrim=end=${clipSec},apad=whole_dur=${clipSec}[aout]`);
+    chains.push(`${mixed}atrim=end=${paddedSec},apad=whole_dur=${paddedSec}[aout]`);
   }
 
   if (chains.length) args.push("-filter_complex", chains.join(";"));

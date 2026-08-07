@@ -8,7 +8,7 @@ import { generateImage, generateTts, generateVideo } from "@/lib/ai/generate-med
 import { getStorage } from "@/lib/storage";
 import { createMediaFromBuffer } from "@/lib/media/service";
 import { composeShot, composeShotTimed, concatShots, imageToVideoClip, probeDurationMs } from "@/lib/video/ffmpeg";
-import { placeLines } from "@/lib/timeline/placement";
+import { placeLinesPadded } from "@/lib/timeline/placement";
 import { TaskError } from "@/lib/task/types";
 import type { TaskHandler } from "@/lib/workers/lifecycle";
 import { resolveTaskModels, loadEpisodeWithProject, textCallJson, promptOverridesFromTask } from "@/lib/workers/handlers/shared";
@@ -580,62 +580,63 @@ export const composeEpisodeHandler: TaskHandler = async ({ task, reportProgress 
     const composedPaths: string[] = [];
     for (let i = 0; i < shots.length; i++) {
       const shot = shots[i];
-      let clipPath = join(dir, `src-${i}.mp4`);
+      if (!shot.videoMediaId && !shot.imageMediaId) continue;
+      const clipPath = join(dir, `src-${i}.mp4`);
+
+      // 音先落地＋探測——純圖鏡嘅 still 長度而家依賴擺位結果，所以要行先
+      const linesWithAudio = shot.voiceLines.filter((l) => l.audioMediaId);
+      const lineAudio: { line: (typeof linesWithAudio)[number]; path: string; durationMs: number }[] = [];
+      for (let k = 0; k < linesWithAudio.length; k++) {
+        const media = await prisma.mediaObject.findUniqueOrThrow({ where: { id: linesWithAudio[k].audioMediaId! } });
+        const p = join(dir, `aud-${i}-${k}.m4a`);
+        await writeFile(p, await storage.getObjectBuffer(media.storageKey));
+        // 舊資料 durationMs 係 null——就地探測兼回填，等時間軸 UI 下次有得用
+        let durationMs = media.durationMs ?? 0;
+        if (durationMs <= 0) {
+          durationMs = await probeDurationMs(p);
+          if (durationMs > 0) {
+            await prisma.mediaObject.update({ where: { id: media.id }, data: { durationMs } }).catch(() => {});
+          }
+        }
+        lineAudio.push({ line: linesWithAudio[k], path: p, durationMs: durationMs > 0 ? durationMs : 2000 });
+      }
+      const lineInputs = lineAudio.map((la) => ({
+        id: la.line.id,
+        lineIndex: la.line.lineIndex,
+        offsetMs: la.line.offsetMs,
+        audioDurationMs: la.durationMs,
+      }));
 
       if (shot.videoMediaId) {
         const media = await prisma.mediaObject.findUniqueOrThrow({ where: { id: shot.videoMediaId } });
         await writeFile(clipPath, await storage.getObjectBuffer(media.storageKey));
-      } else if (shot.imageMediaId) {
-        const media = await prisma.mediaObject.findUniqueOrThrow({ where: { id: shot.imageMediaId } });
+      } else {
+        const media = await prisma.mediaObject.findUniqueOrThrow({ where: { id: shot.imageMediaId! } });
         const imgPath = join(dir, `img-${i}.png`);
         await writeFile(imgPath, await storage.getObjectBuffer(media.storageKey));
-        await imageToVideoClip(imgPath, Math.max(2, Math.round(shot.durationMs / 1000) || 3), clipPath, project.videoRatio);
-      } else {
-        continue;
+        // 純圖鏡：still 直接 render 到補時後長度（免 tpad）——之後 padMs≈0
+        const pre = placeLinesPadded(lineInputs, shot.durationMs || 3000);
+        await imageToVideoClip(imgPath, Math.max(2, Math.ceil(pre.paddedMs / 1000)), clipPath, project.videoRatio);
       }
 
       // 實際 clip 長度做時間軸基準（探測失敗先退返 storyboard 意圖值）
       const probedClip = await probeDurationMs(clipPath);
       const clipDurationMs = probedClip > 0 ? probedClip : shot.durationMs || 3000;
 
-      const linesWithAudio = shot.voiceLines.filter((l) => l.audioMediaId);
       const outPath = join(dir, `composed-${i}.mp4`);
       if (linesWithAudio.length === 0) {
         // 冇音冇字幕：照舊 passthrough 重編碼（唔加靜音軌）
         await composeShot({ videoPath: clipPath }, outPath);
       } else {
-        const lineAudio: { line: (typeof linesWithAudio)[number]; path: string; durationMs: number }[] = [];
-        for (let k = 0; k < linesWithAudio.length; k++) {
-          const media = await prisma.mediaObject.findUniqueOrThrow({ where: { id: linesWithAudio[k].audioMediaId! } });
-          const p = join(dir, `aud-${i}-${k}.m4a`);
-          await writeFile(p, await storage.getObjectBuffer(media.storageKey));
-          // 舊資料 durationMs 係 null——就地探測兼回填，等時間軸 UI 下次有得用
-          let durationMs = media.durationMs ?? 0;
-          if (durationMs <= 0) {
-            durationMs = await probeDurationMs(p);
-            if (durationMs > 0) {
-              await prisma.mediaObject.update({ where: { id: media.id }, data: { durationMs } }).catch(() => {});
-            }
-          }
-          lineAudio.push({ line: linesWithAudio[k], path: p, durationMs: durationMs > 0 ? durationMs : 2000 });
-        }
-
-        // placeLines 係擺位單一真相（同瀏覽器預覽共用）——null offset 順序排，
-        // 有 offset 釘死；字幕窗口 = 音嘅實際時間窗
-        const placed = placeLines(
-          lineAudio.map((la) => ({
-            id: la.line.id,
-            lineIndex: la.line.lineIndex,
-            offsetMs: la.line.offsetMs,
-            audioDurationMs: la.durationMs,
-          })),
-          clipDurationMs,
-        );
+        // placeLinesPadded 係擺位＋凍幀補時嘅單一真相（同瀏覽器預覽共用）——
+        // null offset 順序排、有 offset 釘死；音溢出鏡尾就 tpad 凍幀補時（有封頂）
+        const { placed, paddedMs } = placeLinesPadded(lineInputs, clipDurationMs);
         const startById = new Map(placed.map((p) => [p.lineId, p]));
         await composeShotTimed(
           {
             videoPath: clipPath,
             clipDurationMs,
+            paddedDurationMs: paddedMs,
             audio: lineAudio.map((la) => ({ path: la.path, startMs: startById.get(la.line.id)!.startMs })),
             subtitles: lineAudio.map((la) => {
               const pl = startById.get(la.line.id)!;

@@ -12,6 +12,36 @@ export interface PlacedLine {
   truncatedAtMs: number | null;
 }
 
+// 凍幀補時上限：最多補到 clip 原長 2 倍、或 +6 秒（取小）。超過上限嘅音照截——
+// 唔封頂嘅話長對白會凍格十幾秒，成片好假。
+export function padClip(clipMs: number, neededMs: number): { paddedMs: number; padMs: number } {
+  const cap = Math.max(clipMs, Math.min(clipMs * 2, clipMs + 6000));
+  const paddedMs = Math.min(Math.max(neededMs, clipMs), cap); // 永不縮短
+  return { paddedMs, padMs: paddedMs - clipMs };
+}
+
+export interface PaddedPlacement {
+  placed: PlacedLine[];
+  clipMs: number;
+  paddedMs: number;
+  padMs: number;
+}
+
+// 擺位 + 凍幀補時一體：worker 合成同瀏覽器預覽都必須行呢個，唔准自己拼 padClip。
+// 唔使 fixpoint：placeLines 只用 shotDurationMs 計 truncatedAtMs，位置只依賴
+// offsetMs／lineIndex／音長——neededMs 第一 pass 已經係終值，第二次 placeLines
+// 純粹對 paddedMs 刷新截斷 flags。
+export function placeLinesPadded(
+  lines: { id: string; lineIndex: number; offsetMs: number | null; audioDurationMs: number }[],
+  clipMs: number,
+): PaddedPlacement {
+  const first = placeLines(lines, clipMs);
+  const neededMs = first.reduce((m, p) => Math.max(m, p.endMs), 0);
+  const { paddedMs, padMs } = padClip(clipMs, neededMs);
+  const placed = padMs > 0 ? placeLines(lines, paddedMs) : first;
+  return { placed, clipMs, paddedMs, padMs };
+}
+
 export function placeLines(
   lines: { id: string; lineIndex: number; offsetMs: number | null; audioDurationMs: number }[],
   shotDurationMs: number,
