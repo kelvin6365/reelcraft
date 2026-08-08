@@ -19,9 +19,11 @@ export function dailyApiTypeForTask(type: TaskType): DailyApiType | null {
   switch (type) {
     case TASK_TYPE.IMAGE_CHARACTER:
     case TASK_TYPE.IMAGE_LOCATION:
+    case TASK_TYPE.IMAGE_PROP:
     case TASK_TYPE.IMAGE_SHOT:
       return "image";
     case TASK_TYPE.VIDEO_SHOT:
+    case TASK_TYPE.VIDEO_PROP:
       return "video";
     default:
       return null;

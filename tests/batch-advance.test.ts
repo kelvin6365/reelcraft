@@ -38,6 +38,7 @@ const baseSnapshot: EpisodeSnapshot = {
   storyboardConfirmed: false,
   isSrtMode: false,
   voiceLines: { total: 0, withAudio: 0 },
+  voiceCast: { total: 0, assigned: 0 },
   hasExport: false,
   runningTaskTypes: [],
   failedTasks: 0,
@@ -148,9 +149,16 @@ describe("advanceEpisode", () => {
     expect(submitTask).toHaveBeenCalledWith(expect.objectContaining({ type: "VOICE_ANALYZE" }));
   });
 
-  it("without skipVideo, fans out shot videos", async () => {
+  // 配音先行：視頻長度跟真音長，所以要配音齊咗先輪到生片
+  it("without skipVideo, fans out shot videos once voice is done", async () => {
     mockEpisode();
-    mockSnapshot({ hasScript: true, scenes: 1, shots: { total: 2, withImage: 2, withVideo: 0 }, storyboardConfirmed: true });
+    mockSnapshot({
+      hasScript: true,
+      scenes: 1,
+      shots: { total: 2, withImage: 2, withVideo: 0 },
+      storyboardConfirmed: true,
+      voiceLines: { total: 3, withAudio: 3 },
+    });
     shotFindMany.mockResolvedValue([{ id: "s1" }, { id: "s2" }]);
     expect(await advanceEpisode("e1")).toBe("shot-videos:2");
     expect(submitTask).toHaveBeenCalledWith(expect.objectContaining({ type: "VIDEO_SHOT", targetId: "s1" }));

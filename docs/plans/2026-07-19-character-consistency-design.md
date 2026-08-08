@@ -87,7 +87,50 @@ M1 落地後再迭代出以下機制，均圍繞「令參考圖更準」呢個�
 
 - **近臉特寫改手動觸發**：原設計無提及，實作初期鎖定資產會自動提交近臉特寫任務；現改為使用者手動按「近臉」才生成（`lock` route 不再自動 submit），shot 生成本身容忍缺少 `faceImageMediaId`。理由：自動生成會在使用者未準備好時消耗一次生成額度，亦令鎖定動作的意圖變得混雜。
 - **墊臉（`refFaceMediaId`/`refFaceNote`）**：角色資產可上載一張參考臉相＋補充要求，生成候選圖時排第一張 reference（`keepIdentity` 鎖定圖排第二），令新角色候選圖從第一輪即跟隨指定的臉，無須鎖定之後再碰運氣。
-- **場景多視角接入鏡頭參考**：`Location.angles`（extract_assets v3 判斷重要場景建議 ≥2 個視角，逐張手動生成 16:9 單圖）已接入 `buildShotRefAssets`——鏡頭組裝參考圖時，場景主視角與已生成的場景視角均按優先序入列（角色 > 場景主視角 > 場景視角），AI 可按本鏡頭機位選取最貼合的一張場景參考，不再是一張場景圖供所有鏡頭共用。
+- **場景多視角**：`Location.angles`（extract_assets v3 判斷重要場景建議 ≥2 個視角，逐張手動生成單圖，比例跟 `project.videoRatio`）。⚠️ 本條原文寫「已接入 `buildShotRefAssets`」，**已不成立**：參考圖配額收緊至 3 格（1 場景主視角 + 2 角色）之後，場景視角圖不再進入鏡頭參考圖序列，`buildShotRefAssets` 只取場景主視角。場景視角圖現時的用途是給使用者確認空間一致性，以及作為場景主圖之外的人手參考。
 - **`MAX_SHOT_REFS = 6` 顯式截斷**：因應下游 provider 對參考圖數量有硬上限，在 legend 編號前截斷，避免圖例與實際送出圖片錯位。
 
 詳細機制見 `docs/tech/06-prompts.md`（鏡頭參考圖組裝、prompt 版本）同 `docs/tech/01-data-model.md`（`refFaceMediaId`/`angles` 欄位）。
+
+## 7. 角色資產圖改版（2026-07-28）
+
+角色生圖原本一次過生成「多角度設定表（turnaround sheet：正面／側面／背面 + 面部特寫拼一張）」候選圖，改為與 `Location.angles` / `Prop.views` 一致的模式：
+
+- 角色生成只出**一張**全身正面候選圖（`Character.candidates` 長度由 3 變 1），使用者揀圖鎖定後即為主圖。
+- 鎖定主圖後，新增 `Character.views`（`[{label, prompt, mediaId}]`，同 `Location.angles`/`Prop.views` 同一形狀），預設含「側面」「背面」兩個空位，各自按需要逐張手動生成，以鎖定嘅正面圖做參考圖鎖定身份。
+- 已鎖定嘅角色不能再重生主圖，需先解鎖（同 Location/Prop 一致的 `LOCKED` guard）。
+- 鏡頭參考圖組裝（`buildShotRefAssets`）依序帶入：正面全身 → 面部特寫 → 已生成嘅側面/背面視角，圖例標籤相應由「角色全身多視角」改為「角色全身正面」。
+- `image_prompt_shot` prompt（v8）措辭配合更新：角色參考圖唔再係單一設定表，而係一批獨立圖（正面／側面／背面／面部特寫），AI 需按本鏡頭機位揀最貼合嗰張。
+
+## 8. 場景資產改原生豎構圖（2026-08-01）
+
+場景主圖與場景視角圖原本硬編碼 `aspectRatio: "16:9"`（主圖見 commit `d204865`，理由只留在 commit message，無設計文檔），現一律改為跟 `project.videoRatio`。
+
+**診斷過程**：分鏡出圖出現燒死的黑邊 24/37。隔離實驗（同一鏡頭、同一 prompt，只更換參考圖）：
+
+| 參考圖 | 黑邊高度 |
+|---|---|
+| 無參考圖 | 472px |
+| 16:9 場景圖**裁切**成 9:16 | 327px |
+| 原生 9:16 場景圖 | **0px** |
+
+**關鍵結論——問題不是比例，是構圖。** `outbound-image.ts` 的 `planEncode` 一直已經把非 `identityAnchor` 的參考圖裁切到目標比例（實測 1344×768 → 432×768），所以送到 provider 的那張本來就是 9:16。真正的變數是：橫向 vista 經中央裁切丟棄 68% 畫面，模型收到半截構圖後會自行重建一個開闊場景再 letterbox；原生豎構圖則不會。因此**事後裁切無法取代原生豎構圖**，不要因為「反正會裁」而把 16:9 改回去。
+
+連帶改動：
+
+- `location-angles.ts` 的 `ANGLE_REF_FRAMING`（append 到每一張場景主圖）由 `wide establishing reference view` 改寫為縱向取向的 establishing 描述。原句是整條場景 prompt 中最強的橫構圖信號，與 API 的 `aspect_ratio` 直接衝突。
+- 場景視角圖同步跟 `project.videoRatio`：視角圖是圖生圖、以主圖做唯一參考，9:16 主圖配 16:9 目標會令視角圖自己 letterbox。
+- `buildShotRefAssets` 的排序（場景在前、角色在後）維持不變，但理由改變：不再是「讓最後一張是 9:16」，而是「讓 identity anchor 最貼近輸出」。
+- UI（`AssetsPanel`）候選圖格與視角縮圖改為按資產類型取比例，不再一律 `aspect-video`。
+- 參考圖配額現時為 `MAX_SHOT_REFS = 3`（1 場景 + 2 角色），第 6 節所述的 `= 6` 已過時。
+
+## 9. 外貌描述內容過濾（2026-08-01）
+
+`image_prompt_shot` 模板要求角色外貌「照譯勿改寫」逐字帶入，所以 `Character.appearancePrompt` 的原文會原封不動送到出圖 provider。實測有角色的外貌描述含「露出许多皮肤（尤其是腰部）」，觸發 `HTTP_422 content_policy_violation`，整個鏡頭 terminal fail。
+
+新增 `src/lib/prompts/appearance-filter.ts`，在組裝 `locked_assets` 之前過濾，分兩層：
+
+1. **整句丟棄**：整句的重點就是裸露程度、不含任何身份資訊（如「露出许多皮肤（尤其是腰部）」、「半裸」、「事业线」、`revealing` / `scantily clad` / `exposed midriff` / `cleavage`）。
+2. **只刮形容詞**：風險形容詞附著在有用的句子上（「性感的黑色旗袍」→「黑色旗袍」；`a seductive red qipao` → `a red qipao`）。
+
+原則是**只剝審查詞，不剝身份錨**：服裝、髮色、髮型、配件、體型、年齡是角色跨鏡一致性的唯一文字載體，剝掉等於主動製造角色漂移，比 422 更難察覺。所以兩層 pattern 都刻意寫窄——寧願漏網一句去到 provider 吃 422（可見、可查、可補 pattern），也不要靜靜吃掉角色的服裝描述。命中時 `console.warn` 留痕（帶資產名 + 剝走的原文 + 送出版本）。

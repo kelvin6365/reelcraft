@@ -13,13 +13,33 @@
       "description": "長篇原文切分集邊界 + 每集自評風險，回傳起訖錨點（JSON）。"
     },
     {
-      "id": "extract_assets",
-      "path": "pipeline/extract_assets.zh.txt",
-      "version": "3",
+      "id": "extract_characters",
+      "path": "pipeline/extract_characters.zh.txt",
+      "version": "2",
+      "variables": [
+        "script_text",
+        "raw_text"
+      ],
+      "description": "從劇本抽角色資產，含去重與外貌字數量化規則；appearance 只准寫畫得出嘅外觀、wardrobe 只准寫著戴喺身上嘅嘢（手持武器歸道具、翅膀獸耳歸 appearance）；raw_text 人物小傳段優先於 script_text 判斷客觀事實；身體特徵（翅膀／獸耳／角／尾）必須落 appearance，雙向自我檢查防蒸發（JSON）。"
+    },
+    {
+      "id": "extract_locations",
+      "path": "pipeline/extract_locations.zh.txt",
+      "version": "2",
       "variables": [
         "script_text"
       ],
-      "description": "從劇本抽角色與場景資產，含去重與外貌字數量化規則（JSON）。"
+      "description": "從劇本抽場景資產，地點＋時段去重；description 同 angles 嘅 label／prompt 一律禁人物（label 會原封不動變成生圖嘅 reposition the camera to 內容）；重要場景至少 2 個 angles，prompt 預設留空靠圖生圖；description 刪人物後仍須 20-60 字交代環境，唔准砍剩籠統半句（JSON）。"
+    },
+    {
+      "id": "extract_props",
+      "path": "pipeline/extract_props.zh.txt",
+      "version": "7",
+      "variables": [
+        "script_text",
+        "target_name"
+      ],
+      "description": "從劇本抽道具資產，AI 判斷三級分類（關鍵敘事/場景填充/動態特效）+ 實物/抽象前置過濾；服裝歸角色 wardrobe 唔抽做道具、description 禁人物、必填欄位抽唔齊就唔抽；支援指定單一道具名補抽（JSON）。"
     },
     {
       "id": "script_review",
@@ -33,32 +53,32 @@
     {
       "id": "rewrite_script",
       "path": "pipeline/rewrite_script.zh.txt",
-      "version": "3",
+      "version": "4",
       "variables": [
         "novel_text",
         "style_note",
         "theme",
         "character_bios"
       ],
-      "description": "小說改寫成分場短劇劇本，30-60 秒/場，防偷懶（純文字）。"
+      "description": "小說改寫成分場短劇劇本，30-60 秒/場，防偷懶，非人物聲源用【】標記同人物對白結構上分開（純文字）。"
     },
     {
       "id": "build_scenes",
       "path": "pipeline/build_scenes.zh.txt",
-      "version": "1",
+      "version": "4",
       "variables": [
         "script_text"
       ],
-      "description": "劇本切場景，只回傳起訖文字錨點供程式定位，約 20 元素/場（JSON）。"
+      "description": "劇本切場景，只回傳起訖文字錨點供程式定位，約 20 元素/場；真正轉場（換地點／換時段）要切，插入式閃回／回憶／夢境**唔切**、整段留喺母場（切開會令同一地點各自鎖一份空間契約而跳軸，閃回改由下游鏡頭層逐鏡標記）；括號註記原文照留（JSON）。"
     },
     {
       "id": "storyboard_plan",
       "path": "pipeline/storyboard_plan.zh.txt",
-      "version": "3",
+      "version": "8",
       "variables": [
         "scene_text"
       ],
-      "description": "分鏡第①階段規劃：場景切鏡頭清單，約 15 字/鏡，每鏡帶 source_text（JSON）。"
+      "description": "分鏡第①階段規劃：場景切鏡頭清單，約 15 字/鏡，每鏡帶 source_text；subject 必須係可見畫面、一鏡一凝固瞬間（禁時序詞，優先於字數比例）、只准提到 characters 入面嘅人、每鏡 characters 硬性 ≤2；【】標記嘅非人物聲源唔准當角色；blocking 只准寫全場恆定狀態、只描述現在時空；逐鏡標 flashback ＋ flashback_location（閃回鏡唔攞母場場景圖同空間契約）（JSON）。"
     },
     {
       "id": "storyboard_photography",
@@ -91,25 +111,36 @@
     {
       "id": "voice_analyze",
       "path": "pipeline/voice_analyze.zh.txt",
-      "version": "2",
+      "version": "3",
       "variables": [
         "scene_text",
         "shot_list_json"
       ],
-      "description": "抽對白台詞，標說話者/情緒/情緒強度(≤0.5)/對應鏡頭（JSON）。"
+      "description": "抽對白台詞，標說話者/情緒/情緒強度(≤0.5)/對應鏡頭；【】標記嘅非人物聲源照抽，lineType=vo（JSON）。"
+    },
+    {
+      "id": "voice_cast",
+      "path": "pipeline/voice_cast.zh.txt",
+      "version": "1",
+      "variables": [
+        "voice_library_json",
+        "cast_json"
+      ],
+      "description": "為每個聲源由音色庫派一個音色：性別/年齡/性格對位，戲份頭三名唔准撞音色，非人物聲源（旁白/機械音）另有規則；voiceId 只准原文照抄唔准杜撰（JSON）。"
     },
     {
       "id": "image_prompt_shot",
       "path": "pipeline/image_prompt_shot.zh.txt",
-      "version": "7",
+      "version": "13",
       "variables": [
         "shot_json",
         "scene_blocking",
         "reference_legend",
         "locked_assets",
-        "style_suffix"
+        "style_suffix",
+        "output_language"
       ],
-      "description": "鏡頭分鏡轉英文生圖 prompt，@图N 參考綁定 + 空間契約連戲 + 連續性條款。"
+      "description": "鏡頭→生圖 prompt（引用鎖定資產）；連貫敘述段落式（A/B 實測勝逗號詞條列）、參考圖須講明作用範圍、禁含糊詞。"
     }
   ]
 }

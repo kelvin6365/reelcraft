@@ -47,6 +47,24 @@ interface AtlasPrediction {
   };
 }
 
+// 一條在途 atlascloud prediction 嘅座標。`endpoint` 對 poll 嚟講用唔著（prediction
+// URL 唔分 api type），但照持久化落 journal，方便對數同將來 cancel endpoint 出咗之後用。
+export interface AtlasHandle {
+  endpoint: string;
+  requestId: string;
+}
+
+// 續 poll 一條已知 prediction —— 冪等，斷線重入照 poll 得。
+export async function atlasPoll(handle: AtlasHandle, apiKey: string): Promise<{ url: string }> {
+  return { url: await pollForOutput(handle.requestId, apiKey) };
+}
+
+// AtlasCloud 未有公開嘅 cancel endpoint（2026-08 查過 docs）。留住呢個 seam，
+// 令 request-journal 對兩個 provider 一視同仁；出咗 endpoint 補一行 fetch 就得。
+export async function atlasCancel(_handle: AtlasHandle, _apiKey: string): Promise<void> {
+  throw new AiError("ATLAS_CANCEL_UNSUPPORTED", "atlascloud has no documented cancel endpoint", false);
+}
+
 async function pollForOutput(predictionId: string, apiKey: string): Promise<string> {
   const headers = { Authorization: `Bearer ${apiKey}` };
   const deadline = Date.now() + POLL_TIMEOUT_MS;
@@ -73,6 +91,7 @@ export interface AtlasImageArgs {
   prompt: string;
   negativePrompt?: string;
   aspectRatio: string;
+  resolution?: string; // "1K" | "2K" | "4K" — pre-validated against capabilities upstream
   apiKey: string;
   // Edit-family models (…/edit) take input images via `images` (1-14 URLs).
   // AtlasCloud documents URLs only — data URIs (local-dev storage) are rejected
@@ -80,12 +99,28 @@ export interface AtlasImageArgs {
   referenceImages?: string[];
 }
 
-export async function atlasImage(args: AtlasImageArgs): Promise<{ url: string; providerRequestId: string }> {
+function atlasImageBody(args: AtlasImageArgs): Record<string, unknown> {
   const body: Record<string, unknown> = {
     model: args.modelId,
     prompt: args.prompt,
     aspect_ratio: args.aspectRatio,
   };
+  if (args.resolution) {
+    // Field shape per model family (verified 2026-07 on atlascloud.ai model pages):
+    // nano-banana-2 takes a lowercase `resolution` enum ("1k"|"2k"|"4k");
+    // seedream-v5.0-pro takes `size: "WIDTH*HEIGHT"`.
+    if (args.modelId.includes("nano-banana")) {
+      body.resolution = args.resolution.toLowerCase();
+    } else if (args.modelId.includes("seedream-v5")) {
+      const long = { "1K": 1024, "2K": 2048, "4K": 4096 }[args.resolution];
+      const m = /^(\d+):(\d+)$/.exec(args.aspectRatio);
+      if (long && m) {
+        const [w, h] = [Number(m[1]), Number(m[2])];
+        const short = Math.round((long * Math.min(w, h)) / Math.max(w, h) / 8) * 8;
+        body.size = w >= h ? `${long}*${short}` : `${short}*${long}`;
+      }
+    }
+  }
   if (args.negativePrompt) body.negative_prompt = args.negativePrompt;
   if (args.referenceImages?.length) {
     if (args.referenceImages.some((u) => u.startsWith("data:"))) {
@@ -96,7 +131,16 @@ export async function atlasImage(args: AtlasImageArgs): Promise<{ url: string; p
     }
     body.images = args.referenceImages;
   }
-  const id = await submit("generateImage", args.apiKey, body);
+  return body;
+}
+
+export async function atlasImageSubmit(args: AtlasImageArgs): Promise<AtlasHandle> {
+  const endpoint = "generateImage";
+  return { endpoint, requestId: await submit(endpoint, args.apiKey, atlasImageBody(args)) };
+}
+
+export async function atlasImage(args: AtlasImageArgs): Promise<{ url: string; providerRequestId: string }> {
+  const id = await submit("generateImage", args.apiKey, atlasImageBody(args));
   const url = await pollForOutput(id, args.apiKey);
   return { url, providerRequestId: id };
 }
@@ -105,12 +149,13 @@ export interface AtlasVideoArgs {
   modelId: string;
   prompt: string;
   imageUrl?: string;
+  endImageUrl?: string;
   durationSec: number;
   aspectRatio: string;
   apiKey: string;
 }
 
-export async function atlasVideo(args: AtlasVideoArgs): Promise<{ url: string; providerRequestId: string }> {
+function atlasVideoBody(args: AtlasVideoArgs): Record<string, unknown> {
   // Seedance 2.0 family has its own documented schema (verified 2026-07 at
   // atlascloud.ai/models/bytedance/seedance-2.0/image-to-video): first frame in
   // `image` (URL or data URI), `ratio: "adaptive"` follows the frame's aspect,
@@ -136,7 +181,20 @@ export async function atlasVideo(args: AtlasVideoArgs): Promise<{ url: string; p
     if (isSeedance) body.image = args.imageUrl;
     else body.image_url = args.imageUrl;
   }
-  const id = await submit("generateVideo", args.apiKey, body);
+  // 尾幀（首尾幀）：Seedance 2.0 全家（mini／fast／正式版）收 optional `last_image`，
+  // 條片會由 `image` 過渡到佢。legacy 分支冇呢個參數，多傳會被 provider 拒，所以只喺
+  // Seedance 分支寫。能力閘喺 generate-media.ts，行到呢度即係已經確認支援。
+  if (args.endImageUrl && isSeedance) body.last_image = args.endImageUrl;
+  return body;
+}
+
+export async function atlasVideoSubmit(args: AtlasVideoArgs): Promise<AtlasHandle> {
+  const endpoint = "generateVideo";
+  return { endpoint, requestId: await submit(endpoint, args.apiKey, atlasVideoBody(args)) };
+}
+
+export async function atlasVideo(args: AtlasVideoArgs): Promise<{ url: string; providerRequestId: string }> {
+  const id = await submit("generateVideo", args.apiKey, atlasVideoBody(args));
   const url = await pollForOutput(id, args.apiKey);
   return { url, providerRequestId: id };
 }
@@ -145,16 +203,29 @@ export interface AtlasTtsArgs {
   modelId: string;
   text: string;
   referenceAudioUrl?: string;
+  presetVoiceId?: string;
+  emotion?: string;
+  emotionStrength?: number;
   apiKey: string;
 }
 
 // TODO verify against real API when key provisioned — AtlasCloud publishes no TTS
 // endpoint yet. Assumed to follow the same submit→poll shape as image/video via a
 // `generateSpeech` endpoint; adjust the endpoint name + field mapping once known.
-export async function atlasTts(args: AtlasTtsArgs): Promise<{ url: string; seconds?: number; providerRequestId: string }> {
+function atlasTtsBody(args: AtlasTtsArgs): Record<string, unknown> {
   const body: Record<string, unknown> = { model: args.modelId, text: args.text };
   if (args.referenceAudioUrl) body.reference_audio_url = args.referenceAudioUrl;
-  const id = await submit("generateSpeech", args.apiKey, body);
+  if (args.presetVoiceId) body.voice_id = args.presetVoiceId;
+  return body;
+}
+
+export async function atlasTtsSubmit(args: AtlasTtsArgs): Promise<AtlasHandle> {
+  const endpoint = "generateSpeech";
+  return { endpoint, requestId: await submit(endpoint, args.apiKey, atlasTtsBody(args)) };
+}
+
+export async function atlasTts(args: AtlasTtsArgs): Promise<{ url: string; seconds?: number; providerRequestId: string }> {
+  const id = await submit("generateSpeech", args.apiKey, atlasTtsBody(args));
   const url = await pollForOutput(id, args.apiKey);
   return { url, providerRequestId: id };
 }

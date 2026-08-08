@@ -21,8 +21,13 @@ AI 短劇生產平台。開工前先讀 `docs/plans/2026-07-18-reelcraft-mvp-des
 
 - **沒有 provider key 的環境要設定 `MODEL_DEFAULTS_PRESET=fake`**。系統模型預設為真實模型（三層解析：system → user → project，見 `docs/tech/03-provider-layer.md`），未設定 preset 又沒有 key → 生成即出現 `PROVIDER_KEY_MISSING`。smoke scripts / CI 也都要設定。
 
+- **配音「唔郁」多數係未派音色，唔係壞咗**。TTS 唔准喺冇明確音色來源之下生成——冇音色 provider 會用佢自己嘅預設聲，成集所有角色（連旁白）同一把，而且冇任何 error。所以未派晒音色之前，`tts-all` 唔會開 task、nextAction 停喺「派音（餘 N 把聲未揀音色）」、autorun 停 `paused:voice-cast`。配音站撳「AI 派音」或者逐個揀就過到。見 `docs/tech/03-provider-layer.md §配音`。
+
+- **改咗站點順序就要改埋 `computeStages` 同 `computeNextAction` 兩處**。站點次序係 …→ 圖像 → **配音** → 視頻 → 成片：每鏡幾長要由真實音檔長度決定（TTS 完成即回寫 `Shot.durationMs`），先估字數生片就一定要喺成片時凍幀補時或者硬截斷。
+
 - **修改了 schema.prisma / 跑了 migration 之後，一定要重啟 dev server**。Next dev 持有的是舊版 `@prisma/client`，新 model 會是 `undefined` → route 500。`npx prisma generate` 並不足夠，必須重啟該 process。
 - **worker 使用 `npm run worker`（tsx watch）會自動 reload code**——修改 handler/adapter 不需要手動重啟。但 migration 後 Prisma client 需要重新生成，worker 也要跟著 reload（修改任何 .ts 都會觸發；或手動重啟）。單次執行使用 `npm run worker:once`。
+- **跑真模型嘅長任務用 `npm run dev:stable`**（`WORKER_WATCH=0`，worker 唔行 tsx watch）。watch 模式下改任何被 worker 傳遞 import 到嘅檔案都會 restart。在途生成本身已經可以斷點續接（`src/lib/ai/request-journal.ts`：request_id 落 DB，重入時續 poll 而唔係重新 submit），但唔重啟梗係更順。
 - dev 時 web 與 worker **兩者都必須在運行**：`npm run dev` 已一條命令同時啟動（full 模式 concurrently 兩個 process；local 模式 worker 內嵌於同一 process）。worker 若停止運作 → 生成任務會卡在 queued。若手動分開執行，使用 `npm run dev:web` + `npm run worker`。
 
 ## 工作法

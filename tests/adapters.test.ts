@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { falImage, falVideo, falTts } from "@/lib/ai/adapters/fal";
+import { falCancel, falImage, falVideo, falTts } from "@/lib/ai/adapters/fal";
 import { openrouterAdapter } from "@/lib/ai/adapters/openrouter";
 import { priceMedia, priceText } from "@/lib/ai/capabilities";
 import { AiError } from "@/lib/ai/types";
@@ -47,15 +47,26 @@ describe("fal adapter — Queue submit→poll→completed", () => {
     expect(out.url).toBe("https://cdn.fal/out.png");
     expect(out.providerRequestId).toBe("req-123");
 
-    // submit call: correct queue URL + `Key` auth header + mapped image_size
+    // submit call: correct queue URL + `Key` auth header. nano-banana family
+    // takes aspect_ratio (image_size is a Seedream/generic field it ignores).
     const [submitUrl, submitInit] = fetchMock.mock.calls[0];
     expect(String(submitUrl)).toBe("https://queue.fal.run/fal-ai/nano-banana");
     expect(submitInit?.method).toBe("POST");
     expect((submitInit?.headers as Record<string, string>).Authorization).toBe("Key k");
-    expect(JSON.parse(submitInit?.body as string)).toMatchObject({
-      prompt: "a cat",
-      image_size: "portrait_16_9",
-    });
+    const submitBody = JSON.parse(submitInit?.body as string);
+    expect(submitBody).toMatchObject({ prompt: "a cat", aspect_ratio: "9:16" });
+    expect(submitBody.image_size).toBeUndefined();
+    expect(submitBody.resolution).toBeUndefined(); // not requested → provider default
+  });
+
+  it("falImage maps resolution per family: enum for nano-banana-pro, pixels for Seedream", async () => {
+    let fetchMock = stubFalQueue({ result: { images: [{ url: "https://cdn.fal/o.png" }] } });
+    await falImage({ modelId: "fal-ai/nano-banana-pro", prompt: "x", aspectRatio: "16:9", resolution: "4K", apiKey: "k" });
+    expect(JSON.parse(fetchMock.mock.calls[0][1]?.body as string)).toMatchObject({ aspect_ratio: "16:9", resolution: "4K" });
+
+    fetchMock = stubFalQueue({ result: { images: [{ url: "https://cdn.fal/o.png" }] } });
+    await falImage({ modelId: "fal-ai/bytedance/seedream/v4/text-to-image", prompt: "x", aspectRatio: "9:16", resolution: "4K", apiKey: "k" });
+    expect(JSON.parse(fetchMock.mock.calls[0][1]?.body as string).image_size).toEqual({ width: 2304, height: 4096 });
   });
 
   it("falVideo sends a motion negative prompt and cfg_scale for Kling", async () => {
@@ -132,6 +143,37 @@ describe("fal adapter — Queue submit→poll→completed", () => {
     expect(body).toMatchObject({ aspect_ratio: "9:16", duration: "5", image_url: "https://signed/frame.png" });
   });
 
+  // Kling 收 tail_image_url 做尾幀。呢條路徑而家未通電（capabilities.json 冇任何 fal
+  // model 標 supportsEndFrame），但參數映射要係啱嘅，核實到就標旗即用。
+  it("falVideo passes tail_image_url when an end frame is supplied", async () => {
+    const fetchMock = stubFalQueue({ result: { video: { url: "https://cdn.fal/out.mp4" } } });
+    await falVideo({
+      modelId: "fal-ai/kling-video/v3/standard/image-to-video",
+      prompt: "pan across",
+      imageUrl: "https://signed/a.png",
+      endImageUrl: "https://signed/b.png",
+      durationSec: 5,
+      aspectRatio: "9:16",
+      apiKey: "k",
+    });
+    const body = JSON.parse(fetchMock.mock.calls[0][1]?.body as string);
+    expect(body.image_url).toBe("https://signed/a.png");
+    expect(body.tail_image_url).toBe("https://signed/b.png");
+  });
+
+  it("falVideo omits tail_image_url when no end frame is supplied", async () => {
+    const fetchMock = stubFalQueue({ result: { video: { url: "https://cdn.fal/out.mp4" } } });
+    await falVideo({
+      modelId: "fal-ai/kling-video/v3/standard/image-to-video",
+      prompt: "x",
+      imageUrl: "https://signed/a.png",
+      durationSec: 5,
+      aspectRatio: "9:16",
+      apiKey: "k",
+    });
+    expect(JSON.parse(fetchMock.mock.calls[0][1]?.body as string).tail_image_url).toBeUndefined();
+  });
+
   it("falTts returns url and optional seconds from result.duration", async () => {
     stubFalQueue({ result: { audio: { url: "https://cdn.fal/out.m4a" }, duration: 3.5 } });
 
@@ -139,6 +181,86 @@ describe("fal adapter — Queue submit→poll→completed", () => {
 
     expect(out.url).toBe("https://cdn.fal/out.m4a");
     expect(out.seconds).toBe(3.5);
+  });
+
+  // 兩家 TTS 嘅欄位名完全唔同 —— 一律送 { text, reference_audio_url } 嘅話，
+  // minimax 收唔到 voice_id 就每句都用佢預設嘅 Wise_Woman，成集所有角色同一
+  // 把聲；index-tts-2 更加係連文字都收唔到（佢叫 prompt）。呢兩個 case 鎖住
+  // 真實欄位名。
+  it("falTts（minimax）：內置音色行 voice_setting.voice_id，情緒收窄成 provider 枚舉", async () => {
+    const fetchMock = stubFalQueue({ result: { audio: { url: "https://cdn.fal/a.mp3" } } });
+
+    await falTts({
+      modelId: "fal-ai/minimax/speech-02-hd",
+      text: "你去死啦",
+      presetVoiceId: "male-qn-badao",
+      emotion: "憤怒",
+      emotionStrength: 0.5,
+      apiKey: "k",
+    });
+
+    const body = JSON.parse(fetchMock.mock.calls[0][1]?.body as string);
+    expect(body.text).toBe("你去死啦");
+    expect(body.voice_setting).toEqual({ voice_id: "male-qn-badao", emotion: "angry" });
+    expect(body.reference_audio_url).toBeUndefined();
+  });
+
+  it("falTts（index-tts-2）：文字叫 prompt、參考音叫 audio_url", async () => {
+    const fetchMock = stubFalQueue({ result: { audio: { url: "https://cdn.fal/a.mp3" } } });
+
+    await falTts({
+      modelId: "fal-ai/index-tts-2/text-to-speech",
+      text: "我唔會走",
+      referenceAudioUrl: "https://cdn/ref.wav",
+      emotion: "悲傷",
+      emotionStrength: 0.4,
+      apiKey: "k",
+    });
+
+    const body = JSON.parse(fetchMock.mock.calls[0][1]?.body as string);
+    expect(body.prompt).toBe("我唔會走");
+    expect(body.audio_url).toBe("https://cdn/ref.wav");
+    expect(body.emotional_strengths).toEqual({ sad: 0.4 });
+    expect(body.text).toBeUndefined();
+  });
+
+  it("falTts：認唔出嘅中文情緒詞唔會亂配一個近似值", async () => {
+    const fetchMock = stubFalQueue({ result: { audio: { url: "https://cdn.fal/a.mp3" } } });
+
+    await falTts({
+      modelId: "fal-ai/minimax/speech-02-hd",
+      text: "嗯",
+      presetVoiceId: "female-yujie",
+      emotion: "若有所思",
+      apiKey: "k",
+    });
+
+    const body = JSON.parse(fetchMock.mock.calls[0][1]?.body as string);
+    expect(body.voice_setting).toEqual({ voice_id: "female-yujie" });
+  });
+});
+
+// falCancel 係 best-effort 兼且吞哂錯誤（見 request-journal.ts），所以 URL 一
+// 砌錯就永遠靜靜地取消唔到 —— 只會喺 fal 帳單度見到。呢度鎖死 URL 形狀。
+describe("fal adapter — cancel", () => {
+  it("falCancel PUT 去 app root 嘅 /cancel（唔係 submit 嗰個 subpath）", async () => {
+    const fetchMock = vi.fn(async () => res(200, { status: "CANCELLED" }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await falCancel({ endpoint: "fal-ai/index-tts-2/text-to-speech", requestId: "req-9" }, "k");
+
+    const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    expect(String(url)).toBe("https://queue.fal.run/fal-ai/index-tts-2/requests/req-9/cancel");
+    expect(init?.method).toBe("PUT");
+    expect((init?.headers as Record<string, string>).Authorization).toBe("Key k");
+  });
+
+  it("已完成／唔存在嘅 request 回 4xx → throw（呼叫方當 best-effort 吞返）", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => res(400, "already completed")));
+
+    const err = await falCancel({ endpoint: "fal-ai/nano-banana", requestId: "req-9" }, "k").catch((e) => e);
+    expect(err).toBeInstanceOf(AiError);
+    expect((err as AiError).code).toBe("HTTP_400");
   });
 });
 
@@ -229,6 +351,51 @@ describe("atlascloud adapter — seedance & edit mappings", () => {
     });
     expect(body.aspect_ratio).toBeUndefined();
     expect(body.image_url).toBeUndefined();
+  });
+
+  // 首尾幀錨定：條片由 image 過渡到 last_image，令下一鏡條片可以由同一格開始。
+  it("sends last_image for seedance when an end frame is supplied", async () => {
+    const fetchMock = stubAtlas("https://cdn.atlas/v.mp4");
+    await atlasVideo({
+      modelId: "bytedance/seedance-2.0-mini/image-to-video",
+      prompt: "push in",
+      imageUrl: "https://signed/a.png",
+      endImageUrl: "https://signed/b.png",
+      durationSec: 5,
+      aspectRatio: "9:16",
+      apiKey: "k",
+    });
+    const body = JSON.parse(fetchMock.mock.calls[0][1]?.body as string);
+    expect(body.image).toBe("https://signed/a.png");
+    expect(body.last_image).toBe("https://signed/b.png");
+  });
+
+  it("omits last_image when no end frame is supplied", async () => {
+    const fetchMock = stubAtlas("https://cdn.atlas/v.mp4");
+    await atlasVideo({
+      modelId: "bytedance/seedance-2.0-mini/image-to-video",
+      prompt: "x",
+      imageUrl: "https://signed/a.png",
+      durationSec: 5,
+      aspectRatio: "9:16",
+      apiKey: "k",
+    });
+    expect(JSON.parse(fetchMock.mock.calls[0][1]?.body as string).last_image).toBeUndefined();
+  });
+
+  // legacy 分支冇 last_image 呢個參數，多傳會被 provider 拒 —— 唔可以順手照傳。
+  it("never sends last_image on the legacy (non-seedance) shape", async () => {
+    const fetchMock = stubAtlas("https://cdn.atlas/v.mp4");
+    await atlasVideo({
+      modelId: "kling-v2.0",
+      prompt: "x",
+      imageUrl: "https://cdn/f.png",
+      endImageUrl: "https://cdn/g.png",
+      durationSec: 5,
+      aspectRatio: "9:16",
+      apiKey: "k",
+    });
+    expect(JSON.parse(fetchMock.mock.calls[0][1]?.body as string).last_image).toBeUndefined();
   });
 
   it("keeps the legacy shape for non-seedance models", async () => {
@@ -332,6 +499,43 @@ describe("openrouter adapter — real cost + token detail", () => {
     vi.stubGlobal("fetch", vi.fn(async () => orResponse({ prompt_tokens: 5, completion_tokens: 5, cost: 0 })));
     const out = await openrouterAdapter.complete(OR_REQ, "k");
     expect(out.usage.providerCostUsd).toBe(0);
+  });
+
+  it("throws a retryable AiError when the response was cut at the token limit", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        res(200, {
+          id: "gen-1",
+          choices: [{ message: { content: '{"shots":[{"index":1,"lighting":"窗' }, finish_reason: "length" }],
+          usage: { prompt_tokens: 1, completion_tokens: 1 },
+        }),
+      ),
+    );
+    // Silent truncation used to flow straight into repairTruncatedJson and land
+    // in the DB as a half-empty pass. Retryable → textCallJson re-rolls it.
+    await expect(openrouterAdapter.complete(OR_REQ, "k")).rejects.toMatchObject({
+      code: "OUTPUT_TRUNCATED",
+      retryable: true,
+    });
+    await expect(openrouterAdapter.complete(OR_REQ, "k")).rejects.toBeInstanceOf(AiError);
+  });
+
+  it("also catches the upstream spelling (Gemini native_finish_reason MAX_TOKENS)", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        res(200, { id: "g", choices: [{ message: { content: "{" }, native_finish_reason: "MAX_TOKENS" }], usage: {} }),
+      ),
+    );
+    await expect(openrouterAdapter.complete(OR_REQ, "k")).rejects.toMatchObject({ code: "OUTPUT_TRUNCATED" });
+  });
+
+  it("does not treat a normal stop or a missing finish_reason as truncation", async () => {
+    for (const choice of [{ message: { content: "ok" }, finish_reason: "stop" }, { message: { content: "ok" } }]) {
+      vi.stubGlobal("fetch", vi.fn(async () => res(200, { id: "g", choices: [choice], usage: { prompt_tokens: 1, completion_tokens: 1 } })));
+      expect((await openrouterAdapter.complete(OR_REQ, "k")).text).toBe("ok");
+    }
   });
 
   it("maps malformed cost values to undefined instead of failing the call", async () => {

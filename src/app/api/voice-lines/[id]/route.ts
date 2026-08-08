@@ -28,6 +28,27 @@ export const PATCH = withAuth(
       lineType: LINE_TYPES.has(raw.lineType as string) ? (raw.lineType as string) : undefined,
     };
 
+    // 成片時間軸拖 chip：offsetMs null = 重設返 auto 順序排；數字 = 釘死位置（clamp 0–10min）。
+    const offsetMs =
+      raw.offsetMs === null
+        ? null
+        : typeof raw.offsetMs === "number"
+          ? Math.max(0, Math.min(600_000, Math.round(raw.offsetMs)))
+          : undefined;
+
+    // 跨鏡拖 chip：目標鏡必須同一個 user 同一集，一個 where 齊截跨集／跨租戶兩種越權。
+    let matchedShotId = line.matchedShotId;
+    if (raw.matchedShotId === null) {
+      matchedShotId = null;
+    } else if (typeof raw.matchedShotId === "string") {
+      const shot = await prisma.shot.findFirst({
+        where: { id: raw.matchedShotId, userId, episodeId: line.episodeId },
+        select: { id: true },
+      });
+      if (!shot) throw new ApiError("SHOT_NOT_IN_EPISODE", 400);
+      matchedShotId = shot.id;
+    }
+
     // Re-bind the character FK when the speaker name changes, matching against
     // the project's roster the same way the analyzer does. A speaker that names
     // no known character (e.g. 旁白) clears the binding rather than erroring.
@@ -54,6 +75,8 @@ export const PATCH = withAuth(
         emotionStrength: typeof body.emotionStrength === "number" ? Math.min(0.5, Math.max(0, body.emotionStrength)) : undefined,
         lineType: body.lineType,
         characterId,
+        offsetMs,
+        matchedShotId,
       },
     });
     return ok(updated);

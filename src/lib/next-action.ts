@@ -11,6 +11,9 @@ export interface EpisodeSnapshot {
   storyboardConfirmed: boolean;
   isSrtMode: boolean;
   voiceLines: { total: number; withAudio: number };
+  // 配音表：有幾多把聲要派、派咗幾多。未派晒就唔准開 TTS —— 未派音嘅行會
+  // 跌返 provider 預設聲，成集所有人同一把。
+  voiceCast: { total: number; assigned: number };
   hasExport: boolean;
   runningTaskTypes: string[];
   failedTasks: number;
@@ -43,6 +46,7 @@ export function computeStages(s: EpisodeSnapshot): StageState[] {
   const assetsLocked = s.characters.locked + s.locations.locked;
   const assetsReady = assetsTotal > 0 && assetsLocked === assetsTotal;
   const scriptReady = s.isSrtMode ? s.hasRawText : s.hasScript;
+  const voiceDone = s.voiceLines.total > 0 && s.voiceLines.withAudio === s.voiceLines.total;
 
   const stage = (
     key: StageKey,
@@ -71,16 +75,24 @@ export function computeStages(s: EpisodeSnapshot): StageState[] {
       count: { done: s.shots.withImage, total: s.shots.total },
       blockedBy: s.storyboardConfirmed && s.shots.total > 0 ? [] : ["第 4 站：確認分鏡表"],
     }),
-    stage("videos", s.shots.total > 0 && s.shots.withVideo === s.shots.total, {
-      count: { done: s.shots.withVideo, total: s.shots.total },
-      blockedBy: s.shots.withImage > 0 ? [] : ["第 5 站：至少生成一張分鏡圖"],
-    }),
-    stage("voice", s.voiceLines.total > 0 && s.voiceLines.withAudio === s.voiceLines.total, {
+    stage("voice", voiceDone, {
       count: { done: s.voiceLines.withAudio, total: s.voiceLines.total },
       blockedBy: s.shots.total > 0 ? [] : ["第 4 站：先生成分鏡"],
+      // 未派晒音色 = 等緊人揀嘢，唔係等緊機器跑
+      review: s.voiceLines.total > 0 && s.voiceCast.assigned < s.voiceCast.total,
+    }),
+    // 配音先行：條片幾長要跟真實音檔長度，所以配音未完成之前唔好生片 ——
+    // 生咗長度都係錯，重生一次即係俾多次錢。
+    stage("videos", s.shots.total > 0 && s.shots.withVideo === s.shots.total, {
+      count: { done: s.shots.withVideo, total: s.shots.total },
+      blockedBy: !voiceDone
+        ? ["第 6 站：先完成配音（每鏡長度跟真實音長）"]
+        : s.shots.withImage > 0
+          ? []
+          : ["第 5 站：至少生成一張分鏡圖"],
     }),
     stage("export", s.hasExport, {
-      blockedBy: s.shots.withVideo > 0 ? [] : ["第 6 站：至少生成一段鏡頭視頻"],
+      blockedBy: s.shots.withVideo > 0 ? [] : ["第 7 站：至少生成一段鏡頭視頻"],
     }),
   ];
 }
@@ -132,6 +144,28 @@ export function computeNextAction(s: EpisodeSnapshot, episodeId: string): NextAc
       busy: running(s, "IMAGE_SHOT"),
     };
   }
+  if (s.voiceLines.total === 0) {
+    return { stage: "voice", label: "分析台詞並配音", endpoint: ep("voice"), blockedBy: [], busy: running(s, "VOICE_ANALYZE") };
+  }
+  const uncast = s.voiceCast.total - s.voiceCast.assigned;
+  if (uncast > 0) {
+    // 派音係揀嘢，唔係跑任務 —— endpoint null，用戶喺配音站逐個揀（或者撳 AI 派音）。
+    return { stage: "voice", label: `派音（餘 ${uncast} 把聲未揀音色）`, endpoint: null, blockedBy: [], busy: false };
+  }
+  if (s.voiceLines.withAudio < s.voiceLines.total) {
+    // 兩種路線都用同一個補配入口。以前非 SRT 路線係 endpoint null + 永遠 busy，
+    // 靠 voiceAnalyzeHandler 自己 fan out TTS —— 但而家有派音呢一步喺中間，
+    // 分析台詞嗰陣多數仲未派音色，fan 唔出，就會永遠卡喺「配音中 0/N」冇掣撳。
+    return {
+      stage: "voice",
+      label: `配音（${s.voiceLines.withAudio}/${s.voiceLines.total}）`,
+      endpoint: ep("tts-all"),
+      blockedBy: [],
+      busy: running(s, "TTS_LINE"),
+    };
+  }
+  // 配音齊咗先生片：每鏡 durationMs 已經由真音長覆寫（syncShotDurationFromAudio），
+  // 生出嚟嘅片長度就啱，唔使成片時凍幀補時或者截斷。
   if (s.shots.withVideo < s.shots.total) {
     return {
       stage: "videos",
@@ -139,27 +173,6 @@ export function computeNextAction(s: EpisodeSnapshot, episodeId: string): NextAc
       endpoint: ep("generate-shot-videos"),
       blockedBy: [],
       busy: running(s, "VIDEO_SHOT"),
-    };
-  }
-  if (s.voiceLines.total === 0) {
-    return { stage: "voice", label: "分析台詞並配音", endpoint: ep("voice"), blockedBy: [], busy: running(s, "VOICE_ANALYZE") };
-  }
-  if (s.voiceLines.withAudio < s.voiceLines.total) {
-    if (s.isSrtMode) {
-      return {
-        stage: "voice",
-        label: `配音（${s.voiceLines.withAudio}/${s.voiceLines.total}）`,
-        endpoint: ep("tts-all"),
-        blockedBy: [],
-        busy: running(s, "TTS_LINE"),
-      };
-    }
-    return {
-      stage: "voice",
-      label: `配音中（${s.voiceLines.withAudio}/${s.voiceLines.total}）`,
-      endpoint: null,
-      blockedBy: [],
-      busy: running(s, "TTS_LINE") || s.voiceLines.withAudio < s.voiceLines.total,
     };
   }
   if (!s.hasExport) {

@@ -9,6 +9,19 @@ const capabilitiesSchema = z
     aspectRatios: z.array(z.string()).optional(),
     modes: z.array(z.string()).optional(),
     supportsReferenceImages: z.boolean().optional(),
+    // 首尾幀：i2v 除咗起幀之外仲收唔收一張尾幀（生成嘅片會由起幀過渡到尾幀）。
+    // 唔用上面個 `modes` 表達 —— `modes` 由頭到尾都冇被任何邏輯讀過（純展示用
+    // metadata），借佢做能力閘會令人以為 modes 有語義。呢個旗會喺 generateVideo
+    // 度真係被讀，冇聲明就靜默唔傳尾幀（降級生片，唔會 fail）。
+    supportsEndFrame: z.boolean().optional(),
+    // TTS：呢個模型收邊種音色。"preset" = provider 內置 voice_id；"ref" = 上傳
+    // 參考音做聲音克隆。兩者嘅 request body 完全唔同（見 falTtsRequest），所以
+    // 錯配要硬 fail，唔准靜默降級成預設聲 —— 靜默降級正正就係「全部角色同一
+    // 把聲」嗰個 bug 嘅來源。
+    voiceModes: z.array(z.enum(["preset", "ref"])).nonempty().optional(),
+    // preset 模式專用：內置音色庫係邊個 vendor 嘅，同 standards/voice-presets.json
+    // 每個音色嘅 vendor 對數。
+    voicePresetVendor: z.string().min(1).optional(),
   })
   .strict();
 

@@ -8,7 +8,7 @@
         "16:9",
         "1:1"
       ],
-        "supportsReferenceImages": true
+      "supportsReferenceImages": true
     },
     "pricing": {
       "mode": "flat",
@@ -29,7 +29,12 @@
         "16:9",
         "1:1"
       ],
-        "supportsReferenceImages": true
+      "supportsReferenceImages": true,
+      "resolutions": [
+        "1K",
+        "2K",
+        "4K"
+      ]
     },
     "pricing": {
       "mode": "flat",
@@ -48,7 +53,12 @@
         "16:9",
         "1:1"
       ],
-        "supportsReferenceImages": true
+      "supportsReferenceImages": true,
+      "resolutions": [
+        "1K",
+        "2K",
+        "4K"
+      ]
     },
     "pricing": {
       "mode": "flat",
@@ -67,7 +77,12 @@
         "16:9",
         "1:1"
       ],
-        "supportsReferenceImages": false
+      "supportsReferenceImages": false,
+      "resolutions": [
+        "1K",
+        "2K",
+        "4K"
+      ]
     },
     "pricing": {
       "mode": "flat",
@@ -88,7 +103,12 @@
         "16:9",
         "1:1"
       ],
-        "supportsReferenceImages": true
+      "supportsReferenceImages": true,
+      "resolutions": [
+        "1K",
+        "2K",
+        "4K"
+      ]
     },
     "pricing": {
       "mode": "flat",
@@ -109,7 +129,12 @@
         "16:9",
         "1:1"
       ],
-        "supportsReferenceImages": false
+      "supportsReferenceImages": false,
+      "resolutions": [
+        "1K",
+        "2K",
+        "4K"
+      ]
     },
     "pricing": {
       "mode": "flat",
@@ -177,7 +202,8 @@
       "aspectRatios": [
         "9:16",
         "16:9"
-      ]
+      ],
+      "supportsEndFrame": true
     },
     "pricing": {
       "mode": "flat",
@@ -217,7 +243,8 @@
       "aspectRatios": [
         "9:16",
         "16:9"
-      ]
+      ],
+      "supportsEndFrame": true
     },
     "pricing": {
       "mode": "flat",
@@ -257,7 +284,8 @@
       "aspectRatios": [
         "9:16",
         "16:9"
-      ]
+      ],
+      "supportsEndFrame": true
     },
     "pricing": {
       "mode": "flat",
@@ -272,10 +300,10 @@
   {
     "modelKey": "fal::fal-ai/index-tts-2/text-to-speech",
     "apiType": "tts",
-    "capabilities": {},
+    "capabilities": { "voiceModes": ["ref"] },
     "pricing": {
       "mode": "flat",
-      "perUnit": 0.00005,
+      "perUnit": 5e-05,
       "unit": "character",
       "currency": "USD"
     },
@@ -284,10 +312,10 @@
   {
     "modelKey": "fal::fal-ai/minimax/speech-02-hd",
     "apiType": "tts",
-    "capabilities": {},
+    "capabilities": { "voiceModes": ["preset"], "voicePresetVendor": "minimax" },
     "pricing": {
       "mode": "flat",
-      "perUnit": 0.00005,
+      "perUnit": 5e-05,
       "unit": "character",
       "currency": "USD"
     },
@@ -302,7 +330,7 @@
         "16:9",
         "1:1"
       ],
-        "supportsReferenceImages": false
+      "supportsReferenceImages": false
     },
     "pricing": {
       "mode": "flat",
@@ -387,7 +415,7 @@
         "9:16",
         "16:9"
       ],
-        "supportsReferenceImages": true
+      "supportsReferenceImages": true
     },
     "pricing": {
       "mode": "flat",

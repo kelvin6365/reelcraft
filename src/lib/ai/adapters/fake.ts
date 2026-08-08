@@ -29,12 +29,56 @@ const canned: Record<string, unknown> = {
       },
     ],
   },
-  extract_assets: {
+  extract_characters: {
     characters: [
       { name: "林知夏", aliases: [], level: "lead", appearance: "二十多歲女性，及肩黑髮，眼神倔強，白色襯衫", wardrobe: "白襯衫深色長褲", note: "", age: "26歲", occupation: "編輯", personality: "外冷內熱，嘴硬心軟", painPoint: "怕再一次被重要的人放棄", backstory: "三年前與陳沉不辭而別，此後獨自在城市打拼。" },
       { name: "陳沉", aliases: [], level: "supporting", appearance: "三十歲男性，短髮，灰色大衣，神情疏離", wardrobe: "灰大衣", note: "", age: "30歲", occupation: "建築師", personality: "沉默寡言，習慣把虧欠藏在心裡", painPoint: "說不出口的愧疚", backstory: "當年為家事遠走，欠林知夏一個解釋。" },
     ],
+  },
+  extract_locations: {
     locations: [{ name: "咖啡店", timeOfDay: "夜", description: "昏黃燈光的小咖啡店，窗外有雨", note: "" }],
+  },
+  extract_props: {
+    props: [
+      {
+        name: "玉佩",
+        tier: "key",
+        description: "溫潤羊脂白玉雕成的圓形玉佩，邊緣刻有纏枝紋，繫著暗紅色絲繩",
+        material: "羊脂白玉",
+        dimensions: "直徑約5公分",
+        note: "阿媽留低嘅信物",
+        sceneName: "",
+        physicalParams: "",
+        views: [
+          { label: "正面", prompt: "玉佩正面，纏枝紋清晰可見，暗紅絲繩自然垂落" },
+          { label: "反面", prompt: "玉佩反面，光滑無紋，可見輕微天然瑕紋" },
+          { label: "側面", prompt: "玉佩側面，展示厚度與弧度" },
+          { label: "細節特寫", prompt: "邊緣纏枝紋雕工特寫，質感通透" },
+        ],
+      },
+      {
+        name: "咖啡杯",
+        tier: "scene",
+        description: "白瓷咖啡杯連碟，杯身簡約無花紋",
+        material: "白瓷",
+        dimensions: "口徑約8公分",
+        note: "",
+        sceneName: "咖啡店",
+        physicalParams: "",
+        views: [],
+      },
+      {
+        name: "能量光球",
+        tier: "effect",
+        description: "掌心浮現嘅藍白色球狀能量光效，邊緣有細碎光粒散落",
+        material: "",
+        dimensions: "直徑約15公分",
+        note: "",
+        sceneName: "",
+        physicalParams: "亮度高、藍白色漸層、持續約2秒、由掌心中心向外擴散並伴隨光粒飄散",
+        views: [{ label: "靜態關鍵幀", prompt: "掌心懸浮嘅藍白色能量球，中心最亮，邊緣光粒逐漸消散" }],
+      },
+    ],
   },
   build_scenes: {
     scenes: [
@@ -110,7 +154,10 @@ export const fakeAdapter: TextAdapter = {
     if (meta?.promptId && canned[meta.promptId]) {
       text = JSON.stringify(canned[meta.promptId]);
     } else if (meta?.promptId === "rewrite_script") {
-      text = "【第1場】咖啡店·夜\n林知夏推門而入，雨聲隨門縫灌進來。\n林知夏（壓低聲線）：「你遲到了。」\n陳沉：「路上有事。」\n林知夏（VO・苦笑）：他遲到的理由，我其實早就知道了。\n（兩人對視，沉默三秒）";
+      // 帶埋一行【廣播】：非人物聲源嘅方括號標記係劇本層契約（rewrite_script），
+      // fake 模式行落去嘅分鏡／配音都要食到呢個格式先反映到真實 pipeline。
+      text =
+        "【第1場】咖啡店·夜\n林知夏推門而入，雨聲隨門縫灌進來。\n林知夏（壓低聲線）：「你遲到了。」\n陳沉：「路上有事。」\n【廣播】：本店將於十一時結業。\n林知夏（VO・苦笑）：他遲到的理由，我其實早就知道了。\n（兩人對視，沉默三秒）";
     } else {
       text = `[fake] ${echo.slice(0, 200)}`;
     }

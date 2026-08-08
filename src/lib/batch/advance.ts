@@ -8,6 +8,7 @@ import { buildEpisodeSnapshot } from "@/lib/api/episode-snapshot";
 import { computeNextAction, type EpisodeSnapshot } from "@/lib/next-action";
 import { submitTask } from "@/lib/task/submit";
 import { TASK_TYPE } from "@/lib/task/types";
+import { submitVoiceLineBatch } from "@/lib/api/voice-batch";
 
 export interface AutorunConfig {
   autoConfirmStoryboard?: boolean;
@@ -115,11 +116,23 @@ export async function advanceEpisode(episodeId: string): Promise<string> {
       await submitEp(TASK_TYPE.VOICE_ANALYZE, { at: 0 });
       return "voice-analyze";
     }
+    // 未派晒音色（endpoint null）。AI 派音係純 text call，唔使錢生成音頻，
+    // 所以 autorun 自動行一次；行完仍然未派晒（模型漏人／音色庫唔夾）就停低
+    // 等人揀 —— 硬行落去只會成集同一把預設聲。
+    case action.stage === "voice" && action.endpoint === null && !action.busy: {
+      const tried = await prisma.task.count({
+        where: { episodeId, type: TASK_TYPE.VOICE_CAST, status: { in: ["completed", "failed"] } },
+      });
+      if (tried > 0) return "paused:voice-cast";
+      await submitEp(TASK_TYPE.VOICE_CAST, { at: 0 });
+      return "voice-cast";
+    }
     case action.endpoint?.endsWith("/tts-all") ?? false: {
       if (assisted && !cfg.moneyAuthorized) return "paused:money";
-      const lines = await prisma.voiceLine.findMany({ where: { episodeId, audioMediaId: null } });
-      for (const l of lines) await submitTask({ ...ep, type: TASK_TYPE.TTS_LINE, targetType: "voiceLine", targetId: l.id, payload: { at: 0 } });
-      return `tts:${lines.length}`;
+      // 行返 API 同一個 helper —— 空台詞／未派音色嘅行要剔走，唔好排一堆
+      // 注定失敗嘅 task 出嚟。
+      const { submitted } = await submitVoiceLineBatch({ userId, episode, lineIds: null });
+      return `tts:${submitted}`;
     }
     case action.endpoint?.endsWith("/compose") ?? false: {
       await submitEp(TASK_TYPE.COMPOSE_EPISODE, { at: 0 });

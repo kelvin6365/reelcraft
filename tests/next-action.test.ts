@@ -11,6 +11,7 @@ const base: EpisodeSnapshot = {
   storyboardConfirmed: false,
   isSrtMode: false,
   voiceLines: { total: 0, withAudio: 0 },
+  voiceCast: { total: 0, assigned: 0 },
   hasExport: false,
   runningTaskTypes: [],
   failedTasks: 0,
@@ -62,7 +63,8 @@ describe("computeNextAction", () => {
     expect(a.endpoint).toBeNull();
   });
 
-  it("progresses images → videos → voice → compose → done", () => {
+  // 配音行喺視頻之前：每鏡幾長要跟真實音檔長度，唔係跟字數估算。
+  it("progresses images → voice → videos → compose → done", () => {
     const confirmed: EpisodeSnapshot = {
       ...base,
       hasScript: true,
@@ -75,18 +77,52 @@ describe("computeNextAction", () => {
     expect(computeNextAction(confirmed, "e1").endpoint).toContain("generate-shot-images");
 
     const imaged = { ...confirmed, shots: { total: 3, withImage: 3, withVideo: 0 } };
-    expect(computeNextAction(imaged, "e1").endpoint).toContain("generate-shot-videos");
+    expect(computeNextAction(imaged, "e1").endpoint).toContain("/voice");
 
-    const videoed = { ...imaged, shots: { total: 3, withImage: 3, withVideo: 3 } };
-    expect(computeNextAction(videoed, "e1").endpoint).toContain("/voice");
+    const voiced = { ...imaged, voiceLines: { total: 2, withAudio: 2 } };
+    expect(computeNextAction(voiced, "e1").endpoint).toContain("generate-shot-videos");
 
-    const voiced = { ...videoed, voiceLines: { total: 2, withAudio: 2 } };
-    expect(computeNextAction(voiced, "e1").endpoint).toContain("/compose");
+    const videoed = { ...voiced, shots: { total: 3, withImage: 3, withVideo: 3 } };
+    expect(computeNextAction(videoed, "e1").endpoint).toContain("/compose");
 
-    const done = { ...voiced, hasExport: true };
+    const done = { ...videoed, hasExport: true };
     const a = computeNextAction(done, "e1");
     expect(a.endpoint).toBeNull();
     expect(a.label).toContain("完成");
+  });
+
+  // 未派音色就開 TTS = 成集所有角色跌返 provider 預設聲（同一把）。呢個
+  // gate 係 P1 修嘅嗰個 bug 嘅唯一防線，唔可以靜靜行過。
+  it("台詞有咗但未派晒音色 → 停喺派音，唔會跳去配音", () => {
+    const s: EpisodeSnapshot = {
+      ...base,
+      hasScript: true,
+      characters: { total: 1, locked: 1, withCandidates: 1 },
+      scenes: 1,
+      shots: { total: 3, withImage: 3, withVideo: 3 },
+      storyboardConfirmed: true,
+      voiceLines: { total: 5, withAudio: 0 },
+      voiceCast: { total: 3, assigned: 1 },
+    };
+    const a = computeNextAction(s, "e1");
+    expect(a.stage).toBe("voice");
+    expect(a.endpoint).toBeNull();
+    expect(a.label).toContain("餘 2");
+
+    // 派晒之後先至輪到配音
+    const cast = computeNextAction({ ...s, voiceCast: { total: 3, assigned: 3 } }, "e1");
+    expect(cast.stage).toBe("voice");
+    expect(cast.label).toContain("配音");
+  });
+
+  it("未派晒音色時，配音站標成「等人處理」而唔係 todo", () => {
+    const stages = computeStages({
+      ...base,
+      shots: { total: 3, withImage: 3, withVideo: 3 },
+      voiceLines: { total: 5, withAudio: 0 },
+      voiceCast: { total: 3, assigned: 1 },
+    });
+    expect(stages.find((s) => s.key === "voice")?.status).toBe("review");
   });
 });
 
@@ -220,11 +256,19 @@ describe("computeStages status + blockedBy", () => {
     expect(find({ ...base, isSrtMode: true }, "script").status).toBe("done");
   });
 
-  it("unlocks videos only once at least one image exists", () => {
+  // 有圖唔夠：條片幾長要跟真實音長，配音未齊就生片，長度一定錯，重生即係
+  // 俾多次錢。
+  it("unlocks videos only once images exist AND voice is done", () => {
     expect(find(base, "videos").status).toBe("blocked");
-    const withOneImage = find({ ...base, shots: { total: 4, withImage: 1, withVideo: 0 } }, "videos");
-    expect(withOneImage.status).toBe("todo");
-    expect(withOneImage.blockedBy).toEqual([]);
+
+    const imagedOnly = { ...base, shots: { total: 4, withImage: 1, withVideo: 0 } };
+    const stillBlocked = find(imagedOnly, "videos");
+    expect(stillBlocked.status).toBe("blocked");
+    expect(stillBlocked.blockedBy[0]).toContain("配音");
+
+    const voiced = find({ ...imagedOnly, voiceLines: { total: 2, withAudio: 2 } }, "videos");
+    expect(voiced.status).toBe("todo");
+    expect(voiced.blockedBy).toEqual([]);
   });
 
   it("never reports blockedBy on a finished station", () => {

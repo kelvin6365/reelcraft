@@ -33,6 +33,8 @@ model User {
   shots      Shot[]
   characters Character[]
   locations  Location[]
+  props      Prop[]
+  voices     Voice[]
   voiceLines VoiceLine[]
   media      MediaObject[]
   tasks      Task[]
@@ -45,6 +47,7 @@ model User {
   transactions BalanceTransaction[]
   promptOverrides PromptOverride[]
   preferences  UserPreferences?
+  providerRequests ProviderRequest[]
 
   @@map("users")
 }
@@ -121,6 +124,8 @@ model Project {
   episodes   Episode[]
   characters Character[]
   locations  Location[]
+  props      Prop[]
+  voices     Voice[]
 
   @@index([userId, lastAccessedAt])
   @@map("projects")
@@ -143,6 +148,10 @@ model Episode {
   autorunConfig Json    @default(dbgenerated("'{}'")) // { autoConfirmStoryboard, skipVideo }
   // 劇本體檢 result { scenes: [{index,label,risk}], overall: {level,flags,note} } — informational, not a gate
   scriptReview  Json    @default(dbgenerated("'{}'"))
+  // 非角色 speaker 嘅音色（旁白／【機械音】／「未知」冇 Character 可綁）：
+  // { "旁白": { "presetId": "..." } | { "refId": "..." } }。集級而非 project 級，
+  // 因為同一個「旁白」喺唔同集可以係唔同人講。
+  speakerVoices Json    @default(dbgenerated("'{}'"))
   exportMediaId String?
   exportMedia   MediaObject? @relation("EpisodeExport", fields: [exportMediaId], references: [id])
   createdAt     DateTime @default(now())
@@ -171,6 +180,12 @@ model Scene {
   // 空間契約 (spatial blocking): 每角色畫面左右位/面向 + 180° 軸 + 關鍵道具，
   // storyboard_plan 一次過鎖定，之後每鏡生圖必守 — 連戲唔靠彩數
   blocking    Json    @default(dbgenerated("'{}'"))
+  // build_scenes 直接輸出嘅場景地點／時段（見 prompts/pipeline/build_scenes.zh.txt）。
+  // 呢兩個欄位係「每鏡生圖揀邊張場景參考圖」嘅權威來源 —— pickShotLocation
+  // 拎 location 同鎖定 Location（名為 `地點·時段`）做正規化比對，唔再靠劇本原文估。
+  // 空字串 = 舊資料或模型冇輸出，會退回劇本原文 substring；仍然撞唔到就唔畀場景參考圖。
+  location    String  @default("")
+  timeOfDay   String  @default("")
 
   shots Shot[]
 
@@ -199,6 +214,20 @@ model Shot {
   status         String  @default("pending")
   durationMs     Int     @default(0)
   linkedToNext   Boolean @default(false)
+  // 閃回／回憶／夢境鏡頭標記 —— 呢一鏡嘅時空唔屬於佢所在嗰個 Scene。
+  // 點解標喺鏡頭層而唔係把閃回切做獨立場景（上一輪嘅做法，已推翻，見
+  // src/lib/storyboard/flashback.ts 頂部）：切場會把同一個實體地點斬成幾段，每段各自
+  // 鎖一份空間契約，同一場戲嘅角色左右位同 180° 軸線就冇保證一致，剪埋一齊跳軸。
+  // 用途有兩個，兩個都喺 IMAGE_SHOT 生圖嗰刻生效：
+  //   ① pickShotLocation 唔准畀母場嘅場景參考圖 —— 畀錯場景圖比冇場景圖差好多
+  //      （冇圖模型會照 prompt 文字描述畫，畀錯圖就成個鏡頭畫咗喺第二個地方）；
+  //   ② filterBlockingForShot 剝走母場空間契約 —— 軸線同落位講緊母場嗰個空間。
+  flashback      Boolean @default(false)
+  // 閃回鏡自己嘅地點文字（例如「電腦前」「醫院走廊」），由 storyboard_plan 抽出。
+  // 純文字，只會餵落生圖 prompt 做環境描述，**唔會**攞去配鎖定 Location 參考圖 ——
+  // 閃回地點多數冇抽做資產，夾硬配就係畀錯圖。
+  // 空字串 = 認唔出地點（生圖靠 subject 自己交代）；flashback=false 時一律空字串。
+  locationOverride String @default("")
 
   voiceLines VoiceLine[]
 
@@ -231,13 +260,46 @@ model Character {
   refFaceMedia       MediaObject? @relation("CharacterRefFace", fields: [refFaceMediaId], references: [id])
   refFaceNote        String  @default("")
   candidates         Json    @default(dbgenerated("'[]'"))
-  voiceId            String?
+  // 音色綁定（二選一，唔准同時有值 —— API 層互斥賦值）：
+  //   voicePresetId = provider 內置音色 id（standards/voice-presets.json）
+  //   voiceRefId    = 用戶上傳／AI 設計嘅參考音（Voice.id），行聲音克隆
+  // 兩個都 null = 未派音；TTS 會用 provider 預設聲，全部角色同一把 —— 所以
+  // 配音站有 gate，未派晒唔俾一鍵配音。
+  voicePresetId      String?
+  voiceRefId         String?
+  voiceRef           Voice?  @relation("CharacterVoiceRef", fields: [voiceRefId], references: [id], onDelete: SetNull)
+  // AI 派音理由，純展示畀用戶覆核
+  voiceCastNote      String  @default("")
   locked             Boolean @default(false)
+  // 側面/背面視角 [{label, prompt, mediaId}] — 鎖定主圖後由 lock route seed，逐個由 IMAGE_CHARACTER view 分支寫入
+  views              Json    @default(dbgenerated("'[]'"))
 
   voiceLines VoiceLine[]
 
   @@index([projectId])
+  @@index([voiceRefId])
   @@map("characters")
+}
+
+// 自訂音色（聲音克隆用嘅參考音）—— project-level 共用，同 Character/Location
+// 一樣跨集複用。provider 內置音色唔入表（佢哋係 standards/voice-presets.json
+// 嘅靜態常數，冇 per-user 狀態可言）。
+model Voice {
+  id           String  @id
+  userId       String
+  user         User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  projectId    String
+  project      Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  name         String
+  audioMediaId String
+  audioMedia   MediaObject @relation("VoiceRefAudio", fields: [audioMediaId], references: [id])
+  note         String  @default("")
+  createdAt    DateTime @default(now())
+
+  characters Character[] @relation("CharacterVoiceRef")
+
+  @@index([projectId])
+  @@map("voices")
 }
 
 model Location {
@@ -256,8 +318,44 @@ model Location {
   // 額外視角建議 [{label, prompt, mediaId}] — extract_assets v3 產出；mediaId 由 IMAGE_LOCATION angle 分支寫入（PR3）
   angles             Json    @default(dbgenerated("'[]'"))
 
+  props Prop[] @relation("LocationProps")
+
   @@index([projectId])
   @@map("locations")
+}
+
+// 道具資產（Prop）— 三級分類：key=關鍵敘事道具／scene=場景填充道具／effect=動態特效道具
+// project-level 共用（冇 episodeId），同 Character/Location 一樣跨集鎖圖複用。
+model Prop {
+  id                 String  @id
+  userId             String
+  user               User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  projectId          String
+  project            Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  name               String
+  tier               String  @default("key") // key=關鍵敘事道具／scene=場景填充道具／effect=動態特效道具
+  summary            String  @default("")
+  prompt             String  @default("")
+  // 元數據齊全 — 結構化材質/尺寸，唔淨係塞入自由文本 prompt，方便資產管理同未來檢索
+  material           String  @default("")
+  dimensions         String  @default("")
+  lockedImageMediaId String?
+  lockedImageMedia   MediaObject? @relation("PropLockedImage", fields: [lockedImageMediaId], references: [id])
+  candidates         Json    @default(dbgenerated("'[]'"))
+  locked             Boolean @default(false)
+  // 多視圖 [{label, prompt, mediaId}] — key tier 至少 4 個（正/反/側/細節特寫）；effect tier 用嚟做靜態關鍵幀參考；scene tier 通常 0-1 個
+  views              Json    @default(dbgenerated("'[]'"))
+  // 場景填充道具所屬場景（可空）— 生圖時以該 Location 嘅 lockedImage 做參考，統一光影/材質/透視
+  locationId         String?
+  location           Location? @relation("LocationProps", fields: [locationId], references: [id], onDelete: SetNull)
+  // 動態特效道具專用：綁定嘅物理參數描述（強度/顏色/持續時間），純文字備註，唔係模擬引擎
+  physicalParams     String  @default("")
+  refVideoMediaId    String?
+  refVideoMedia      MediaObject? @relation("PropEffectVideo", fields: [refVideoMediaId], references: [id])
+
+  @@index([projectId])
+  @@index([locationId])
+  @@map("props")
 }
 
 model VoiceLine {
@@ -280,6 +378,8 @@ model VoiceLine {
   audioMedia      MediaObject? @relation("VoiceLineAudio", fields: [audioMediaId], references: [id])
   matchedShotId   String?
   matchedShot     Shot?   @relation(fields: [matchedShotId], references: [id], onDelete: SetNull)
+  // null = auto（順序排位，legacy compose）；用戶喺成片時間軸拖拉 chip 先會設呢個值
+  offsetMs        Int?
 
   @@unique([episodeId, lineIndex])
   @@map("voice_lines")
@@ -308,7 +408,10 @@ model MediaObject {
   characterFaceImages   Character[] @relation("CharacterFaceImage")
   characterRefFaces     Character[] @relation("CharacterRefFace")
   locationLockedImages  Location[]  @relation("LocationLockedImage")
+  propLockedImages      Prop[]      @relation("PropLockedImage")
+  propEffectVideos      Prop[]      @relation("PropEffectVideo")
   voiceLineAudios       VoiceLine[] @relation("VoiceLineAudio")
+  voiceRefAudios        Voice[]     @relation("VoiceRefAudio")
 
   @@index([userId])
   @@map("media_objects")
@@ -417,6 +520,39 @@ model AiCallLog {
   @@index([modelKey, at])
   @@index([episodeId, promptId, at])
   @@map("ai_call_logs")
+}
+
+// 生成請求嘅斷點續傳日誌。Provider 側 submit 一成功就即刻寫一行（poll 之前），
+// 所以 worker 中途死／重啟之後，重跑嘅 task 唔會重新 submit，而係攞返同一個
+// requestId 續 poll —— 唔會蒸發已經開咗嘅 GPU 資源，亦唔會俾兩次錢。
+// 刻意唔存任何 URL（鐵律 #4）：續接嗰陣照原路 poll 一次，provider 嘅 result
+// endpoint 本身係冪等嘅，輸出 URL 每次攞返嚟都得。
+model ProviderRequest {
+  id        String @id
+  userId    String
+  user      User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  taskId    String
+  // 同一個 task 入面識別「邊一次生成」——由生成請求嘅描述 hash 而成，
+  // 重複描述以 #N 區分（見 src/lib/ai/request-journal.ts）。
+  stepKey   String
+  provider  String // 'fal' | 'atlascloud'
+  apiType   String // 'image' | 'video' | 'tts'
+  modelKey  String
+  // 實際 submit 落去嘅 modelId／endpoint（例如 fal 嘅 /edit swap 之後）
+  endpoint  String
+  requestId String
+  // 'pending' | 'consumed' | 'failed' | 'canceled'
+  status    String @default("pending")
+  // 收貨之後落到邊個 MediaObject —— 對數／追查用。
+  mediaId   String?
+  errorCode String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([taskId, stepKey])
+  @@index([taskId, status])
+  @@index([status, createdAt])
+  @@map("provider_requests")
 }
 
 // ========== M3: BYO-Key + billing ledger + quotas ==========

@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import {
   Check,
   Clapperboard,
@@ -17,6 +17,7 @@ import {
   Trash2,
   Upload,
   Users,
+  Video,
   X,
   ZoomIn,
   type LucideIcon,
@@ -26,11 +27,14 @@ import { useAction } from "@/ui/planning/useAction";
 import { qk } from "@/ui/query-keys";
 import { useAdvancedMode } from "@/ui/prompts/useAdvancedMode";
 import { StationPromptSheet } from "@/ui/prompts/StationPromptSheet";
-import type { EpisodeView, LiveTaskMap, LocationView, StageKey, ShotView, ScriptReviewView, VoiceLineView } from "@/ui/types";
+import type { EpisodeView, LiveTaskMap, LocationView, PropView, StageKey, ShotView, ScriptReviewView, VoiceLineView } from "@/ui/types";
 import { STATION_BY_KEY } from "./stations";
 import { useStationNav } from "./station-nav";
 import { SavedHint, useAutosaveField, useSavedFlash } from "./SavedHint";
 import { ShotWorkbench } from "./ShotWorkbench";
+import { TimelineEditor } from "./timeline/TimelineEditor";
+import { VoiceCastPanel } from "./voice/VoiceCastPanel";
+import { VoiceBatchBar, isCastable, type VoiceFilter } from "./voice/VoiceBatchBar";
 import { shortModelName, isFakeModel } from "@/ui/model-format";
 import { formatUsdDisplay } from "./cost-confirm";
 import { cn } from "@/lib/utils";
@@ -39,6 +43,7 @@ import { MediaLightbox, type MediaLightboxMedia } from "@/components/media-light
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import {
@@ -195,11 +200,11 @@ export function InputPanel({ view }: PanelProps) {
 }
 
 export function AssetsPanel({ view, progress, live }: PanelProps) {
-  const { characters, locations, candidateUrlById } = view;
+  const { characters, locations, props, candidateUrlById } = view;
   const episodeId = view.episode.id;
   const empty = characters.length === 0 && locations.length === 0;
   return (
-    <Station stage="assets" progress={progress} episodeId={episodeId} promptIds={["extract_assets"]}>
+    <Station stage="assets" progress={progress} episodeId={episodeId} promptIds={["extract_characters", "extract_locations", "extract_props"]}>
       {empty ? (
         <EmptyState view={view} stage="assets">仲未抽到角色／場景，系統會由劇本讀出人物同地點。</EmptyState>
       ) : (
@@ -222,6 +227,11 @@ export function AssetsPanel({ view, progress, live }: PanelProps) {
               refFaceUrl={c.refFaceUrl}
               refFaceNote={c.refFaceNote}
               imageRefSupported={view.imageRefSupported}
+              angles={c.views}
+              viewBasePath="/api/characters"
+              viewIndexParam="viewIndex"
+              viewPromptParam="viewPrompt"
+              viewRegenParam="view"
               locked={c.locked}
               lockPath="/api/characters"
               liveState={live?.[`IMAGE_CHARACTER:${c.id}`] ?? c.activeTask ?? null}
@@ -242,6 +252,9 @@ export function AssetsPanel({ view, progress, live }: PanelProps) {
               chosenId={l.lockedImageMediaId}
               lockedUrl={l.lockedImageUrl}
               isLocation
+              // 場景圖而家跟成品比例生成（見 media-handlers.ts assetRatio），縮圖框要跟返，
+              // 否則 object-cover 會硬裁走一大截構圖。
+              videoRatio={view.episode.project.videoRatio}
               angles={l.angles}
               locked={l.locked}
               lockPath="/api/locations"
@@ -252,7 +265,95 @@ export function AssetsPanel({ view, progress, live }: PanelProps) {
           ))}
         </div>
       )}
+      <PropsSection view={view} live={live} />
     </Station>
+  );
+}
+
+const PROP_TIER_LABEL: Record<string, string> = { key: "關鍵敘事道具", scene: "場景填充道具", effect: "動態特效道具" };
+const PROP_TIER_ORDER = ["key", "scene", "effect"];
+
+// 三個 tier 分組顯示；「重抽道具」（全量）同「補抽」（帶 targetName 嘅專注版本）都打同一個
+// endpoint，唯一分別係 body 有冇 targetName（見 extractPropsHandler）。
+function PropsSection({ view, live }: { view: EpisodeView; live?: LiveTaskMap }) {
+  const { props, candidateUrlById } = view;
+  const episodeId = view.episode.id;
+  const { busy, err, run } = useAction(qk.episode(episodeId));
+  const [targetName, setTargetName] = useState("");
+
+  const grouped = PROP_TIER_ORDER.map((tier) => ({
+    tier,
+    items: props.filter((p) => p.tier === tier),
+  })).filter((g) => g.items.length > 0);
+
+  return (
+    <div className="space-y-4 border-t pt-4">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p className="text-sm font-medium">道具資產</p>
+        <div className="flex flex-wrap items-center gap-2">
+          <Button variant="outline" size="sm" disabled={busy} onClick={() => run(() => api.post(`/api/episodes/${episodeId}/extract-props`, {}))}>
+            <RefreshCw /> 重抽道具
+          </Button>
+          <Input
+            value={targetName}
+            onChange={(e) => setTargetName(e.target.value)}
+            placeholder="漏抽咗？打道具名補抽"
+            className="h-8 w-48"
+          />
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={busy || !targetName.trim()}
+            onClick={() => run(() => api.post(`/api/episodes/${episodeId}/extract-props`, { targetName: targetName.trim() })).then((ok) => ok && setTargetName(""))}
+          >
+            補抽
+          </Button>
+        </div>
+      </div>
+      {err && <p className="text-sm text-destructive">{err}</p>}
+      {props.length === 0 ? (
+        <p className="text-sm text-muted-foreground">仲未有道具資產。撳「重抽道具」由劇本判斷值得入庫嘅道具。</p>
+      ) : (
+        grouped.map((g) => (
+          <div key={g.tier} className="space-y-3">
+            <p className="text-xs font-medium text-muted-foreground">{PROP_TIER_LABEL[g.tier] ?? g.tier}</p>
+            {g.items.map((p) => (
+              <AssetCard
+                key={p.id}
+                id={p.id}
+                kind={`道具・${PROP_TIER_LABEL[p.tier] ?? p.tier}`}
+                name={p.name}
+                desc={p.summary}
+                prompt={p.prompt}
+                promptField="prompt"
+                candidates={p.candidates}
+                chosenId={p.lockedImageMediaId}
+                lockedUrl={p.lockedImageUrl}
+                isProp
+                angles={p.views}
+                viewBasePath="/api/props"
+                viewIndexParam="viewIndex"
+                viewPromptParam="viewPrompt"
+                viewRegenParam="view"
+                metaLine={[p.material && `材質：${p.material}`, p.dimensions && `尺寸：${p.dimensions}`].filter(Boolean).join(" ・ ")}
+                isEffectTier={p.tier === "effect"}
+                physicalParams={p.physicalParams}
+                refVideoUrl={p.refVideoUrl}
+                lastError={p.lastError}
+                locked={p.locked}
+                lockPath="/api/props"
+                // 只有道具畀刪：角色同場景由劇本結構決定，道具係判斷題（服裝被當成道具、
+                // 抽象效果、重複命名），抽多咗要有得執。
+                deletePath="/api/props"
+                liveState={live?.[`IMAGE_PROP:${p.id}`] ?? live?.[`VIDEO_PROP:${p.id}`] ?? p.activeTask ?? null}
+                candidateUrlById={candidateUrlById}
+                episodeId={episodeId}
+              />
+            ))}
+          </div>
+        ))
+      )}
+    </div>
   );
 }
 
@@ -270,12 +371,30 @@ function AssetCard(props: {
   showFaceHint?: boolean;
   isCharacter?: boolean;
   isLocation?: boolean;
+  isProp?: boolean;
+  // 只有場景卡會傳：場景資產跟 project.videoRatio 出圖，所以縮圖框亦要跟。
+  videoRatio?: string;
   refFaceUrl?: string | null;
   refFaceNote?: string;
   imageRefSupported?: boolean;
   angles?: LocationView["angles"];
+  // 道具視圖 API 走 /api/props（唔同 location 嘅 /api/locations），欄位名亦唔同
+  // （viewIndex/viewPrompt/view 對 angleIndex/anglePrompt/angle）——見 AssetViewRow。
+  viewBasePath?: string;
+  viewIndexParam?: string;
+  viewPromptParam?: string;
+  viewRegenParam?: string;
+  // 元數據齊全（材質／尺寸）顯示行，只限道具
+  metaLine?: string;
+  isEffectTier?: boolean;
+  physicalParams?: string;
+  refVideoUrl?: string | null;
+  // 由 DB 查返嚟嘅最新一次失敗記錄（見 episode-snapshot.ts）——同 inFlight 互斥顯示。
+  lastError?: { code: string | null; message: string | null; humanized: string; failedAt: string | null } | null;
   locked: boolean;
   lockPath: string;
+  /** 有值先顯示刪除掣（目前只有道具）。 */
+  deletePath?: string;
   liveState: { progress?: number } | null;
   candidateUrlById: Record<string, string>;
   episodeId: string;
@@ -285,6 +404,8 @@ function AssetCard(props: {
   const [editing, setEditing] = useState(false);
   const [promptDraft, setPromptDraft] = useState(props.prompt);
   const [lightbox, setLightbox] = useState<MediaLightboxMedia | null>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [deleteOpen, setDeleteOpen] = useState(false);
   useEffect(() => {
     if (!editing) setPromptDraft(props.prompt);
   }, [props.prompt, editing]);
@@ -292,6 +413,13 @@ function AssetCard(props: {
   const inFlight = props.liveState !== null;
   const pct = props.liveState?.progress;
   const disabled = busy || inFlight;
+  // 揀圖 ≠ 鎖定：得一張候選圖時自動預揀，唔使強逼撳多一次
+  const effectiveSelected = selectedId ?? (props.candidates.length === 1 ? props.candidates[0] : null);
+
+  // 每種資產嘅出圖比例都唔同（道具 1:1、角色 9:16 但卡片一路用 3/4 裁身、場景跟
+  // project.videoRatio）。統一喺呢度計一次，候選圖格同視角縮圖都用同一個值——
+  // 之前視角縮圖三種資產一律 aspect-video，角色／道具實際係豎圖同方圖，硬裁到變形。
+  const assetAspect = props.isProp ? "1/1" : props.isCharacter ? "3/4" : (props.videoRatio ?? "9:16").replace(":", "/");
 
   async function savePrompt() {
     if (promptDraft === props.prompt) return;
@@ -328,22 +456,19 @@ function AssetCard(props: {
           <Button
             variant="ghost"
             size="sm"
-            disabled={disabled}
+            disabled={disabled || props.locked}
             title={
-              props.candidates.length === 0 && !props.locked
-                ? "生成 3 張候選圖"
-                : props.locked && props.isCharacter
-                  ? "保留身份重生候選圖"
-                  : "重新生成候選圖"
+              props.locked
+                ? "已鎖定唔可以重生——想重生請先撳「重新揀圖」解鎖"
+                : props.candidates.length === 0
+                  ? props.isCharacter
+                    ? "生成一張全身正面圖"
+                    : "生成 3 張候選圖"
+                  : props.isCharacter
+                    ? "重新生成一張全身正面圖取代而家嗰張"
+                    : "重新生成候選圖"
             }
-            onClick={() =>
-              run(() =>
-                api.post(
-                  `${props.lockPath}/${props.id}/regenerate`,
-                  props.locked && props.isCharacter ? { keepIdentity: true } : {},
-                ),
-              )
-            }
+            onClick={() => run(() => api.post(`${props.lockPath}/${props.id}/regenerate`, {}))}
           >
             <RefreshCw /> {props.candidates.length === 0 && !props.locked ? "生成" : "重生"}
           </Button>
@@ -368,32 +493,98 @@ function AssetCard(props: {
               重新揀圖
             </Button>
           )}
+          {props.deletePath && (
+            <>
+              <Button
+                variant="ghost"
+                size="sm"
+                disabled={disabled}
+                title="刪除呢件資產"
+                aria-label={`刪除 ${props.name}`}
+                onClick={() => setDeleteOpen(true)}
+              >
+                <Trash2 />
+              </Button>
+              <ConfirmDialog
+                open={deleteOpen}
+                onOpenChange={setDeleteOpen}
+                title={`刪除「${props.name}」？`}
+                description={
+                  <>
+                    會連埋已生成嘅候選圖同視圖一齊刪走，唔可以復原。
+                    {props.locked && <> 呢件資產已鎖定。</>}
+                    <br />
+                    劇本入面仲有呢件道具嘅話，之後「重抽道具」會再抽返出嚟。
+                  </>
+                }
+                destructive
+                confirmLabel="確定刪除"
+                onConfirm={() => run(() => api.del(`${props.deletePath}/${props.id}`))}
+              />
+            </>
+          )}
         </div>
       </div>
+      {!inFlight && props.lastError && (
+        <div className="flex flex-wrap items-center gap-2 rounded-md border border-destructive/40 bg-destructive/5 px-2 py-1.5">
+          <Badge variant="destructive">{props.lastError.humanized}</Badge>
+          <Button
+            variant="ghost"
+            size="sm"
+            disabled={disabled}
+            title="重新提交生成（同撳「重生」一樣）"
+            onClick={() => run(() => api.post(`${props.lockPath}/${props.id}/regenerate`, {}))}
+          >
+            <RefreshCw /> 重試
+          </Button>
+        </div>
+      )}
       {props.desc && <p className="text-sm text-muted-foreground">{props.desc}</p>}
-      {props.isLocation && props.angles && props.angles.length > 0 && (
+      {props.isProp && props.metaLine && <p className="text-xs text-muted-foreground">{props.metaLine}</p>}
+      <PromptPreview previewUrl={`${props.lockPath}/${props.id}/preview-prompt`} promptDraft={promptDraft} />
+      {(props.isLocation || props.isProp || props.isCharacter) && props.angles && props.angles.length > 0 && (
         <div className="space-y-2 rounded-md border border-dashed p-3">
-          <p className="text-xs font-medium text-muted-foreground">AI 建議視角</p>
+          <p className="text-xs font-medium text-muted-foreground">{props.isProp ? "道具視圖" : props.isCharacter ? "側面／背面視圖" : "AI 建議視角"}</p>
           <div className="space-y-2">
             {props.angles.map((angle, i) => (
-              <LocationAngleRow
+              <AssetViewRow
                 key={i}
-                locationId={props.id}
-                locationName={props.name}
-                angleIndex={i}
+                basePath={props.viewBasePath ?? "/api/locations"}
+                parentId={props.id}
+                parentName={props.name}
+                viewIndex={i}
                 label={angle.label}
                 prompt={angle.prompt}
+                reason={angle.reason}
                 mediaId={angle.mediaId}
                 url={angle.url}
                 locked={props.locked}
                 disabled={disabled}
                 episodeId={props.episodeId}
                 onLightbox={setLightbox}
+                indexParam={props.viewIndexParam ?? "angleIndex"}
+                promptParam={props.viewPromptParam ?? "anglePrompt"}
+                regenParam={props.viewRegenParam ?? "angle"}
+                previewBasePath={props.lockPath}
+                thumbAspect={assetAspect}
               />
             ))}
           </div>
-          <p className="text-xs text-muted-foreground">鎖定主圖後可以逐個生成視角圖</p>
+          <p className="text-xs text-muted-foreground">
+            {props.isCharacter ? "鎖定正面圖後可以逐個生成側面／背面視圖" : "鎖定主圖後可以逐個生成視角圖"}
+          </p>
         </div>
+      )}
+      {props.isEffectTier && (
+        <EffectClipSlot
+          propId={props.id}
+          name={props.name}
+          physicalParams={props.physicalParams ?? ""}
+          refVideoUrl={props.refVideoUrl ?? null}
+          locked={props.locked}
+          disabled={disabled}
+          episodeId={props.episodeId}
+        />
       )}
       {/* disabled gates on busy only, NOT inFlight: a running generation task
           already read the old row, so swapping the reference face mid-flight is
@@ -437,11 +628,8 @@ function AssetCard(props: {
             <img
               src={props.lockedUrl}
               alt={props.name}
-              className={cn(
-                "rounded-md",
-                props.isLocation ? "max-w-[320px] object-contain" : "max-w-[200px] object-cover",
-              )}
-              style={props.isLocation ? undefined : { aspectRatio: "3/4" }}
+              className={cn("rounded-md", props.isProp ? "max-w-[200px] object-contain" : "max-w-[200px] object-cover")}
+              style={{ aspectRatio: assetAspect }}
             />
           </button>
           {props.faceUrl ? (
@@ -463,61 +651,74 @@ function AssetCard(props: {
           ) : null}
         </div>
       ) : props.candidates.length === 0 ? (
-        <p className="text-sm text-muted-foreground">未有候選圖。撳上面「生成」生成 3 張候選，或喺「下一步」一次過生成全部資產圖。</p>
+        <p className="text-sm text-muted-foreground">
+          {props.isCharacter
+            ? "未有圖。撳上面「生成」出一張全身正面圖，或喺「下一步」一次過生成全部資產圖。"
+            : "未有候選圖。撳上面「生成」生成 3 張候選，或喺「下一步」一次過生成全部資產圖。"}
+        </p>
       ) : (
-        <div
-          className={cn(
-            "grid gap-3",
-            props.isLocation ? "grid-cols-2 sm:grid-cols-3" : "grid-cols-3 sm:grid-cols-4",
-          )}
-        >
-          {props.candidates.map((mediaId) => {
-            const url = props.candidateUrlById[mediaId];
-            const chosen = props.chosenId === mediaId;
-            return (
-              <div key={mediaId} className="group relative">
-                <button
-                  type="button"
-                  disabled={busy}
-                  aria-pressed={chosen}
-                  onClick={() => run(() => api.post(`${props.lockPath}/${props.id}/lock`, { mediaId }))}
-                  title={chosen ? "已揀呢張" : "揀呢張鎖定"}
-                  aria-label={chosen ? `${props.name} 已揀呢張候選圖` : `揀 ${props.name} 呢張候選圖`}
-                  className={cn(
-                    "block w-full overflow-hidden rounded-md border-2 transition-colors",
-                    props.isLocation ? "aspect-video" : "aspect-[3/4]",
-                    chosen ? "border-primary ring-2 ring-primary" : "border-transparent hover:border-border",
-                  )}
-                >
-                  {url ? (
-                    <img src={url} alt="候選" className="size-full object-cover" />
-                  ) : (
-                    <span className="flex size-full items-center justify-center text-xs text-muted-foreground">
-                      無圖
-                    </span>
-                  )}
-                  {/* Non-colour indicator too (WCAG 1.4.1): the ring alone is a
-                      colour-only signal for which candidate is locked. */}
-                  {chosen && (
-                    <span className="absolute top-1 right-1 flex size-5 items-center justify-center rounded-full bg-primary text-primary-foreground">
-                      <Check className="size-3" />
-                    </span>
-                  )}
-                </button>
-                {url && (
+        <div className="space-y-3">
+          <div className={cn("grid gap-3", props.isProp ? "grid-cols-3 sm:grid-cols-3" : "grid-cols-3 sm:grid-cols-4")}>
+            {props.candidates.map((mediaId) => {
+              const url = props.candidateUrlById[mediaId];
+              const selected = effectiveSelected === mediaId;
+              return (
+                <div key={mediaId} className="group relative">
                   <button
                     type="button"
-                    aria-label="放大檢視候選圖"
-                    title="放大檢視候選圖"
-                    onClick={() => setLightbox({ src: url, type: "image", title: `${props.name} 候選圖` })}
-                    className="absolute bottom-1 right-1 z-10 flex size-6 items-center justify-center rounded-md bg-black/60 text-white opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100"
+                    disabled={busy}
+                    aria-pressed={selected}
+                    onClick={() => setSelectedId(mediaId)}
+                    title={selected ? "已揀" : "揀呢張"}
+                    aria-label={selected ? `${props.name} 已揀呢張候選圖` : `揀 ${props.name} 呢張候選圖`}
+                    className={cn(
+                      "block w-full overflow-hidden rounded-md border-2 transition-colors",
+                      selected ? "border-primary ring-2 ring-primary" : "border-transparent hover:border-border",
+                    )}
+                    style={{ aspectRatio: assetAspect }}
                   >
-                    <ZoomIn className="size-3.5" />
+                    {url ? (
+                      <img src={url} alt="候選" className="size-full object-cover" />
+                    ) : (
+                      <span className="flex size-full items-center justify-center text-xs text-muted-foreground">
+                        無圖
+                      </span>
+                    )}
+                    {/* Non-colour indicator too (WCAG 1.4.1): the ring alone is a
+                        colour-only signal for which candidate is selected. */}
+                    {selected && (
+                      <span className="absolute top-1 right-1 flex size-5 items-center justify-center rounded-full bg-primary text-primary-foreground">
+                        <Check className="size-3" />
+                      </span>
+                    )}
                   </button>
-                )}
-              </div>
-            );
-          })}
+                  {url && (
+                    <button
+                      type="button"
+                      aria-label="放大檢視候選圖"
+                      title="放大檢視候選圖"
+                      onClick={() => setLightbox({ src: url, type: "image", title: `${props.name} 候選圖` })}
+                      className="absolute bottom-1 right-1 z-10 flex size-6 items-center justify-center rounded-md bg-black/60 text-white opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100"
+                    >
+                      <ZoomIn className="size-3.5" />
+                    </button>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+          <Button
+            size="sm"
+            disabled={!effectiveSelected || busy || inFlight}
+            title={effectiveSelected ? "鎖定選中嗰張做正式圖" : "先揀一張候選圖"}
+            onClick={() =>
+              run(() => api.post(`${props.lockPath}/${props.id}/lock`, { mediaId: effectiveSelected })).then((ok) => {
+                if (ok) setSelectedId(null);
+              })
+            }
+          >
+            🔒 鎖定
+          </Button>
         </div>
       )}
       {err && <p className="text-sm text-destructive">{err}</p>}
@@ -529,34 +730,55 @@ function AssetCard(props: {
 // One AI-suggested angle's prompt, editable independent of the other angles'
 // drafts — each row owns its own autosave state so editing one doesn't clobber
 // another mid-flight (same pattern as savePrompt above, one row per angle).
-function LocationAngleRow({
-  locationId,
-  locationName,
-  angleIndex,
+// 通用多視圖 row — location 嘅角度（/api/locations, angleIndex/anglePrompt/angle）
+// 同 prop 嘅視圖（/api/props, viewIndex/viewPrompt/view）共用同一組 UI，
+// 只係 basePath 同欄位名唔同（見 AssetCard 嘅 viewBasePath/viewIndexParam 等）。
+function AssetViewRow({
+  basePath,
+  parentId,
+  parentName,
+  viewIndex,
   label,
   prompt,
+  reason,
   mediaId,
   url,
   locked,
   disabled,
   episodeId,
   onLightbox,
+  indexParam,
+  promptParam,
+  regenParam,
+  previewBasePath,
+  thumbAspect,
 }: {
-  locationId: string;
-  locationName: string;
-  angleIndex: number;
+  basePath: string;
+  parentId: string;
+  parentName: string;
+  viewIndex: number;
   label: string;
   prompt: string;
+  reason?: string;
   mediaId: string | null;
   url: string | null;
   locked: boolean;
   disabled: boolean;
   episodeId: string;
   onLightbox: (media: MediaLightboxMedia) => void;
+  indexParam: string;
+  promptParam: string;
+  regenParam: string;
+  // 三種資產（character/location/prop）而家都有 preview-prompt endpoint——
+  // 傳入父資產嘅 API base（例如 "/api/characters"）先會顯示「查看實際 Prompt」toggle。
+  previewBasePath?: string;
+  // CSS aspect-ratio（例："9/16"、"1/1"、"3/4"）——呢個 row 由 character／location／prop
+  // 三種資產共用，出圖比例各自唔同，所以由父卡片傳落嚟，唔可以喺呢度一刀切。
+  thumbAspect: string;
 }) {
   const { busy, run } = useAction(qk.episode(episodeId));
   const { text, onChange, onBlur, saved } = useAutosaveField(prompt, (v) =>
-    run(() => api.patch(`/api/locations/${locationId}`, { angleIndex, anglePrompt: v })),
+    run(() => api.patch(`${basePath}/${parentId}`, { [indexParam]: viewIndex, [promptParam]: v })),
   );
   const genDisabled = disabled || busy || !locked;
 
@@ -569,17 +791,161 @@ function LocationAngleRow({
           size="sm"
           disabled={genDisabled}
           title={locked ? (mediaId ? "重新生成呢個視角" : "用鎖定主圖生成呢個視角") : "先鎖定主圖，視角圖會用主圖做參照保持一致"}
-          onClick={() => run(() => api.post(`/api/locations/${locationId}/regenerate`, { angle: angleIndex }))}
+          onClick={() => run(() => api.post(`${basePath}/${parentId}/regenerate`, { [regenParam]: viewIndex }))}
         >
           <RefreshCw /> {mediaId ? "重生" : "生成"}
         </Button>
       </div>
+      {reason && <p className="text-xs text-muted-foreground">AI 判斷依據：{reason}</p>}
       <Textarea value={text} onChange={(e) => onChange(e.target.value)} onBlur={onBlur} rows={2} />
       <SavedHint saved={saved} />
+      {previewBasePath && <PromptPreview previewUrl={`${previewBasePath}/${parentId}/preview-prompt`} view={{ label, prompt: text }} />}
       {url && (
-        <button type="button" className="cursor-zoom-in" onClick={() => onLightbox({ src: url, type: "image", title: `${locationName} 視角：${label}` })}>
-          <img src={url} alt={`${locationName} 視角：${label}`} className="aspect-video max-w-[200px] rounded-md object-cover" />
+        <button type="button" className="cursor-zoom-in" onClick={() => onLightbox({ src: url, type: "image", title: `${parentName} 視角：${label}` })}>
+          <img
+            src={url}
+            alt={`${parentName} 視角：${label}`}
+            className="max-w-[200px] rounded-md object-cover"
+            style={{ aspectRatio: thumbAspect }}
+          />
         </button>
+      )}
+    </div>
+  );
+}
+
+// 「查看實際 Prompt」——生成前即時預覽，call POST <previewUrl>（三種資產各有
+// 自己嘅 /api/{characters,locations,props}/[id]/preview-prompt route）。全部
+// 重用返生成 handler 果幾個 pure builder，保證預覽同實際生成用緊同一份邏輯，
+// 唔會兩邊飄散。摺疊區預設關閉，展開先 fetch，之後 draft 變動 debounce 500ms 自動重新 call。
+function PromptPreview({
+  previewUrl,
+  promptDraft,
+  view,
+  effectVideo,
+  physicalParams,
+}: {
+  previewUrl: string;
+  promptDraft?: string;
+  view?: { label: string; prompt: string };
+  effectVideo?: boolean;
+  physicalParams?: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const [result, setResult] = useState<{
+    mainPrompt?: string;
+    viewPrompt?: string;
+    videoPrompt?: string;
+    facePrompt?: string;
+    negativePrompt?: string;
+    sceneRefName?: string | null;
+    hasRefFace?: boolean;
+  } | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    setLoading(true);
+    setErr(null);
+    const timer = setTimeout(() => {
+      const body = effectVideo ? { effectVideo: true, physicalParams } : view ? { view } : { prompt: promptDraft };
+      api
+        .post<{
+          mainPrompt?: string;
+          viewPrompt?: string;
+          videoPrompt?: string;
+          facePrompt?: string;
+          negativePrompt?: string;
+          sceneRefName?: string | null;
+          hasRefFace?: boolean;
+        }>(previewUrl, body)
+        .then(setResult)
+        .catch((e) => setErr(e instanceof Error ? e.message : "預覽失敗"))
+        .finally(() => setLoading(false));
+    }, 500);
+    return () => clearTimeout(timer);
+  }, [open, previewUrl, promptDraft, view?.prompt, effectVideo, physicalParams]);
+
+  const text = result?.mainPrompt ?? result?.viewPrompt ?? result?.facePrompt ?? result?.videoPrompt ?? "";
+
+  return (
+    <div className="space-y-1">
+      <button
+        type="button"
+        className="text-xs text-muted-foreground underline underline-offset-2 hover:text-foreground"
+        onClick={() => setOpen((v) => !v)}
+      >
+        {open ? "收起 Prompt 預覽" : "查看實際 Prompt"}
+      </button>
+      {open && (
+        <div className="space-y-1 rounded-md border border-dashed bg-muted/30 p-2 text-xs">
+          {loading && <p className="text-muted-foreground">計緊…</p>}
+          {err && <p className="text-destructive">{err}</p>}
+          {!loading && !err && result && (
+            <>
+              {result.sceneRefName && <p className="text-muted-foreground">呢張圖會以場景「{result.sceneRefName}」嘅鎖定圖做參考</p>}
+              {result.hasRefFace && <p className="text-muted-foreground">會附上墊臉參考圖，face 會鎖住呢張臉</p>}
+              <pre className="whitespace-pre-wrap break-words font-mono">{text}</pre>
+              {result.negativePrompt && <p className="text-muted-foreground">Negative：{result.negativePrompt}</p>}
+            </>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// tier=effect 專屬：編輯 physicalParams（強度/顏色/持續時間）+ 觸發／顯示動態參考片段。
+function EffectClipSlot({
+  propId,
+  name,
+  physicalParams,
+  refVideoUrl,
+  locked,
+  disabled,
+  episodeId,
+}: {
+  propId: string;
+  name: string;
+  physicalParams: string;
+  refVideoUrl: string | null;
+  locked: boolean;
+  disabled: boolean;
+  episodeId: string;
+}) {
+  const { busy, run } = useAction(qk.episode(episodeId));
+  const { text, onChange, onBlur, saved } = useAutosaveField(physicalParams, (v) =>
+    run(() => api.patch(`/api/props/${propId}`, { physicalParams: v })),
+  );
+  const genDisabled = disabled || busy || !locked;
+
+  return (
+    <div className="space-y-2 rounded-md border border-dashed p-3">
+      <p className="text-xs font-medium text-muted-foreground">動態特效參數</p>
+      <Textarea
+        value={text}
+        onChange={(e) => onChange(e.target.value)}
+        onBlur={onBlur}
+        rows={2}
+        placeholder="強度／顏色／持續時間／擴散方式"
+      />
+      <SavedHint saved={saved} />
+      <div className="flex items-center gap-2">
+        <Button
+          variant="ghost"
+          size="sm"
+          disabled={genDisabled}
+          title={locked ? "用鎖定嘅靜態參考圖生成動態片段" : "先鎖定靜態參考圖先可以生成動態片段"}
+          onClick={() => run(() => api.post(`/api/props/${propId}/regenerate`, { effectVideo: true }))}
+        >
+          <Video /> {refVideoUrl ? "重生動態參考片段" : "生成動態參考片段"}
+        </Button>
+      </div>
+      <PromptPreview previewUrl={`/api/props/${propId}/preview-prompt`} effectVideo physicalParams={text} />
+      {refVideoUrl && (
+        // eslint-disable-next-line jsx-a11y/media-has-caption -- 內部資產參考片段，非公開內容
+        <video src={refVideoUrl} controls className="max-w-[200px] rounded-md" title={`${name} 動態參考`} />
       )}
     </div>
   );
@@ -792,8 +1158,26 @@ export function ScriptPanel({ view, progress }: PanelProps) {
   const checkup = useAction(qk.episode(epId));
   const review = view.episode.scriptReview;
   const hasReview = !!review && Array.isArray((review as { scenes?: unknown[] }).scenes);
-  const anyBusy = save.busy || regen.busy || checkup.busy;
+  const generating = typeof progress.script === "number";
+  const anyBusy = save.busy || regen.busy || checkup.busy || generating;
   const isEmpty = view.episode.scriptText.length === 0 && !dirty;
+  const [regenConfirmOpen, setRegenConfirmOpen] = useState(false);
+
+  const staleClauses = [
+    (view.characters.length > 0 || view.locations.length > 0 || view.props.length > 0) && "角色／場景／道具資產",
+    view.shots.length > 0 && "分鏡表同已生成嘅圖像／視頻",
+    view.voiceLines.length > 0 && "配音",
+    view.episode.exportUrl && "已合成影片",
+  ].filter((c): c is string => typeof c === "string");
+
+  function runRegen() {
+    return regen.run(() => api.post(`/api/episodes/${epId}/rewrite-script`));
+  }
+
+  function handleRegenClick() {
+    if (staleClauses.length > 0) setRegenConfirmOpen(true);
+    else runRegen();
+  }
 
   return (
     <Station
@@ -822,10 +1206,24 @@ export function ScriptPanel({ view, progress }: PanelProps) {
               variant="outline"
               disabled={anyBusy}
               aria-busy={regen.busy}
-              onClick={() => regen.run(() => api.post(`/api/episodes/${epId}/rewrite-script`))}
+              onClick={handleRegenClick}
             >
               {regen.busy ? <Loader2 className="animate-spin" /> : "重新生成"}
             </Button>
+            <ConfirmDialog
+              open={regenConfirmOpen}
+              onOpenChange={setRegenConfirmOpen}
+              title="重新生成劇本？"
+              description={
+                <>
+                  重新生成劇本後，新劇本可能同以下已生成內容唔一致：<b>{staleClauses.join("、")}</b>。
+                  呢啲內容唔會自動更新，需要你自己判斷係咪要重抽。
+                </>
+              }
+              destructive
+              confirmLabel="確定重新生成"
+              onConfirm={runRegen}
+            />
             <Button
               size="sm"
               variant="outline"
@@ -872,6 +1270,8 @@ export function StoryboardPanel({ view, progress }: PanelProps) {
   const spentSoFar = view.cost?.projectSpendUsd;
   const downstream = view.cost?.downstream;
   const assistedAutoAdvance = view.episode.autoAdvance?.enabled && view.episode.autoAdvance.mode === "assisted";
+  const generating = typeof progress.storyboard === "number";
+  const anyBusy = regen.busy || confirm.busy || generating;
 
   function runConfirmStoryboard() {
     confirm.run(() =>
@@ -890,7 +1290,7 @@ export function StoryboardPanel({ view, progress }: PanelProps) {
             {}
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button variant="ghost" size="icon" disabled={regen.busy || confirm.busy} aria-label="更多分鏡操作">
+                <Button variant="ghost" size="icon" disabled={anyBusy} aria-label="更多分鏡操作">
                   {regen.busy ? <Loader2 className="animate-spin" /> : <MoreHorizontal />}
                 </Button>
               </DropdownMenuTrigger>
@@ -921,7 +1321,7 @@ export function StoryboardPanel({ view, progress }: PanelProps) {
             />
             <Button
               size="sm"
-              disabled={confirm.busy || regen.busy}
+              disabled={anyBusy}
               aria-busy={confirm.busy}
               onClick={() => setConfirmStoryboardOpen(true)}
             >
@@ -1131,22 +1531,73 @@ export function VideosPanel({ view, progress, live }: PanelProps) {
 }
 
 export function VoicePanel({ view, progress, live }: PanelProps) {
-  const { voiceLines, characters } = view;
+  const { voiceLines, characters, voiceCast, voices } = view;
+  const cast = useMemo(() => voiceCast ?? [], [voiceCast]);
+  const [filter, setFilter] = useState<VoiceFilter>("all");
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+
+  // 重新分析台詞會換走成批行 —— 剪走已經唔存在嘅 id，否則數量／花費／POST
+  // 都會帶住死 id（同 ShotWorkbench 一樣嘅理由）。
+  useEffect(() => {
+    setSelected((prev) => {
+      const liveIds = new Set(voiceLines.map((l) => l.id));
+      const pruned = new Set([...prev].filter((id) => liveIds.has(id)));
+      return pruned.size === prev.size ? prev : pruned;
+    });
+  }, [voiceLines]);
+
+  const castBySpeaker = useMemo(() => new Map(cast.map((c) => [c.speaker, c])), [cast]);
+  const rows = voiceLines.filter((v) =>
+    filter === "all" ? true : filter === "pending" ? !v.audioMediaId : Boolean(v.audioMediaId),
+  );
+
+  function toggle(id: string) {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
   return (
     <Station stage="voice" progress={progress} episodeId={view.episode.id} promptIds={["voice_analyze"]}>
       {voiceLines.length === 0 ? (
         <EmptyState view={view} stage="voice">仲未有台詞。系統會由劇本分出對白同旁白，再逐句配音。</EmptyState>
       ) : (
         <div className="flex flex-col gap-3">
-          {voiceLines.map((v) => (
+          <VoiceCastPanel
+            cast={cast}
+            voices={voices ?? []}
+            episodeId={view.episode.id}
+            projectId={view.episode.projectId}
+            casting={Boolean(live?.["VOICE_CAST:" + view.episode.id])}
+          />
+          <VoiceBatchBar
+            lines={voiceLines}
+            cast={cast}
+            episodeId={view.episode.id}
+            perCharUsd={view.cost?.activeModels?.tts.perChar}
+            filter={filter}
+            onFilter={setFilter}
+            selected={selected}
+            onSelected={setSelected}
+          />
+          {rows.map((v) => (
             <VoiceLineRow
               key={v.id}
               line={v}
               episodeId={view.episode.id}
               characterNames={characters.map((c) => c.name)}
               liveState={live?.[`TTS_LINE:${v.id}`] ?? v.activeTask ?? null}
+              selected={selected.has(v.id)}
+              selectable={isCastable(v, castBySpeaker)}
+              onToggle={() => toggle(v.id)}
             />
           ))}
+          {rows.length === 0 && (
+            <p className="p-6 text-center text-muted-foreground">冇符合篩選嘅對白。</p>
+          )}
         </div>
       )}
     </Station>
@@ -1162,11 +1613,17 @@ function VoiceLineRow({
   episodeId,
   characterNames,
   liveState,
+  selected,
+  selectable,
+  onToggle,
 }: {
   line: VoiceLineView;
   episodeId: string;
   characterNames: string[];
   liveState: { progress?: number } | null;
+  selected: boolean;
+  selectable: boolean;
+  onToggle: () => void;
 }) {
   const edit = useAction(qk.episode(episodeId));
   const regen = useAction(qk.episode(episodeId));
@@ -1187,8 +1644,15 @@ function VoiceLineRow({
   }
 
   return (
-    <div className="flex flex-col gap-2 rounded-lg border p-3">
+    <div className={cn("flex flex-col gap-2 rounded-lg border p-3", selected && "bg-accent/40")}>
       <div className="flex flex-wrap items-center gap-2">
+        <Checkbox
+          checked={selected}
+          onCheckedChange={onToggle}
+          disabled={!selectable}
+          aria-label={`選取第 ${line.lineIndex} 句`}
+          title={selectable ? undefined : "未派音色或者台詞係空，配落去只會失敗"}
+        />
         <Select value={line.speaker || "旁白"} onValueChange={changeSpeaker} disabled={edit.busy}>
           <SelectTrigger size="sm" className="w-32">
             <SelectValue />
@@ -1255,33 +1719,53 @@ function VoiceLineRow({
 
 export function ExportPanel({ view, progress }: PanelProps) {
   const url = view.episode.exportUrl;
-  const [lightbox, setLightbox] = useState<MediaLightboxMedia | null>(null);
+  const { busy, err, run } = useAction(qk.episode(view.episode.id));
+  // 有畫面嘅鏡先有得預覽／執位；一個都冇就照舊只顯示 EmptyState
+  const hasTimeline = view.shots.some((s) => s.videoUrl || s.imageUrl);
+  // SSE 進度都要 OR 埋——淨睇 mutation busy 會喺 worker 合成期間鬆開個掣
+  const composing = busy || typeof progress.export === "number";
   return (
     <Station stage="export" progress={progress}>
-      {url ? (
-        <div className="space-y-4 text-center">
-          <div className="relative mx-auto w-full max-w-90">
-            <video src={url} controls className="w-full rounded-lg bg-black" />
-            <button
-              type="button"
-              aria-label="全螢幕檢視"
-              title="全螢幕檢視"
-              onClick={() => setLightbox({ src: url, type: "video", title: "成片" })}
-              className="absolute top-1 right-1 z-10 flex size-6 items-center justify-center rounded-md bg-black/60 text-white"
-            >
-              <Maximize2 className="size-3.5" />
-            </button>
+      <div className="space-y-6">
+        {hasTimeline && <TimelineEditor view={view} />}
+        {hasTimeline ? (
+          <div className="space-y-3 text-center">
+            <div className="flex items-center justify-center gap-3">
+              <Button
+                disabled={composing}
+                aria-busy={composing}
+                onClick={() => run(() => api.post(`/api/episodes/${view.episode.id}/compose`))}
+              >
+                {composing ? (
+                  <>
+                    <Loader2 className="size-4 animate-spin" />
+                    合成緊…{typeof progress.export === "number" ? ` ${Math.round(progress.export)}%` : ""}
+                  </>
+                ) : url ? (
+                  "重新合成"
+                ) : (
+                  "合成成片"
+                )}
+              </Button>
+              {url && !composing && (
+                <Button asChild variant="outline">
+                  <a href={url} download>
+                    下載成片 MP4
+                  </a>
+                </Button>
+              )}
+            </div>
+            {err && <p className="text-sm text-destructive">{err}</p>}
+            <p className="text-xs text-muted-foreground">
+              {url ? "時間軸改咗位？撳「重新合成」出過新版，再下載。" : "上面預覽執好位之後，就可以合成整集導出 MP4。"}
+            </p>
           </div>
-          <Button asChild>
-            <a href={url} download>
-              下載成片 MP4
-            </a>
-          </Button>
-          <MediaLightbox open={!!lightbox} onOpenChange={(o) => !o && setLightbox(null)} media={lightbox} />
-        </div>
-      ) : (
-        <EmptyState view={view} stage="export">仲未合成。完成前面各站之後，會把鏡頭、配音同字幕拼成一條 MP4。</EmptyState>
-      )}
+        ) : (
+          <EmptyState view={view} stage="export">
+            仲未合成。完成前面各站之後，會把鏡頭、配音同字幕拼成一條 MP4。
+          </EmptyState>
+        )}
+      </div>
     </Station>
   );
 }

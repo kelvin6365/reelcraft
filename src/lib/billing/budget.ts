@@ -33,6 +33,8 @@ export async function assertWithinBudget(projectId: string | undefined): Promise
 export interface ActiveModels {
   image: { modelKey: string; unitUsd: number | null };
   video: { modelKey: string; unitUsd: number | null; perSecond: number | null };
+  // TTS 論字計，冇「一句幾錢」呢回事 —— 批量重配嘅預估要由選咗嘅台詞字數乘返出嚟
+  tts: { modelKey: string; perChar: number | null };
 }
 
 export interface DownstreamEstimate {
@@ -89,6 +91,7 @@ export async function estimateDownstreamCost(userId: string, episodeId: string):
     activeModels: {
       image: { modelKey: defaults.image, unitUsd: imageUnitUsd },
       video: { modelKey: defaults.video, unitUsd: videoUnitUsd, perSecond: videoPerSecUsd },
+      tts: { modelKey: defaults.tts, perChar: perCharUsd },
     },
   };
 }

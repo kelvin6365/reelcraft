@@ -1,7 +1,7 @@
 {
   "promptId": "voice_analyze",
   "variables": {
-    "scene_text": "【第1場】咖啡館・夜\n阿May：你等很久了嗎？\n阿Ken：不久，剛坐下。",
+    "scene_text": "【第1場】咖啡館・夜\n阿May：你等很久了嗎？\n阿Ken：不久，剛坐下。\n【廣播】：本店將於十一時結業。",
     "shot_list_json": "[{\"index\": 1, \"subject\": \"阿May推門\", \"dialogue\": \"你等很久了嗎？\"}, {\"index\": 2, \"subject\": \"阿Ken遞茶\", \"dialogue\": \"不久，剛坐下。\"}]"
   },
   "mustContain": [
@@ -12,6 +12,9 @@
     "matchedShotIndex",
     "lineType",
     "cue",
-    "dialogue／vo／os"
+    "dialogue／vo／os",
+    "劇本用方括號標記非人物聲源",
+    "lineType 一律填 vo",
+    "不要把方括號裡的聲源名當成一個真人"
   ]
 }

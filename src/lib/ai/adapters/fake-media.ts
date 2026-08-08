@@ -6,6 +6,7 @@ import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
+import { ffmpegBin } from "@/lib/video/ffmpeg";
 
 const exec = promisify(execFile);
 
@@ -35,7 +36,7 @@ export async function fakeImage(promptSeed: string, aspectRatio: string): Promis
   const [w, h] = dims(aspectRatio);
   return withTemp(async (dir) => {
     const out = join(dir, "img.png");
-    await exec("ffmpeg", [
+    await exec(ffmpegBin(), [
       "-y", "-hide_banner", "-loglevel", "error",
       "-f", "lavfi", "-i", `color=c=${hashColor(promptSeed)}:s=${w}x${h}`,
       "-frames:v", "1", out,
@@ -49,7 +50,7 @@ export async function fakeVideo(promptSeed: string, seconds: number, aspectRatio
   return withTemp(async (dir) => {
     const out = join(dir, "clip.mp4");
     // plain color clip — no drawtext (not all local ffmpeg builds ship it)
-    await exec("ffmpeg", [
+    await exec(ffmpegBin(), [
       "-y", "-hide_banner", "-loglevel", "error",
       "-f", "lavfi", "-i", `color=c=${hashColor(promptSeed)}:s=${w}x${h}:d=${seconds}`,
       "-c:v", "libx264", "-preset", "veryfast", "-crf", "24", "-pix_fmt", "yuv420p", "-r", "24",
@@ -65,7 +66,7 @@ export async function fakeTts(text: string): Promise<{ buffer: Buffer; mimeType:
   const freq = 300 + ((text.length * 37) % 300);
   return withTemp(async (dir) => {
     const out = join(dir, "tts.m4a");
-    await exec("ffmpeg", [
+    await exec(ffmpegBin(), [
       "-y", "-hide_banner", "-loglevel", "error",
       "-f", "lavfi", "-i", `sine=frequency=${freq}:duration=${seconds}`,
       "-c:a", "aac", "-b:a", "64k", out,

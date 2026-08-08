@@ -16,7 +16,7 @@ jobId = task.id     // DB task id == BullMQ job id，為對帳基礎
 
 | 佇列 | 任務類型 |
 |---|---|
-| rc-text | `EPISODE_SPLIT` `EXTRACT_ASSETS` `REWRITE_SCRIPT` `BUILD_SCENES` `STORYBOARD_RUN` `VOICE_ANALYZE` |
+| rc-text | `EPISODE_SPLIT` `EXTRACT_ASSETS` `REWRITE_SCRIPT` `BUILD_SCENES` `STORYBOARD_RUN` `VOICE_ANALYZE` `VOICE_CAST` |
 | rc-image | `IMAGE_CHARACTER` `IMAGE_LOCATION` `IMAGE_SHOT` |
 | rc-video | `VIDEO_SHOT` `COMPOSE_EPISODE` |
 | rc-voice | `TTS_LINE` |

@@ -38,8 +38,12 @@ export async function loadEpisodeWithProject(task: Task): Promise<{ episode: Epi
   return { episode: rest as Episode, project };
 }
 
-// resolvePrompt → callModel → parse → zod validate, with one corrective retry
-// on bad JSON/schema (the retry appends the error so the model can fix itself).
+// resolvePrompt → callModel → parse → zod validate, with corrective retries on
+// bad JSON/schema (each retry appends the error so the model can fix itself).
+// 3 attempts, not 2 — real QA on a 6-character stress-test script showed
+// gemini-2.5-flash-lite occasionally drops an entire top-level key (e.g.
+// "locations") even on the corrective 2nd attempt, so a 3rd chance measurably
+// improves the odds without materially raising cost (cheap "lite" tier).
 export async function textCallJson<Id extends OutputSchemaId>(
   ctx: { userId: string; taskId: string; projectId?: string; episodeId?: string; oneOff?: Record<string, string> },
   modelKey: string,
@@ -54,10 +58,16 @@ export async function textCallJson<Id extends OutputSchemaId>(
   });
 
   let lastError = "";
-  for (let attempt = 1; attempt <= 2; attempt++) {
+  for (let attempt = 1; attempt <= 3; attempt++) {
     const content = attempt === 1 ? p.text : `${p.text}\n\n【上次輸出無效，錯誤：${lastError.slice(0, 300)}。請只輸出合法 JSON。】`;
     const result = await callModel(
       { ...ctx, promptId, promptVersion: p.version, promptSource: p.source, renderedPrompt: content },
+      // No maxTokens cap — this path also covers episode_split (long-novel
+      // multi-episode splitting, 第 2 站 · 劇本 "整部規劃" mode), whose output
+      // legitimately scales with source length. A blanket cap tuned for
+      // extract_assets would silently truncate that. Left uncapped (provider
+      // default applies) since it turned out not to be the fix for the
+      // extract_assets flakiness anyway — see the attempt-count bump above.
       { modelKey: modelKey as `${string}::${string}`, messages: [{ role: "user", content }], jsonMode: true },
     );
     try {

@@ -49,6 +49,11 @@ const ERROR_COPY: Record<string, ErrorCopyEntry> = {
     terminal: true,
     action: { href: "/settings/billing", label: "去增值" },
   },
+  PROP_NOT_FOUND: {
+    message: "劇本入面搵唔到指定嘅道具名，檢查下係咪打錯字，改咗可以重試",
+    terminal: true,
+    recoverable: true,
+  },
   TEMPLATE_NOT_FOUND: {
     message: "找不到對應嘅生成範本，請聯絡管理員",
     terminal: true,

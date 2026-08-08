@@ -6,7 +6,7 @@
 |---|---|---|
 | [01-data-model.md](01-data-model.md) | 全部資料表、欄位、索引、狀態機 | M0 |
 | [02-task-system.md](02-task-system.md) | 佇列、worker、watchdog、SSE、重試策略 | M0–M1 |
-| [03-provider-layer.md](03-provider-layer.md) | provider 契約、三個 adapter、能力目錄 | M0–M1 |
+| [03-provider-layer.md](03-provider-layer.md) | provider 契約、三個 adapter、能力目錄、配音音色綁定、配音先行 | M0–M1 |
 | [04-audit.md](04-audit.md) | AuditLog / AiCallLog / callModel() 入口 | M0 |
 | [05-api-routes.md](05-api-routes.md) | API 路由表 + auth 規則 | M1 |
 | [06-prompts.md](06-prompts.md) | prompt 目錄、變數驗證、canary、畫風包格式 | M1 |

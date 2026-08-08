@@ -27,11 +27,19 @@ async function run() {
           console.log("▶ local 模式 — 單一 process（worker 已內嵌）");
           return spawn("npx", ["next", "dev"], { stdio: "inherit" });
         })()
-      : spawn(
-          "npx",
-          ["concurrently", "-n", "web,worker", "-c", "blue,magenta", "next dev", "npm:worker"],
-          { stdio: "inherit" }
-        );
+      : (() => {
+          // WORKER_WATCH=0（即 `npm run dev:stable`）→ worker 唔行 tsx watch。
+          // 跑真模型嘅長任務時用：watch 模式下改任何一個被 worker 傳遞 import 到
+          // 嘅檔案都會 restart，tsx 只等 5 秒就硬殺。任務本身而家可以斷點續接
+          // （src/lib/ai/request-journal.ts），但唔重啟梗係更順。
+          const stable = process.env.WORKER_WATCH === "0";
+          if (stable) console.log("▶ worker 唔 watch（WORKER_WATCH=0）— 改 worker code 要自己重啟");
+          return spawn(
+            "npx",
+            ["concurrently", "-n", "web,worker", "-c", "blue,magenta", "next dev", stable ? "npm:worker:once" : "npm:worker"],
+            { stdio: "inherit" }
+          );
+        })();
 
   const forwardSignal = (signal) => child.kill(signal);
   process.on("SIGINT", () => forwardSignal("SIGINT"));

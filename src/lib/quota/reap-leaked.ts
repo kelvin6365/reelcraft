@@ -12,8 +12,8 @@ import { prisma } from "@/lib/db";
 import { reapStaleSlots } from "@/lib/quota/gate";
 import { TASK_TYPE } from "@/lib/task/types";
 
-const IMAGE_TYPES = [TASK_TYPE.IMAGE_CHARACTER, TASK_TYPE.IMAGE_LOCATION, TASK_TYPE.IMAGE_SHOT];
-const VIDEO_TYPES = [TASK_TYPE.VIDEO_SHOT, TASK_TYPE.COMPOSE_EPISODE];
+const IMAGE_TYPES = [TASK_TYPE.IMAGE_CHARACTER, TASK_TYPE.IMAGE_LOCATION, TASK_TYPE.IMAGE_PROP, TASK_TYPE.IMAGE_SHOT];
+const VIDEO_TYPES = [TASK_TYPE.VIDEO_SHOT, TASK_TYPE.VIDEO_PROP, TASK_TYPE.COMPOSE_EPISODE];
 
 export async function reapLeakedSlots(userId: string): Promise<{ image: number; video: number }> {
   const [imageProcessing, videoProcessing] = await Promise.all([

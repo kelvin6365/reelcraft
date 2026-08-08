@@ -5,11 +5,13 @@ import { getProviderKey } from "@/lib/ai/provider-key";
 import { getCapabilities, getCapabilityEntry, priceMedia } from "@/lib/ai/capabilities";
 import { AiError, type CallContext } from "@/lib/ai/types";
 import { fakeImage, fakeTts, fakeVideo } from "@/lib/ai/adapters/fake-media";
-import { falImage, falTts, falVideo } from "@/lib/ai/adapters/fal";
-import { atlasImage, atlasTts, atlasVideo } from "@/lib/ai/adapters/atlascloud";
+import { falImageSubmit, falPoll, falTtsSubmit, falVideoSubmit } from "@/lib/ai/adapters/fal";
+import { atlasImageSubmit, atlasPoll, atlasTtsSubmit, atlasVideoSubmit } from "@/lib/ai/adapters/atlascloud";
+import { markConsumed, runJournaled } from "@/lib/ai/request-journal";
 import { loadTemplates, runTemplate, type TemplateVars } from "@/lib/ai/template/runtime";
-import { normalizeReferenceImages } from "@/lib/ai/outbound-image";
+import { dedupeReferenceRefs, normalizeReferenceImages, type ReferenceImageRef } from "@/lib/ai/outbound-image";
 import { createMediaFromBuffer, createMediaFromUrl, getMediaUrl } from "@/lib/media/service";
+import type { VoiceBinding } from "@/lib/voice/binding";
 import type { MediaObject } from "@prisma/client";
 
 async function getOutboundImageUrl(mediaId: string): Promise<string> {
@@ -43,14 +45,26 @@ export interface ImageGenRequest {
   prompt: string;
   negativePrompt?: string;
   aspectRatio: string;
+  // 目標解像度層級——模型能力表（capabilities.resolutions）冇聲明支援嘅話會被靜默剝走，
+  // 交由 provider 預設輸出，唔會令任務失敗。
+  resolution?: ImageResolution;
   keyPrefix: string;
-  referenceMediaIds?: string[];
+  // 參考圖：可以係純 mediaId，亦可以係 { mediaId, identityAnchor: true } —— 後者
+  // 標明「呢張係身份錨定圖（角色近臉特寫）」，會走高解析度／低壓縮路徑而且唔會
+  // 按出圖比例 center-crop（見 outbound-image.ts）。
+  referenceMediaIds?: ReferenceImageRef[];
 }
+
+export type ImageResolution = "1K" | "2K" | "4K";
 
 export interface VideoGenRequest {
   modelKey: string;
   prompt: string;
   sourceImageMediaId?: string;
+  // 尾幀錨定（首尾幀）：條片會由 sourceImageMediaId 過渡到呢張圖。用落一鏡嘅分鏡圖做
+  // 尾幀，兩條片喺接口嗰格完全一樣，剪埋一齊零跳。模型能力表冇聲明 supportsEndFrame
+  // 就會被靜默剝走（照生片，唔會令任務失敗）—— 同 resolution 一樣嘅降級風格。
+  endImageMediaId?: string;
   durationSec: number;
   aspectRatio: string;
   keyPrefix: string;
@@ -59,7 +73,11 @@ export interface VideoGenRequest {
 export interface TtsGenRequest {
   modelKey: string;
   text: string;
-  voiceId?: string;
+  // 邊把聲 —— 由 resolveVoiceBinding() 解出嚟，null = 未派音（provider 預設聲）。
+  // 呼叫方要負責喺派音之前攔住，唔好靜靜生成一堆同一把聲嘅音檔。
+  voice?: VoiceBinding | null;
+  // voice_analyze 標註嘅中文情緒詞；adapter 內部收窄成 provider 枚舉
+  emotion?: string;
   emotionStrength?: number;
   keyPrefix: string;
 }
@@ -122,19 +140,27 @@ export function effectiveImageModelKey(modelKey: string, hasRefs: boolean): stri
 }
 
 export async function generateImage(ctx: CallContext, req: ImageGenRequest): Promise<MediaObject> {
-  const referenceImages = req.referenceMediaIds?.length
-    ? await normalizeReferenceImages(req.referenceMediaIds)
-    : undefined;
+  // 次序好重要：先由參考圖數量決定最終 model key（t2i → /edit swap），再 normalize。
+  // Normalize 要知道目標比例（將來仲會要知 per-model capability），所以唔可以再喺
+  // model key 未定案之前跑。用 dedupeReferenceRefs 而唔係 raw array length，
+  // 令「hasRefs」同 normalize 實際會處理嘅張數對齊（空字串／重複會被剔走）。
+  const refs = dedupeReferenceRefs(req.referenceMediaIds ?? []);
+  const modelKey = effectiveImageModelKey(req.modelKey, refs.length > 0);
 
-  const modelKey = effectiveImageModelKey(req.modelKey, !!referenceImages?.length);
-
-  if (referenceImages?.length && !getCapabilities(modelKey)?.supportsReferenceImages) {
+  if (refs.length > 0 && !getCapabilities(modelKey)?.supportsReferenceImages) {
     throw new AiError(
       "MODEL_NO_REFERENCE_SUPPORT",
       `${modelKey} 唔支援參考圖（img2img）——鎖定資產嘅角色一致性會失效。請喺專案設定揀一個支援參考圖嘅圖像模型。`,
       false,
     );
   }
+
+  const resolution =
+    req.resolution && getCapabilities(modelKey)?.resolutions?.includes(req.resolution) ? req.resolution : undefined;
+
+  // 裁到出圖比例：Gemini「採用最後一張輸入圖嘅比例」，1344×768 嘅場景圖入 9:16
+  // 出圖會令模型砌橫構圖再 letterbox → 燒死黑邊。
+  const referenceImages = refs.length ? await normalizeReferenceImages(refs, { aspectRatio: req.aspectRatio }) : undefined;
 
   return generate(ctx, "image", modelKey, async ({ provider, modelId }) => {
     if (provider === "fake") {
@@ -144,28 +170,33 @@ export async function generateImage(ctx: CallContext, req: ImageGenRequest): Pro
     }
     if (provider === "fal" || provider === "atlascloud") {
       const apiKey = await getProviderKey(ctx.userId, provider);
-      if (provider === "fal") {
-        const { url, providerRequestId } = await falImage({
-          modelId,
-          prompt: req.prompt,
-          negativePrompt: req.negativePrompt,
-          aspectRatio: req.aspectRatio,
-          apiKey,
-          referenceImages,
-        });
-        const media = await createMediaFromUrl({ userId: ctx.userId, url, keyPrefix: req.keyPrefix });
-        return { media, quantity: 1, unit: "image", providerRequestId };
-      }
-      const { url, providerRequestId } = await atlasImage({
+      const args = {
         modelId,
         prompt: req.prompt,
         negativePrompt: req.negativePrompt,
         aspectRatio: req.aspectRatio,
+        resolution,
         apiKey,
         referenceImages,
-      });
+      };
+      const { result: url, journalId, handle } = await runJournaled<string>(
+        ctx,
+        {
+          provider,
+          apiType: "image",
+          modelKey,
+          // descriptor 用 mediaId（唔係 normalize 完嘅 data URI）—— 平、而且
+          // 跨 worker 重啟一定砌得返同一個 hash。
+          descriptor: { modelKey, prompt: req.prompt, negativePrompt: req.negativePrompt, aspectRatio: req.aspectRatio, resolution, refs },
+        },
+        {
+          submit: () => (provider === "fal" ? falImageSubmit(args) : atlasImageSubmit(args)),
+          poll: async (h) => (provider === "fal" ? (await falPoll(h, apiKey, "image")).url : (await atlasPoll(h, apiKey)).url),
+        },
+      );
       const media = await createMediaFromUrl({ userId: ctx.userId, url, keyPrefix: req.keyPrefix });
-      return { media, quantity: 1, unit: "image", providerRequestId };
+      await markConsumed(journalId, media.id);
+      return { media, quantity: 1, unit: "image", providerRequestId: handle.requestId };
     }
     if (provider === "template") {
       const media = await runTemplateProvider(ctx, "image", modelId, req.keyPrefix, {
@@ -177,6 +208,17 @@ export async function generateImage(ctx: CallContext, req: ImageGenRequest): Pro
     }
     throw new AiError("PROVIDER_NOT_IMPLEMENTED", `image provider not wired yet: ${provider}`);
   });
+}
+
+// 尾幀能力閘：模型冇聲明 supportsEndFrame 就唔傳，照生片。刻意唔 throw —— 尾幀係
+// 錦上添花嘅連戲手段，唔值得因為換咗個 model 就令成批鏡頭 fail。留 warn 等切模型之後
+// 「點解啲片突然接唔順」查得返。
+async function getOutboundEndImageUrl(modelKey: string, mediaId: string): Promise<string | null> {
+  if (!getCapabilities(modelKey)?.supportsEndFrame) {
+    console.warn(`[generate-media] ${modelKey} 冇聲明 supportsEndFrame，尾幀錨定已跳過`);
+    return null;
+  }
+  return getOutboundImageUrl(mediaId);
 }
 
 function clampDuration(modelKey: string, requested: number): number {
@@ -197,17 +239,39 @@ export async function generateVideo(ctx: CallContext, req: VideoGenRequest): Pro
     if (provider === "fal" || provider === "atlascloud") {
       const apiKey = await getProviderKey(ctx.userId, provider);
       const imageUrl = req.sourceImageMediaId ? await getOutboundImageUrl(req.sourceImageMediaId) : null;
-      const gen = provider === "fal" ? falVideo : atlasVideo;
-      const { url, providerRequestId } = await gen({
+      const endImageUrl = req.endImageMediaId ? await getOutboundEndImageUrl(req.modelKey, req.endImageMediaId) : null;
+      const args = {
         modelId,
         prompt: req.prompt,
         imageUrl: imageUrl ?? undefined,
+        endImageUrl: endImageUrl ?? undefined,
         durationSec: req.durationSec,
         aspectRatio: req.aspectRatio,
         apiKey,
-      });
+      };
+      const { result: url, journalId, handle } = await runJournaled<string>(
+        ctx,
+        {
+          provider,
+          apiType: "video",
+          modelKey: req.modelKey,
+          descriptor: {
+            modelKey: req.modelKey,
+            prompt: req.prompt,
+            sourceImageMediaId: req.sourceImageMediaId ?? null,
+            endImageMediaId: req.endImageMediaId ?? null,
+            durationSec: req.durationSec,
+            aspectRatio: req.aspectRatio,
+          },
+        },
+        {
+          submit: () => (provider === "fal" ? falVideoSubmit(args) : atlasVideoSubmit(args)),
+          poll: async (h) => (provider === "fal" ? (await falPoll(h, apiKey, "video")).url : (await atlasPoll(h, apiKey)).url),
+        },
+      );
       const media = await createMediaFromUrl({ userId: ctx.userId, url, keyPrefix: req.keyPrefix });
-      return { media, quantity: req.durationSec, unit: "second", providerRequestId };
+      await markConsumed(journalId, media.id);
+      return { media, quantity: req.durationSec, unit: "second", providerRequestId: handle.requestId };
     }
     if (provider === "template") {
       const imageUrl = req.sourceImageMediaId ? await getMediaUrl(req.sourceImageMediaId) : null;
@@ -232,16 +296,50 @@ export async function generateTts(ctx: CallContext, req: TtsGenRequest): Promise
     }
     if (provider === "fal" || provider === "atlascloud") {
       const apiKey = await getProviderKey(ctx.userId, provider);
-      const referenceAudioUrl = req.voiceId ? (await getMediaUrl(req.voiceId)) ?? undefined : undefined;
-      const gen = provider === "fal" ? falTts : atlasTts;
-      const { url, providerRequestId } = await gen({ modelId, text: req.text, referenceAudioUrl, apiKey });
+      const referenceAudioUrl =
+        req.voice?.kind === "ref" ? (await getMediaUrl(req.voice.mediaId)) ?? undefined : undefined;
+      const presetVoiceId = req.voice?.kind === "preset" ? req.voice.presetId : undefined;
+      const args = {
+        modelId,
+        text: req.text,
+        referenceAudioUrl,
+        presetVoiceId,
+        emotion: req.emotion,
+        emotionStrength: req.emotionStrength,
+        apiKey,
+      };
+      const { result: url, journalId, handle } = await runJournaled<string>(
+        ctx,
+        {
+          provider,
+          apiType: "tts",
+          modelKey: req.modelKey,
+          // descriptor 係續接用嘅指紋：任何改變合成結果嘅輸入都要入面，
+          // 否則改咗音色／情緒之後會續返舊 request 攞返舊聲。
+          descriptor: {
+            modelKey: req.modelKey,
+            text: req.text,
+            voice: req.voice ?? null,
+            emotion: req.emotion ?? null,
+            emotionStrength: req.emotionStrength ?? null,
+          },
+        },
+        {
+          submit: () => (provider === "fal" ? falTtsSubmit(args) : atlasTtsSubmit(args)),
+          poll: async (h) => (provider === "fal" ? (await falPoll(h, apiKey, "tts")).url : (await atlasPoll(h, apiKey)).url),
+        },
+      );
       const media = await createMediaFromUrl({ userId: ctx.userId, url, keyPrefix: req.keyPrefix });
-      return { media, quantity: req.text.length, unit: "character", providerRequestId };
+      await markConsumed(journalId, media.id);
+      return { media, quantity: req.text.length, unit: "character", providerRequestId: handle.requestId };
     }
     if (provider === "template") {
+      const referenceAudioUrl =
+        req.voice?.kind === "ref" ? (await getMediaUrl(req.voice.mediaId)) ?? "" : "";
       const media = await runTemplateProvider(ctx, "tts", modelId, req.keyPrefix, {
         text: req.text,
-        voice_id: req.voiceId ?? "",
+        voice_id: req.voice?.kind === "preset" ? req.voice.presetId : "",
+        reference_audio_url: referenceAudioUrl,
       });
       return { media, quantity: req.text.length, unit: "character" };
     }

@@ -116,6 +116,8 @@ export interface CharacterView {
   refFaceNote: string;
   locked: boolean;
   activeTask?: ActiveTaskView | null;
+  // 側面/背面視角 — mediaId/url 要鎖定主圖之後先會有值
+  views: { label: string; prompt: string; mediaId: string | null; url: string | null }[];
 }
 
 export interface LocationView {
@@ -128,8 +130,33 @@ export interface LocationView {
   lockedImageUrl: string | null;
   locked: boolean;
   activeTask?: ActiveTaskView | null;
-  // AI 建議視角 (extract_assets v3) — mediaId/url 要到 PR3 先會有值
-  angles: { label: string; prompt: string; mediaId: string | null; url: string | null }[];
+  // AI 建議視角 (extract_locations) — mediaId/url 要到 PR3 先會有值；reason 係
+  // AI 判斷依據，純文字唔係畫面描述
+  angles: { label: string; prompt: string; mediaId: string | null; url: string | null; reason?: string }[];
+}
+
+export interface PropView {
+  id: string;
+  name: string;
+  tier: "key" | "scene" | "effect" | string;
+  summary: string;
+  prompt: string;
+  material: string;
+  dimensions: string;
+  physicalParams: string;
+  candidates: string[];
+  lockedImageMediaId: string | null;
+  lockedImageUrl: string | null;
+  locked: boolean;
+  locationId: string | null;
+  refVideoMediaId: string | null;
+  refVideoUrl: string | null;
+  activeTask?: ActiveTaskView | null;
+  // 呢件道具最新一次生成 attempt 嘅失敗記錄（DB 查返嚟，唔靠 SSE）——最新一次係
+  // completed 就係 null。撳「重試」just 重新提交 regenerate，唔係 retry-by-taskId。
+  lastError: { code: string | null; message: string | null; humanized: string; failedAt: string | null } | null;
+  // 多視圖（key tier 四視圖：正/反/側/細節特寫；effect tier 靜態關鍵幀；scene tier 通常 0-1 個）
+  views: { label: string; prompt: string; mediaId: string | null; url: string | null }[];
 }
 
 export interface StoryboardJson {
@@ -151,6 +178,9 @@ export interface ShotView {
   videoUrl: string | null;
   status: string;
   durationMs: number;
+  // 實際生成影片嘅時長（worker 探測寫入 MediaObject；舊資料可能 null）。
+  // 時間軸用 videoDurationMs ?? durationMs 做鏡頭闊度。
+  videoDurationMs: number | null;
   activeImageTask: ActiveTaskView | null;
   activeVideoTask: ActiveTaskView | null;
 }
@@ -183,7 +213,29 @@ export interface VoiceLineView {
   emotionStrength: number;
   audioMediaId: string | null;
   audioUrl: string | null;
+  // 成片時間軸欄位：chip 屬邊個鏡（matchedShotId）、釘死位置（offsetMs，null = auto
+  // 順序排）、實際音長（舊資料可能 null，前端 loadedmetadata 補底）
+  matchedShotId: string | null;
+  offsetMs: number | null;
+  audioDurationMs: number | null;
   activeTask?: ActiveTaskView | null;
+}
+
+export interface VoiceCastView {
+  speaker: string;
+  characterId: string | null;
+  lineCount: number;
+  presetId: string | null;
+  refId: string | null;
+  note: string;
+  assigned: boolean;
+}
+
+export interface VoiceView {
+  id: string;
+  name: string;
+  note: string;
+  audioUrl: string | null;
 }
 
 export interface EpisodeView {
@@ -210,8 +262,14 @@ export interface EpisodeView {
   };
   characters: CharacterView[];
   locations: LocationView[];
+  props: PropView[];
   shots: ShotView[];
   voiceLines: VoiceLineView[];
+  // 配音表：呢集有幾多把聲、每把派咗邊個音色。characterId 有值 = 綁喺角色
+  // （跨集共用）；null = 旁白／機械音之類，綁喺呢一集。
+  voiceCast: VoiceCastView[];
+  // project 嘅自訂音色（上傳嘅參考音）
+  voices: VoiceView[];
   stages: StageState[];
   nextAction: NextAction;
   failedTasks: number;
@@ -234,6 +292,7 @@ export interface EpisodeView {
     activeModels?: {
       image: { modelKey: string; unitUsd: number | null };
       video: { modelKey: string; unitUsd: number | null; perSecond: number | null };
+      tts: { modelKey: string; perChar: number | null };
     } | null;
   };
 }

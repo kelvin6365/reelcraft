@@ -19,6 +19,10 @@ projects        id, userId, name, stylePackId, videoRatio('9:16'), videoResoluti
 episodes        id, userId, projectId, episodeNumber, rawText,           // 原文
                 scriptText,                 // ④劇本站產物，可編輯
                 status,                     // 'draft'|'assets'|'script'|'storyboard'|'images'|'videos'|'export'|'done'
+                speakerVoices jsonb default '{}',
+                                            // 非角色聲源（旁白／【機械音】／未知）的音色綁定
+                                            // { "旁白": {presetId} | {refId} }。集級而非 project 級：
+                                            // 同一個「旁白」在不同集可以是不同人講
                 exportUrl(mediaId), createdAt, updatedAt
                 UNIQUE(projectId, episodeNumber)
 
@@ -41,7 +45,16 @@ characters      id, userId, projectId, name, aliases jsonb, profile text,
                 refFaceMediaId, refFaceNote text default '',
                                             // 墊臉——使用者上載的參考臉相＋補充要求；生成候選圖時
                                             // 排第一張 reference（keepIdentity 鎖定圖排第二）
-                candidates jsonb, voiceId, locked bool default false
+                candidates jsonb, locked bool default false,
+                voicePresetId, voiceRefId, voiceCastNote text default ''
+                                            // 音色綁定，二選一：voicePresetId = provider 內置音色
+                                            // （standards/voice-presets.json）；voiceRefId = 上傳的
+                                            // 參考音（voices.id）做聲音克隆。兩者皆空 = 未派音，
+                                            // 該角色的對白不會開 TTS（見 08-guards voice-cast-check）
+
+voices          id, userId, projectId, name, audioMediaId, note text default '', createdAt
+                                            // 自訂音色（聲音克隆用的參考音），project 級跨集複用。
+                                            // provider 內置音色不入表——它們是 standards/ 的靜態常數
 
 locations       id, userId, projectId, name, summary, prompt,
                 lockedImageMediaId, candidates jsonb, locked bool default false,
@@ -52,6 +65,8 @@ locations       id, userId, projectId, name, summary, prompt,
 voice_lines     id, userId, episodeId, lineIndex, speaker, content,
                 characterId, emotion, emotionStrength real default 0.4,  // 上限 0.5
                 audioMediaId, matchedShotId,
+                offsetMs int null,          // null = auto（順序貼住上一句尾）；有值 = 用戶在成片
+                                            // 時間軸拖 chip 釘死的位置（相對鏡頭開頭）
                 UNIQUE(episodeId, lineIndex)
 ```
 
@@ -89,7 +104,8 @@ draft → assets → script → storyboard → images → videos → export → 
   - `assets` 完成 = 所有 characters/locations `locked=true`
   - `storyboard` 完成 = 所有 scenes 有對應 shots + 用戶按下「確認分鏡」
   - `images` 完成 = 所有 shots.imageMediaId 非空
-  - `videos` 完成 = 所有 shots.videoMediaId 非空 + voice_lines 全部有 audioMediaId
+  - `voice` 完成 = 每個聲源都派了音色（`characters.voicePresetId|voiceRefId` 或 `episodes.speakerVoices`）+ voice_lines 全部有 audioMediaId。**未派晒音色時視頻站是 blocked**——TTS 沒有明確音色來源就會跌回 provider 預設聲（整集同一把），因此不容許靜默通過
+  - `videos` 完成 = 所有 shots.videoMediaId 非空；生片長度取 `shots.durationMs`，該值在配音完成後已由真實音長覆寫
 
 ## Prisma 慣例
 

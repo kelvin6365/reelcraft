@@ -60,6 +60,8 @@ export const TEMPLATE_VARS = [
   "aspect_ratio",
   "text",
   "voice_id",
+  // 聲音克隆嘅參考音 URL（ref 模式）—— preset 模式行 voice_id，兩者互斥
+  "reference_audio_url",
   "task_id",
 ] as const;
 export type TemplateVar = (typeof TEMPLATE_VARS)[number];

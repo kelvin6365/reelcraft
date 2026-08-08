@@ -114,7 +114,9 @@ export function MediaLightbox({ open, onOpenChange, media }: MediaLightboxProps)
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
         aria-describedby={undefined}
-        className="flex w-[min(96vw,1200px)] max-w-[min(96vw,1200px)] sm:max-w-[min(96vw,1200px)] max-h-[92vh] flex-col gap-0 overflow-hidden p-0"
+        // h-[92vh]（唔淨係 max-h）：stage 要有實高，<img> 嘅 max-h-full 先解析到——
+        // 否則高圖（9:16 候選圖）會按 max-w-full 撐爆再被 overflow-hidden 裁頭裁腳。
+        className="flex h-[92vh] w-[min(96vw,1200px)] max-w-[min(96vw,1200px)] sm:max-w-[min(96vw,1200px)] max-h-[92vh] flex-col gap-0 overflow-hidden p-0"
       >
         <div className="flex items-center gap-2 border-b px-4 py-2 pr-12">
           <DialogTitle className="flex-1 truncate text-sm font-medium">
