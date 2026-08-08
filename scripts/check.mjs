@@ -1,6 +1,6 @@
-// Runs all guards + typecheck (docs/tech/08-guards.md). 呢個 repo 而家未有 CI
-// workflow 亦未裝 pre-commit hook —— 呢條命令係人手／agent 提交前自己跑嘅閘。
-// 掛咗 CI 之後記得順手改返呢句同 README、08-guards 嗰兩處措辭。
+// Runs all guards + typecheck (docs/tech/08-guards.md)。GitHub Actions 每個 PR
+// 都會跑呢條（.github/workflows/ci.yml 個 check job）。本機仲未裝 pre-commit
+// hook，所以提交之前要人手／agent 自己行一次。
 import { readdirSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 

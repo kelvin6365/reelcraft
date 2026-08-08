@@ -1,0 +1,75 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # 架構閘 + 型別 + 單元測試。唔需要任何外部服務：Redis／BullMQ 喺測試度
+  # 全部 mock 咗，Prisma 只需要 generate 出 client 俾 tsc 讀。
+  check:
+    name: Guards · Typecheck · Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      # tsc 讀 @prisma/client 嘅型別，冇 generate 過就成堆 TS2307
+      - name: Generate Prisma client
+        run: npx prisma generate
+
+      - name: Guards + typecheck
+        run: npm run check
+
+      - name: Unit tests
+        run: npm test
+
+  # 離線全管線 E2E：小說 → 劇本 → 資產 → 分鏡 → 圖 → 配音 → 片 → 成片 mp4。
+  # 行 local 模式（SQLite + 內嵌 worker），provider 全部 fake，零費用。
+  # 呢個 job 係唯一會捉到「站與站之間接唔上」嘅signal —— 例如派音 gate 加入
+  # 之後 TTS 一句都冇開。
+  e2e:
+    name: E2E · 小說→mp4（local 模式，fake providers）
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      # 合成階段直接 exec ffmpeg/ffprobe，runner 預設冇裝
+      - name: Install ffmpeg
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg
+
+      - run: npm ci
+
+      # smoke script 行 `tsx --env-file=.env`，所以 .env 一定要存在（唔存在
+      # 就即刻 ENOENT）。內容用 .env.example 原封不動就得 —— 唔使改
+      # DEPLOY_MODE：Node 嘅 --env-file **唔會**覆寫已繼承嘅環境變數，而
+      # scripts/smoke-pipeline-local.mjs 已經喺 child env 度釘死 local 模式、
+      # 一次性 sqlite 同 fake providers，一定贏過檔案入面嗰組值。
+      - name: Seed .env
+        run: cp .env.example .env
+
+      - name: Pipeline E2E
+        run: npm run smoke:pipeline:local
+
+      # 其餘 smoke（smoke:batch / smoke:srt / smoke:plan / smoke:task）暫時未
+      # 入 CI：佢哋直接用 .env 指住嘅 DB，冇 smoke:pipeline:local 嗰種一次性
+      # throwaway sqlite，喺 runner 度要先 db push 先跑得。逐個核實過再加。

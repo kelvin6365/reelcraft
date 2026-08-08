@@ -6,6 +6,7 @@
 
 AI 短劇生產平台 — 從小說原文到 9:16 成片，八站引導流程全程可控、全程有價可查。
 
+[![CI](https://github.com/kelvin6365/reelcraft/actions/workflows/ci.yml/badge.svg)](https://github.com/kelvin6365/reelcraft/actions/workflows/ci.yml)
 [![License: AGPL-3.0](https://img.shields.io/badge/License-AGPL--3.0-blue.svg)](LICENSE)
 [![Next.js 16](https://img.shields.io/badge/Next.js-16-black?logo=next.js)](https://nextjs.org)
 [![TypeScript](https://img.shields.io/badge/TypeScript-strict-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org)
@@ -204,7 +205,7 @@ tests/            771 個測試
 ## ✅ 驗證與測試
 
 ```bash
-npm run check                # 17 guards + typecheck（建議掛 pre-commit / CI）
+npm run check                # 17 guards + typecheck
 npm test                     # 771 tests（vitest）
 npm run smoke:pipeline       # 小說→mp4 離線 E2E（full 模式）
 npm run smoke:pipeline:local # 同上，local 模式（SQLite + 內嵌 worker）
@@ -216,6 +217,10 @@ npm run smoke:ai             # 真 provider 連通性檢查（需要 key）
 ```
 
 全部 smoke script 皆預設 `MODEL_DEFAULTS_PRESET=fake`，不會產生費用。
+
+[CI](.github/workflows/ci.yml) 在每個 PR 執行兩個 job：`check`（17 guards + typecheck + 771 tests，無需任何外部服務）與 `e2e`（離線全管線 小說→mp4，local 模式 + fake providers）。
+
+> `smoke:pipeline:local` 會把 repo 的 Prisma client 重新生成到 SQLite schema。在 Postgres 開發環境跑完後，執行 `npx prisma generate` 還原。
 
 ## 📦 部署
 
@@ -242,6 +247,8 @@ npm run smoke:ai             # 真 provider 連通性檢查（需要 key）
 | [技術 spec](docs/tech/README.md) | 資料模型、任務系統、provider 層、審計、prompts、guards |
 | [架構鐵律](CLAUDE.md) | 八條不變式，違反 = 錯 |
 | [部署](docs/deploy.md) | docker-compose 單 VPS 部署 |
+| [貢獻指南](CONTRIBUTING.md) | 開發環境、提交前檢查、PR 慣例 |
+| [安全政策](SECURITY.md) | 漏洞回報流程、敏感攻擊面、部署者必改的設定 |
 
 `docs/plans/` 另有 15 份設計文檔，記錄每個子系統的決策脈絡與被否決的方案。
 
@@ -259,21 +266,20 @@ npm run smoke:ai             # 真 provider 連通性檢查（需要 key）
 
 ## 🤝 貢獻
 
-歡迎 issue 與 PR。動手前請先讀 [CLAUDE.md](CLAUDE.md)（八條架構不變式）與 [docs/tech/](docs/tech/README.md)。
+歡迎 issue 與 PR。完整指引見 [CONTRIBUTING.md](CONTRIBUTING.md)；動手前請先讀 [CLAUDE.md](CLAUDE.md)（八條架構不變式）與 [docs/tech/](docs/tech/README.md)。
 
 ```bash
 npm run check   # 提交前必跑：17 guards + typecheck
 npm test
 ```
 
-慣例：
+三條最常被忘記的慣例：
 
 - **每個 PR 一條薄片** — 交付必須貫通「貼文 → 出成品」的某一段，不做半截的鋪墊
 - **新增架構決策的 PR 必須附一個 guard 腳本**（`scripts/guards/`），這是 review checklist 第一條
-- **Prompt 不准 inline 寫在 code 中** — 放 `prompts/`，加 catalog 條目與 canary 樣本
-- 語言：UI 文案為繁體中文（粵語風味），文檔為標準書面繁體中文，code 與 identifier 為英文
+- **Prompt 不准 inline 寫在 code 中** — 放 `prompts/`，同步加 catalog 條目與 canary 樣本
 
-安全問題請勿開公開 issue，直接聯絡維護者。
+安全問題請勿開公開 issue，見 [SECURITY.md](SECURITY.md)。
 
 ## 🙏 致謝
 

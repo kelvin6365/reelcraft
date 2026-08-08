@@ -129,6 +129,15 @@ const canned: Record<string, unknown> = {
       { index: 3, text: "他遲到的理由，我其實早就知道了。", speaker: "林知夏", lineType: "vo", cue: "苦笑", emotion: "無奈", emotionStrength: 0.3, matchedShotIndex: 1 },
     ],
   },
+  // 派音：speaker 要對得返 voice_analyze 嗰兩個，voiceId 要真係喺
+  // standards/voice-presets.json 入面 —— voiceCastHandler 會逐個驗，作假 id
+  // 會被剔走，角色就永遠未派音，TTS 一句都唔會開。
+  voice_cast: {
+    assignments: [
+      { speaker: "林知夏", voiceId: "female-tianmei", reason: "二十來歲女主，對白帶壓抑，用柔和甜美音色" },
+      { speaker: "陳沉", voiceId: "male-qn-jingying", reason: "同齡男性、語氣克制乾淨，用精英青年音色" },
+    ],
+  },
   script_review: {
     scenes: [
       { index: 1, label: "第1場・咖啡店", risk: { level: "ok", flags: [], note: "" } },
@@ -137,7 +146,16 @@ const canned: Record<string, unknown> = {
     overall: { level: "review", flags: ["weak_hook"], note: "整體節奏穩，第2場結尾鉤子偏弱" },
   },
   image_prompt_shot: {
-    prompt: "a young woman pushing open the door of a dim cozy cafe at night, warm side lighting, cinematic still",
+    // 尾巴嗰段連續性條款一定要照抄 —— ImagePromptShotOutput 會驗佢在唔在
+    // （驗條款而唔係驗字數，見 schemas.ts）。fake 罐頭答案漏咗呢段，成條
+    // 離線 E2E 就會喺 IMAGE_SHOT 度 LLM_OUTPUT_INVALID 死硬。
+    prompt:
+      "a young woman pushing open the door of a dim cozy cafe at night, warm side lighting, cinematic still. " +
+      "Render as one single cinematic frame, not a character sheet, grid or collage. " +
+      "The reference images are identity references only: match face, hairstyle and wardrobe, but do not copy " +
+      "their pose, framing, lighting or plain white background — pose, expression, camera angle, lighting and " +
+      "environment come from this prompt. Do not introduce any character not described in this prompt. " +
+      "Never render any text, captions, subtitles or words in the frame.",
     negativePrompt: "",
     referencedAssets: ["林知夏"],
   },

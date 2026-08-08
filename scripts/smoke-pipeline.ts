@@ -10,6 +10,7 @@ import { submitTask } from "../src/lib/task/submit";
 import { TASK_TYPE, type TaskType } from "../src/lib/task/types";
 import { isLocalMode } from "../src/lib/env";
 import { startLocalWorker } from "../src/lib/task/local-queue";
+import { submitVoiceLineBatch } from "../src/lib/api/voice-batch";
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -107,13 +108,28 @@ async function main() {
     }
 
     await run(user.id, project.id, episode.id, TASK_TYPE.VOICE_ANALYZE);
-    // VOICE_ANALYZE fans out TTS_LINE tasks — wait for them all
-    for (let i = 0; i < 50; i++) {
-      const pending = await prisma.voiceLine.count({ where: { episodeId: episode.id, audioMediaId: null } });
-      if (pending === 0) break;
+    // 派音 —— 冇呢一步，所有角色都係「未派音色」，TTS 一句都唔會開（見
+    // docs/tech/03-provider-layer.md §配音）。真 app 由用戶喺配音站撳
+    // 「AI 派音」或者逐個揀，呢度行同一個 task。
+    await run(user.id, project.id, episode.id, TASK_TYPE.VOICE_CAST);
+    const uncast = await prisma.character.count({
+      where: { projectId: project.id, voicePresetId: null, voiceRefId: null },
+    });
+    if (uncast > 0) throw new Error(`VOICE_CAST 之後仲有 ${uncast} 個角色未派音色`);
+
+    // 派完先 fan out TTS（同 /api/episodes/:id/tts-all 走同一個 helper）
+    const { submitted } = await submitVoiceLineBatch({ userId: user.id, episode, lineIds: null });
+    if (submitted === 0) throw new Error("冇任何 TTS_LINE 被提交 —— 對白行全部被當成配唔成");
+    // ⚠️ 一定要 assert 而唔係 break-then-print：舊版係「poll 50 次然後照印
+    // ✓ TTS lines done」，於是派音 gate 加入之後，成條 E2E 喺零句配音之下
+    // 綠燈通過，成片冇聲都冇人知。
+    let pending = submitted;
+    for (let i = 0; i < 60 && pending > 0; i++) {
       await sleep(500);
+      pending = await prisma.voiceLine.count({ where: { episodeId: episode.id, audioMediaId: null } });
     }
-    console.log("  ✓ TTS lines done");
+    if (pending > 0) throw new Error(`TTS 逾時：仲有 ${pending} 句冇音檔`);
+    console.log(`  ✓ TTS lines done (${submitted})`);
 
     await run(user.id, project.id, episode.id, TASK_TYPE.COMPOSE_EPISODE, "episode", episode.id);
 

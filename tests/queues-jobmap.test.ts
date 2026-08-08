@@ -43,15 +43,18 @@ vi.mock("bullmq", () => ({
   },
 }));
 
-type Mod = typeof import("@/lib/task/queues");
-let Q: Mod;
-beforeEach(async () => {
-  vi.resetModules();
+// 唔行 vi.resetModules()：呢個 module 冇 per-test 要清嘅內部 state —— 佢啲
+// Queue instance 掛喺 globalThis（`__rcQueues`），resetModules 本來就清唔到，
+// 真正要清嘅嘢全部喺上面個 `h` 度。而 resetModules 會令成個 module graph
+// （env / local-queue / db …）逐個 test 重新 import，每次 ~2 秒；跑全套時
+// 撞正機器忙就會衝爆 vitest 預設 5 秒 timeout，變成間歇性紅燈。
+const Q = await import("@/lib/task/queues");
+
+beforeEach(() => {
   h.store.clear();
   h.jobs.clear();
   h.added = [];
   h.getJobArg = null;
-  Q = await import("@/lib/task/queues");
 });
 
 describe("addTaskJob jobId mapping", () => {
