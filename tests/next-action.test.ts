@@ -63,7 +63,8 @@ describe("computeNextAction", () => {
     expect(a.endpoint).toBeNull();
   });
 
-  it("progresses images → videos → voice → compose → done", () => {
+  // 配音行喺視頻之前：每鏡幾長要跟真實音檔長度，唔係跟字數估算。
+  it("progresses images → voice → videos → compose → done", () => {
     const confirmed: EpisodeSnapshot = {
       ...base,
       hasScript: true,
@@ -76,15 +77,15 @@ describe("computeNextAction", () => {
     expect(computeNextAction(confirmed, "e1").endpoint).toContain("generate-shot-images");
 
     const imaged = { ...confirmed, shots: { total: 3, withImage: 3, withVideo: 0 } };
-    expect(computeNextAction(imaged, "e1").endpoint).toContain("generate-shot-videos");
+    expect(computeNextAction(imaged, "e1").endpoint).toContain("/voice");
 
-    const videoed = { ...imaged, shots: { total: 3, withImage: 3, withVideo: 3 } };
-    expect(computeNextAction(videoed, "e1").endpoint).toContain("/voice");
+    const voiced = { ...imaged, voiceLines: { total: 2, withAudio: 2 } };
+    expect(computeNextAction(voiced, "e1").endpoint).toContain("generate-shot-videos");
 
-    const voiced = { ...videoed, voiceLines: { total: 2, withAudio: 2 } };
-    expect(computeNextAction(voiced, "e1").endpoint).toContain("/compose");
+    const videoed = { ...voiced, shots: { total: 3, withImage: 3, withVideo: 3 } };
+    expect(computeNextAction(videoed, "e1").endpoint).toContain("/compose");
 
-    const done = { ...voiced, hasExport: true };
+    const done = { ...videoed, hasExport: true };
     const a = computeNextAction(done, "e1");
     expect(a.endpoint).toBeNull();
     expect(a.label).toContain("完成");
@@ -255,11 +256,19 @@ describe("computeStages status + blockedBy", () => {
     expect(find({ ...base, isSrtMode: true }, "script").status).toBe("done");
   });
 
-  it("unlocks videos only once at least one image exists", () => {
+  // 有圖唔夠：條片幾長要跟真實音長，配音未齊就生片，長度一定錯，重生即係
+  // 俾多次錢。
+  it("unlocks videos only once images exist AND voice is done", () => {
     expect(find(base, "videos").status).toBe("blocked");
-    const withOneImage = find({ ...base, shots: { total: 4, withImage: 1, withVideo: 0 } }, "videos");
-    expect(withOneImage.status).toBe("todo");
-    expect(withOneImage.blockedBy).toEqual([]);
+
+    const imagedOnly = { ...base, shots: { total: 4, withImage: 1, withVideo: 0 } };
+    const stillBlocked = find(imagedOnly, "videos");
+    expect(stillBlocked.status).toBe("blocked");
+    expect(stillBlocked.blockedBy[0]).toContain("配音");
+
+    const voiced = find({ ...imagedOnly, voiceLines: { total: 2, withAudio: 2 } }, "videos");
+    expect(voiced.status).toBe("todo");
+    expect(voiced.blockedBy).toEqual([]);
   });
 
   it("never reports blockedBy on a finished station", () => {

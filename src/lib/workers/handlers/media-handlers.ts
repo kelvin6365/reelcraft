@@ -10,6 +10,7 @@ import { createMediaFromBuffer } from "@/lib/media/service";
 import { composeShot, composeShotTimed, concatShots, imageToVideoClip, probeDurationMs } from "@/lib/video/ffmpeg";
 import { placeLinesPadded } from "@/lib/timeline/placement";
 import { checkVoiceMode, parseSpeakerVoices, resolveVoiceBinding } from "@/lib/voice/binding";
+import { syncShotDurationFromAudio } from "@/lib/voice/shot-duration";
 import { getCapabilities } from "@/lib/ai/capabilities";
 import { TaskError } from "@/lib/task/types";
 import type { TaskHandler } from "@/lib/workers/lifecycle";
@@ -582,7 +583,10 @@ export const ttsLineHandler: TaskHandler = async ({ task }) => {
 
   await prisma.voiceLine.update({ where: { id: line.id }, data: { audioMediaId: media.id } });
   await probeAndStoreMediaDuration(media.id);
-  return { mediaId: media.id };
+  // 有咗真音長，即刻把該鏡嘅 durationMs 由字數估算改成實際音長 —— 之後
+  // VIDEO_SHOT 就跟住呢個長度生片，唔使成片時先夾硬凍幀補時／截斷。
+  const shotDurationMs = line.matchedShotId ? await syncShotDurationFromAudio(line.matchedShotId) : null;
+  return { mediaId: media.id, shotDurationMs };
 };
 
 export const composeEpisodeHandler: TaskHandler = async ({ task, reportProgress }) => {

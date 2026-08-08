@@ -117,6 +117,18 @@ system（code 常數，真實模型）← user（user_model_defaults 表，於 /
 - **各家 TTS 的 request 欄位名完全不同**，`falTtsRequest` 按 modelId 分派：`fal-ai/index-tts-2` 的文字欄位叫 `prompt`、參考音叫 `audio_url`、情緒是 `emotional_strengths` 物件；`fal-ai/minimax/speech-02-*` 的文字叫 `text`、音色在 `voice_setting.voice_id`、情緒是 `voice_setting.emotion` 枚舉。`voice_analyze` 標註的中文情緒詞在 adapter 內收窄成各家枚舉，對不上就不傳（亂配一個近似情緒比不傳更差）。
 - 換音色會作廢該角色已生成的配音（`src/lib/voice/assign.ts`）——舊音檔是用舊音色合成的，留住等於「換了音色但把聲沒變」。
 
+## 配音先行：鏡頭長度由真實音長決定
+
+站點次序是 …→ 圖像 → **配音** → 視頻 → 成片。配音排在視頻之前不是排版偏好，是因果：
+
+- `Shot.durationMs` 在分鏡階段先由對白字數估算（`estimateShotDurationMs`，~400ms/字），那只是「未有配音之前」的暫定值。
+- 每句 TTS 完成後，`syncShotDurationFromAudio()` 用實際音檔長度（經 `placeLines` 計出該鏡最遲收工的時間點 + 700ms 尾巴呼吸位，clamp 2–15s）覆寫 `Shot.durationMs`。
+- `videoShotHandler` 讀的就是這個值 → i2v 生出來的片長度本來就對。
+
+先生片再配音的舊次序，等於拿一段長度靠猜的片去硬塞音軌：音長於片長就在成片時凍幀補時（封頂 +6s，超出直接截斷），音短於片長就整段鏡頭在那裡靜音動。`computeStages` 因此把「配音未完成」列為視頻站的 `blockedBy`——生了長度也是錯的，重生一次就是多付一次錢。
+
+**未做**：講話前的 lead-in（現時每鏡第一句都由 0ms 起唱）、以及真正的嘴型對齊（lip-sync stage）。後者需要獨立的 provider 與一次額外生成，見 waoowaoo 的 `src/lib/lipsync/` 三 provider 架構。
+
 ## 金鑰
 
 - 解析順序（`getProviderKey(userId, provider)`）：user BYO key（`user_provider_keys`，AES-256-GCM，即時解密）→ env key（註冊表 `envKeyName`：`OPENROUTER_API_KEY` / `FAL_KEY` / `ATLASCLOUD_API_KEY`）→ `PROVIDER_KEY_MISSING`。Project 永不持有 key。
