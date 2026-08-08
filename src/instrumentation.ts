@@ -32,8 +32,14 @@ export async function register(): Promise<void> {
       })
       .catch(() => {});
   };
-  process.once("SIGTERM", () => handOver("SIGTERM"));
-  process.once("SIGINT", () => handOver("SIGINT"));
+  // ⚠️ 一定要經 globalThis 攞 process。Turbopack 會為 edge runtime 都編一份
+  // instrumentation.ts，佢靜態掃到字面上嘅 `process.once` 就報「Node.js API
+  // not supported in the Edge Runtime」兼令 edge 嗰份編譯失敗 —— 即使上面
+  // NEXT_RUNTIME 個閘保證咗呢幾行永遠唔會喺 edge 行到。用 globalThis 索引就
+  // 唔會被靜態匹配，node 行為完全一樣。
+  const proc = (globalThis as { process?: NodeJS.Process }).process;
+  proc?.once("SIGTERM", () => handOver("SIGTERM"));
+  proc?.once("SIGINT", () => handOver("SIGINT"));
 
   console.log("▶ local 模式：worker 已內嵌（毋須 npm run worker）");
 }
