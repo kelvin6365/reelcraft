@@ -1652,39 +1652,50 @@ function VoiceLineRow({
 
 export function ExportPanel({ view, progress }: PanelProps) {
   const url = view.episode.exportUrl;
-  const [lightbox, setLightbox] = useState<MediaLightboxMedia | null>(null);
+  const { busy, err, run } = useAction(qk.episode(view.episode.id));
   // 有畫面嘅鏡先有得預覽／執位；一個都冇就照舊只顯示 EmptyState
   const hasTimeline = view.shots.some((s) => s.videoUrl || s.imageUrl);
+  // SSE 進度都要 OR 埋——淨睇 mutation busy 會喺 worker 合成期間鬆開個掣
+  const composing = busy || typeof progress.export === "number";
   return (
     <Station stage="export" progress={progress}>
       <div className="space-y-6">
         {hasTimeline && <TimelineEditor view={view} />}
-        {url ? (
-          <div className="space-y-4 text-center">
-            <div className="relative mx-auto w-full max-w-90">
-              <video src={url} controls className="w-full rounded-lg bg-black" />
-              <button
-                type="button"
-                aria-label="全螢幕檢視"
-                title="全螢幕檢視"
-                onClick={() => setLightbox({ src: url, type: "video", title: "成片" })}
-                className="absolute top-1 right-1 z-10 flex size-6 items-center justify-center rounded-md bg-black/60 text-white"
+        {hasTimeline ? (
+          <div className="space-y-3 text-center">
+            <div className="flex items-center justify-center gap-3">
+              <Button
+                disabled={composing}
+                aria-busy={composing}
+                onClick={() => run(() => api.post(`/api/episodes/${view.episode.id}/compose`))}
               >
-                <Maximize2 className="size-3.5" />
-              </button>
+                {composing ? (
+                  <>
+                    <Loader2 className="size-4 animate-spin" />
+                    合成緊…{typeof progress.export === "number" ? ` ${Math.round(progress.export)}%` : ""}
+                  </>
+                ) : url ? (
+                  "重新合成"
+                ) : (
+                  "合成成片"
+                )}
+              </Button>
+              {url && !composing && (
+                <Button asChild variant="outline">
+                  <a href={url} download>
+                    下載成片 MP4
+                  </a>
+                </Button>
+              )}
             </div>
-            <Button asChild>
-              <a href={url} download>
-                下載成片 MP4
-              </a>
-            </Button>
-            <MediaLightbox open={!!lightbox} onOpenChange={(o) => !o && setLightbox(null)} media={lightbox} />
+            {err && <p className="text-sm text-destructive">{err}</p>}
+            <p className="text-xs text-muted-foreground">
+              {url ? "時間軸改咗位？撳「重新合成」出過新版，再下載。" : "上面預覽執好位之後，就可以合成整集導出 MP4。"}
+            </p>
           </div>
         ) : (
           <EmptyState view={view} stage="export">
-            {hasTimeline
-              ? "上面預覽執好位之後，就可以合成整集導出 MP4。"
-              : "仲未合成。完成前面各站之後，會把鏡頭、配音同字幕拼成一條 MP4。"}
+            仲未合成。完成前面各站之後，會把鏡頭、配音同字幕拼成一條 MP4。
           </EmptyState>
         )}
       </div>
