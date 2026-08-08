@@ -29,9 +29,20 @@
 | `POST /api/episodes/:id/storyboard/confirm {authorizeDownstream?:boolean}` | ✋確認分鏡；assisted 模式下 `authorizeDownstream:true` 授權進入下單金錢站（寫入 `autorunConfig.moneyAuthorized`） | — |
 | `PATCH /api/shots/:id` | 修改單一鏡頭（prompt/分鏡文字） | — |
 | `POST /api/shots/:id/generate-image` | ⑥ 單鏡生圖 | `IMAGE_SHOT` |
-| `POST /api/shots/:id/generate-video` | ⑦ 單鏡生視頻 | `VIDEO_SHOT` |
-| `POST /api/episodes/:id/voice` | 台詞分析 + 全部 TTS | `VOICE_ANALYZE`→`TTS_LINE`×N |
-| `POST /api/episodes/:id/compose` | ⑧ 合成導出 | `COMPOSE_EPISODE` |
+| `POST /api/episodes/:id/generate-shot-images {shotIds?}` | ⑥ 批量生圖；`shotIds` 為選取重生，省略則補生所有未有圖的鏡 | `IMAGE_SHOT`×N |
+| `POST /api/episodes/:id/voice` | ⑦ 台詞分析（**不再**自動 fan out TTS——多數情況此時仍未派音色） | `VOICE_ANALYZE` |
+| `POST /api/episodes/:id/voice-cast` | ⑦ AI 派音：由音色庫為每個聲源挑音色（純 text，不生成音頻） | `VOICE_CAST` |
+| `PUT /api/characters/:id/voice {presetId?\|refId?}` | ⑦ 角色派音（二選一，皆空 = 解除綁定）；換音色會作廢該角色已生成的配音 | — |
+| `PUT /api/episodes/:id/speaker-voices {speaker, presetId?\|refId?}` | ⑦ 非角色聲源（旁白／【機械音】／未知）的集級派音 | — |
+| `GET/POST /api/voices` | ⑦ 自訂音色（聲音克隆參考音）列表／multipart 上載（mp3/wav/m4a/ogg ≤20MB，經 MediaObject） | — |
+| `DELETE /api/voices/:id` | ⑦ 刪自訂音色；綁定它的角色被 `SetNull` 解除，回到「未派音」 | — |
+| `POST /api/voices/preview {projectId, presetId\|refId}` | ⑦ 試聽：`refId` 直接回原檔（零成本），`presetId` 合成一句短句 | — |
+| `POST /api/episodes/:id/tts-all {lineIds?}` | ⑦ 配音批量；`lineIds` 為選取重配（不理有無音檔），省略則補配所有缺音檔的行。空台詞與未派音色的行一律剔走並回報計數 | `TTS_LINE`×N |
+| `POST /api/voice-lines/:id/regenerate` | ⑦ 單句重配 | `TTS_LINE` |
+| `PATCH /api/voice-lines/:id` | ⑦ 改台詞／說話者／時間軸位置（`offsetMs`、`matchedShotId`） | — |
+| `POST /api/shots/:id/generate-video` | ⑧ 單鏡生視頻（長度取 `Shot.durationMs`，配音完成後已由真實音長覆寫） | `VIDEO_SHOT` |
+| `POST /api/episodes/:id/generate-shot-videos {shotIds?}` | ⑧ 批量生視頻 | `VIDEO_SHOT`×N |
+| `POST /api/episodes/:id/compose` | ⑨ 合成導出 | `COMPOSE_EPISODE` |
 | `GET /api/tasks?episodeId=&status=failed` | 失敗抽屜 | — |
 | `POST /api/tasks/:id/retry` / `cancel` | 重試/取消 | 重新入列 |
 | `GET /api/sse?projectId=` | SSE 進度流 | — |
@@ -39,7 +50,7 @@
 | `GET /api/usage?from=&to=&groupBy=` | 用量查詢（M2 出 UI） | — |
 | `POST /api/webhooks/:provider` | 廠商回調（驗簽，PUBLIC + secret path） | — |
 
-批量操作（`batch-generate-images` 等）= 前端逐個 POST，server 靠 dedupeKey 天然冪等——M1 不建立批量端點。
+批量端點（`generate-shot-images` / `generate-shot-videos` / `tts-all`）共用同一形狀：body 帶 id 陣列 = 選取重做，省略 = 補做缺的。三者都以 `dedupeActive` 提交，連按兩下摺疊到同一個在途任務而不是付兩次錢。伺服器端各有一個純 helper（`src/lib/api/shot-batch.ts`、`src/lib/api/voice-batch.ts`），autorun 引擎走同一支，不另寫一份。
 
 `GET /api/projects` 每個 project 附帶 `episodes: {id, episodeNumber, status, updatedAt}[]`（`updatedAt` 供 dashboard「繼續上次」卡片排序使用），`orderBy: lastAccessedAt desc`。
 

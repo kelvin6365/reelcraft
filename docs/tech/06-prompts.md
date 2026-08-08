@@ -19,6 +19,8 @@ prompts/
     storyboard_acting.zh.txt     # ③表演（抽象情緒詞→可見表現）
     storyboard_detail.zh.txt     # ④細節（鏡頭語言庫）
     voice_analyze.zh.txt         # 情緒強度 0.1-0.5 上限
+    voice_cast.zh.txt            # 派音：性別/年齡/性格對位，戲份前三名不得撞音色
+    script_review.zh.txt         # 劇本體檢（review-by-exception）
     image_prompt_shot.zh.txt     # 鏡頭→生圖 prompt（引用鎖定資產）
   styles/
     anime-01/style.json          # {prefix, negativePrompt, bannedWords[], vocab}
