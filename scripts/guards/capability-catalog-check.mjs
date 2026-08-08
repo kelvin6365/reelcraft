@@ -13,6 +13,8 @@ const CAP_KEYS = new Set([
   "modes",
   "supportsReferenceImages",
   "supportsEndFrame",
+  "voiceModes",
+  "voicePresetVendor",
 ]);
 const PRICE_SOURCES = new Set(["openrouter-api", "manual"]);
 

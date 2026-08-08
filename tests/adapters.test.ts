@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { falImage, falVideo, falTts } from "@/lib/ai/adapters/fal";
+import { falCancel, falImage, falVideo, falTts } from "@/lib/ai/adapters/fal";
 import { openrouterAdapter } from "@/lib/ai/adapters/openrouter";
 import { priceMedia, priceText } from "@/lib/ai/capabilities";
 import { AiError } from "@/lib/ai/types";
@@ -181,6 +181,86 @@ describe("fal adapter — Queue submit→poll→completed", () => {
 
     expect(out.url).toBe("https://cdn.fal/out.m4a");
     expect(out.seconds).toBe(3.5);
+  });
+
+  // 兩家 TTS 嘅欄位名完全唔同 —— 一律送 { text, reference_audio_url } 嘅話，
+  // minimax 收唔到 voice_id 就每句都用佢預設嘅 Wise_Woman，成集所有角色同一
+  // 把聲；index-tts-2 更加係連文字都收唔到（佢叫 prompt）。呢兩個 case 鎖住
+  // 真實欄位名。
+  it("falTts（minimax）：內置音色行 voice_setting.voice_id，情緒收窄成 provider 枚舉", async () => {
+    const fetchMock = stubFalQueue({ result: { audio: { url: "https://cdn.fal/a.mp3" } } });
+
+    await falTts({
+      modelId: "fal-ai/minimax/speech-02-hd",
+      text: "你去死啦",
+      presetVoiceId: "male-qn-badao",
+      emotion: "憤怒",
+      emotionStrength: 0.5,
+      apiKey: "k",
+    });
+
+    const body = JSON.parse(fetchMock.mock.calls[0][1]?.body as string);
+    expect(body.text).toBe("你去死啦");
+    expect(body.voice_setting).toEqual({ voice_id: "male-qn-badao", emotion: "angry" });
+    expect(body.reference_audio_url).toBeUndefined();
+  });
+
+  it("falTts（index-tts-2）：文字叫 prompt、參考音叫 audio_url", async () => {
+    const fetchMock = stubFalQueue({ result: { audio: { url: "https://cdn.fal/a.mp3" } } });
+
+    await falTts({
+      modelId: "fal-ai/index-tts-2/text-to-speech",
+      text: "我唔會走",
+      referenceAudioUrl: "https://cdn/ref.wav",
+      emotion: "悲傷",
+      emotionStrength: 0.4,
+      apiKey: "k",
+    });
+
+    const body = JSON.parse(fetchMock.mock.calls[0][1]?.body as string);
+    expect(body.prompt).toBe("我唔會走");
+    expect(body.audio_url).toBe("https://cdn/ref.wav");
+    expect(body.emotional_strengths).toEqual({ sad: 0.4 });
+    expect(body.text).toBeUndefined();
+  });
+
+  it("falTts：認唔出嘅中文情緒詞唔會亂配一個近似值", async () => {
+    const fetchMock = stubFalQueue({ result: { audio: { url: "https://cdn.fal/a.mp3" } } });
+
+    await falTts({
+      modelId: "fal-ai/minimax/speech-02-hd",
+      text: "嗯",
+      presetVoiceId: "female-yujie",
+      emotion: "若有所思",
+      apiKey: "k",
+    });
+
+    const body = JSON.parse(fetchMock.mock.calls[0][1]?.body as string);
+    expect(body.voice_setting).toEqual({ voice_id: "female-yujie" });
+  });
+});
+
+// falCancel 係 best-effort 兼且吞哂錯誤（見 request-journal.ts），所以 URL 一
+// 砌錯就永遠靜靜地取消唔到 —— 只會喺 fal 帳單度見到。呢度鎖死 URL 形狀。
+describe("fal adapter — cancel", () => {
+  it("falCancel PUT 去 app root 嘅 /cancel（唔係 submit 嗰個 subpath）", async () => {
+    const fetchMock = vi.fn(async () => res(200, { status: "CANCELLED" }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await falCancel({ endpoint: "fal-ai/index-tts-2/text-to-speech", requestId: "req-9" }, "k");
+
+    const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    expect(String(url)).toBe("https://queue.fal.run/fal-ai/index-tts-2/requests/req-9/cancel");
+    expect(init?.method).toBe("PUT");
+    expect((init?.headers as Record<string, string>).Authorization).toBe("Key k");
+  });
+
+  it("已完成／唔存在嘅 request 回 4xx → throw（呼叫方當 best-effort 吞返）", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => res(400, "already completed")));
+
+    const err = await falCancel({ endpoint: "fal-ai/nano-banana", requestId: "req-9" }, "k").catch((e) => e);
+    expect(err).toBeInstanceOf(AiError);
+    expect((err as AiError).code).toBe("HTTP_400");
   });
 });
 

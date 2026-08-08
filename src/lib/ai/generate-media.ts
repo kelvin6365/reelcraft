@@ -5,11 +5,13 @@ import { getProviderKey } from "@/lib/ai/provider-key";
 import { getCapabilities, getCapabilityEntry, priceMedia } from "@/lib/ai/capabilities";
 import { AiError, type CallContext } from "@/lib/ai/types";
 import { fakeImage, fakeTts, fakeVideo } from "@/lib/ai/adapters/fake-media";
-import { falImage, falTts, falVideo } from "@/lib/ai/adapters/fal";
-import { atlasImage, atlasTts, atlasVideo } from "@/lib/ai/adapters/atlascloud";
+import { falImageSubmit, falPoll, falTtsSubmit, falVideoSubmit } from "@/lib/ai/adapters/fal";
+import { atlasImageSubmit, atlasPoll, atlasTtsSubmit, atlasVideoSubmit } from "@/lib/ai/adapters/atlascloud";
+import { markConsumed, runJournaled } from "@/lib/ai/request-journal";
 import { loadTemplates, runTemplate, type TemplateVars } from "@/lib/ai/template/runtime";
 import { dedupeReferenceRefs, normalizeReferenceImages, type ReferenceImageRef } from "@/lib/ai/outbound-image";
 import { createMediaFromBuffer, createMediaFromUrl, getMediaUrl } from "@/lib/media/service";
+import type { VoiceBinding } from "@/lib/voice/binding";
 import type { MediaObject } from "@prisma/client";
 
 async function getOutboundImageUrl(mediaId: string): Promise<string> {
@@ -71,7 +73,11 @@ export interface VideoGenRequest {
 export interface TtsGenRequest {
   modelKey: string;
   text: string;
-  voiceId?: string;
+  // 邊把聲 —— 由 resolveVoiceBinding() 解出嚟，null = 未派音（provider 預設聲）。
+  // 呼叫方要負責喺派音之前攔住，唔好靜靜生成一堆同一把聲嘅音檔。
+  voice?: VoiceBinding | null;
+  // voice_analyze 標註嘅中文情緒詞；adapter 內部收窄成 provider 枚舉
+  emotion?: string;
   emotionStrength?: number;
   keyPrefix: string;
 }
@@ -164,20 +170,7 @@ export async function generateImage(ctx: CallContext, req: ImageGenRequest): Pro
     }
     if (provider === "fal" || provider === "atlascloud") {
       const apiKey = await getProviderKey(ctx.userId, provider);
-      if (provider === "fal") {
-        const { url, providerRequestId } = await falImage({
-          modelId,
-          prompt: req.prompt,
-          negativePrompt: req.negativePrompt,
-          aspectRatio: req.aspectRatio,
-          resolution,
-          apiKey,
-          referenceImages,
-        });
-        const media = await createMediaFromUrl({ userId: ctx.userId, url, keyPrefix: req.keyPrefix });
-        return { media, quantity: 1, unit: "image", providerRequestId };
-      }
-      const { url, providerRequestId } = await atlasImage({
+      const args = {
         modelId,
         prompt: req.prompt,
         negativePrompt: req.negativePrompt,
@@ -185,9 +178,25 @@ export async function generateImage(ctx: CallContext, req: ImageGenRequest): Pro
         resolution,
         apiKey,
         referenceImages,
-      });
+      };
+      const { result: url, journalId, handle } = await runJournaled<string>(
+        ctx,
+        {
+          provider,
+          apiType: "image",
+          modelKey,
+          // descriptor 用 mediaId（唔係 normalize 完嘅 data URI）—— 平、而且
+          // 跨 worker 重啟一定砌得返同一個 hash。
+          descriptor: { modelKey, prompt: req.prompt, negativePrompt: req.negativePrompt, aspectRatio: req.aspectRatio, resolution, refs },
+        },
+        {
+          submit: () => (provider === "fal" ? falImageSubmit(args) : atlasImageSubmit(args)),
+          poll: async (h) => (provider === "fal" ? (await falPoll(h, apiKey, "image")).url : (await atlasPoll(h, apiKey)).url),
+        },
+      );
       const media = await createMediaFromUrl({ userId: ctx.userId, url, keyPrefix: req.keyPrefix });
-      return { media, quantity: 1, unit: "image", providerRequestId };
+      await markConsumed(journalId, media.id);
+      return { media, quantity: 1, unit: "image", providerRequestId: handle.requestId };
     }
     if (provider === "template") {
       const media = await runTemplateProvider(ctx, "image", modelId, req.keyPrefix, {
@@ -231,8 +240,7 @@ export async function generateVideo(ctx: CallContext, req: VideoGenRequest): Pro
       const apiKey = await getProviderKey(ctx.userId, provider);
       const imageUrl = req.sourceImageMediaId ? await getOutboundImageUrl(req.sourceImageMediaId) : null;
       const endImageUrl = req.endImageMediaId ? await getOutboundEndImageUrl(req.modelKey, req.endImageMediaId) : null;
-      const gen = provider === "fal" ? falVideo : atlasVideo;
-      const { url, providerRequestId } = await gen({
+      const args = {
         modelId,
         prompt: req.prompt,
         imageUrl: imageUrl ?? undefined,
@@ -240,9 +248,30 @@ export async function generateVideo(ctx: CallContext, req: VideoGenRequest): Pro
         durationSec: req.durationSec,
         aspectRatio: req.aspectRatio,
         apiKey,
-      });
+      };
+      const { result: url, journalId, handle } = await runJournaled<string>(
+        ctx,
+        {
+          provider,
+          apiType: "video",
+          modelKey: req.modelKey,
+          descriptor: {
+            modelKey: req.modelKey,
+            prompt: req.prompt,
+            sourceImageMediaId: req.sourceImageMediaId ?? null,
+            endImageMediaId: req.endImageMediaId ?? null,
+            durationSec: req.durationSec,
+            aspectRatio: req.aspectRatio,
+          },
+        },
+        {
+          submit: () => (provider === "fal" ? falVideoSubmit(args) : atlasVideoSubmit(args)),
+          poll: async (h) => (provider === "fal" ? (await falPoll(h, apiKey, "video")).url : (await atlasPoll(h, apiKey)).url),
+        },
+      );
       const media = await createMediaFromUrl({ userId: ctx.userId, url, keyPrefix: req.keyPrefix });
-      return { media, quantity: req.durationSec, unit: "second", providerRequestId };
+      await markConsumed(journalId, media.id);
+      return { media, quantity: req.durationSec, unit: "second", providerRequestId: handle.requestId };
     }
     if (provider === "template") {
       const imageUrl = req.sourceImageMediaId ? await getMediaUrl(req.sourceImageMediaId) : null;
@@ -267,16 +296,50 @@ export async function generateTts(ctx: CallContext, req: TtsGenRequest): Promise
     }
     if (provider === "fal" || provider === "atlascloud") {
       const apiKey = await getProviderKey(ctx.userId, provider);
-      const referenceAudioUrl = req.voiceId ? (await getMediaUrl(req.voiceId)) ?? undefined : undefined;
-      const gen = provider === "fal" ? falTts : atlasTts;
-      const { url, providerRequestId } = await gen({ modelId, text: req.text, referenceAudioUrl, apiKey });
+      const referenceAudioUrl =
+        req.voice?.kind === "ref" ? (await getMediaUrl(req.voice.mediaId)) ?? undefined : undefined;
+      const presetVoiceId = req.voice?.kind === "preset" ? req.voice.presetId : undefined;
+      const args = {
+        modelId,
+        text: req.text,
+        referenceAudioUrl,
+        presetVoiceId,
+        emotion: req.emotion,
+        emotionStrength: req.emotionStrength,
+        apiKey,
+      };
+      const { result: url, journalId, handle } = await runJournaled<string>(
+        ctx,
+        {
+          provider,
+          apiType: "tts",
+          modelKey: req.modelKey,
+          // descriptor 係續接用嘅指紋：任何改變合成結果嘅輸入都要入面，
+          // 否則改咗音色／情緒之後會續返舊 request 攞返舊聲。
+          descriptor: {
+            modelKey: req.modelKey,
+            text: req.text,
+            voice: req.voice ?? null,
+            emotion: req.emotion ?? null,
+            emotionStrength: req.emotionStrength ?? null,
+          },
+        },
+        {
+          submit: () => (provider === "fal" ? falTtsSubmit(args) : atlasTtsSubmit(args)),
+          poll: async (h) => (provider === "fal" ? (await falPoll(h, apiKey, "tts")).url : (await atlasPoll(h, apiKey)).url),
+        },
+      );
       const media = await createMediaFromUrl({ userId: ctx.userId, url, keyPrefix: req.keyPrefix });
-      return { media, quantity: req.text.length, unit: "character", providerRequestId };
+      await markConsumed(journalId, media.id);
+      return { media, quantity: req.text.length, unit: "character", providerRequestId: handle.requestId };
     }
     if (provider === "template") {
+      const referenceAudioUrl =
+        req.voice?.kind === "ref" ? (await getMediaUrl(req.voice.mediaId)) ?? "" : "";
       const media = await runTemplateProvider(ctx, "tts", modelId, req.keyPrefix, {
         text: req.text,
-        voice_id: req.voiceId ?? "",
+        voice_id: req.voice?.kind === "preset" ? req.voice.presetId : "",
+        reference_audio_url: referenceAudioUrl,
       });
       return { media, quantity: req.text.length, unit: "character" };
     }

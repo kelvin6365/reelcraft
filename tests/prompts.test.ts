@@ -75,10 +75,31 @@ describe("buildPrompt", () => {
     expect(built.text).toContain("真人即使不在畫面內，仍然用「角色（VO）：」或「角色（OS）：」");
   });
 
-  it("renders extract_locations v1 with the angles judgment criteria intact", () => {
+  it("renders extract_locations v2 with the angles judgment criteria intact", () => {
     const built = buildPrompt("extract_locations", { script_text: "阿May推門而入。" });
-    expect(built.version).toBe("1");
+    expect(built.version).toBe("2");
     expect(built.text).toContain("重要場景必須輸出至少 2 個 angles；普通場景 angles 一律輸出空陣列");
+  });
+
+  // v2：real-browser QA（QA10 新 project）抽到「温馨的居家环境，」就交貨——模型見到禁人物
+  // 嘅反面示範之後，連合法嘅環境部分一齊砍走，仲以逗號吊住。description 係場景主圖嘅
+  // base prompt，寫得咁空即係叫生圖模型自己作間屋。
+  it("renders extract_locations with the do-not-over-delete floor on description", () => {
+    const built = buildPrompt("extract_locations", { script_text: "阿May推門而入。" });
+    expect(built.text).toContain("刪人物 ≠ 刪環境，唔准砍剩半句");
+    expect(built.text).toContain("20 至 60 字");
+    expect(built.text).toContain("唔准以逗號吊住");
+  });
+
+  // v2：同一輪 QA 見到安吉拉「背后一对白色羽翼」wardrobe 冇（啱）、appearance 都冇（錯），
+  // 成對翼跌咗落 bio.note。根因係舊自我檢查係單向閥——淨係由 appearance 搬嘢出去小傳，
+  // 從來冇檢查過身體特徵有冇入到 appearance。
+  it("renders extract_characters with the two-way self-check that stops body features evaporating", () => {
+    const built = buildPrompt("extract_characters", { script_text: "阿May推門而入。", raw_text: "" });
+    expect(built.text).toContain("身體特徵唔准淨係寫喺小傳");
+    expect(built.text).toContain("唯一正確位置係 appearance");
+    expect(built.text).toContain("兩個方向都要行");
+    expect(built.text).toContain("向 appearance 收返");
   });
 
   // 角色同場景由一個 extract_assets 拆成兩個 prompt 之後，每個 prompt 只得一個頂層鍵。

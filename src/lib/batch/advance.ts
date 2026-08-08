@@ -115,6 +115,10 @@ export async function advanceEpisode(episodeId: string): Promise<string> {
       await submitEp(TASK_TYPE.VOICE_ANALYZE, { at: 0 });
       return "voice-analyze";
     }
+    // 派音係人手揀嘢（endpoint null）——autorun 停喺度，唔好靜靜跌返預設聲
+    // 生成成集同一把聲嘅配音。
+    case action.stage === "voice" && action.endpoint === null && !action.busy:
+      return "paused:voice-cast";
     case action.endpoint?.endsWith("/tts-all") ?? false: {
       if (assisted && !cfg.moneyAuthorized) return "paused:money";
       const lines = await prisma.voiceLine.findMany({ where: { episodeId, audioMediaId: null } });

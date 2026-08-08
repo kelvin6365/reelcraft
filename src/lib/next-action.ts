@@ -11,6 +11,9 @@ export interface EpisodeSnapshot {
   storyboardConfirmed: boolean;
   isSrtMode: boolean;
   voiceLines: { total: number; withAudio: number };
+  // 配音表：有幾多把聲要派、派咗幾多。未派晒就唔准開 TTS —— 未派音嘅行會
+  // 跌返 provider 預設聲，成集所有人同一把。
+  voiceCast: { total: number; assigned: number };
   hasExport: boolean;
   runningTaskTypes: string[];
   failedTasks: number;
@@ -78,6 +81,8 @@ export function computeStages(s: EpisodeSnapshot): StageState[] {
     stage("voice", s.voiceLines.total > 0 && s.voiceLines.withAudio === s.voiceLines.total, {
       count: { done: s.voiceLines.withAudio, total: s.voiceLines.total },
       blockedBy: s.shots.total > 0 ? [] : ["第 4 站：先生成分鏡"],
+      // 未派晒音色 = 等緊人揀嘢，唔係等緊機器跑
+      review: s.voiceLines.total > 0 && s.voiceCast.assigned < s.voiceCast.total,
     }),
     stage("export", s.hasExport, {
       blockedBy: s.shots.withVideo > 0 ? [] : ["第 6 站：至少生成一段鏡頭視頻"],
@@ -143,6 +148,11 @@ export function computeNextAction(s: EpisodeSnapshot, episodeId: string): NextAc
   }
   if (s.voiceLines.total === 0) {
     return { stage: "voice", label: "分析台詞並配音", endpoint: ep("voice"), blockedBy: [], busy: running(s, "VOICE_ANALYZE") };
+  }
+  const uncast = s.voiceCast.total - s.voiceCast.assigned;
+  if (uncast > 0) {
+    // 派音係揀嘢，唔係跑任務 —— endpoint null，用戶喺配音站逐個揀（或者撳 AI 派音）。
+    return { stage: "voice", label: `派音（餘 ${uncast} 把聲未揀音色）`, endpoint: null, blockedBy: [], busy: false };
   }
   if (s.voiceLines.withAudio < s.voiceLines.total) {
     if (s.isSrtMode) {

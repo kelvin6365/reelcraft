@@ -37,6 +37,14 @@ vi.mock("@/lib/db", () => ({
 vi.mock("@/lib/task/events", () => ({ publishTaskEvent: vi.fn() }));
 const rollback = vi.hoisted(() => ({ calls: [] as string[] }));
 vi.mock("@/lib/billing/ledger", () => ({ rollbackTaskFreeze: vi.fn(async (id: string) => void rollback.calls.push(id)) }));
+// 取消一個任務亦要叫停仲喺 provider 嗰邊燒緊嘅 request（provider request journal）。
+const journalCancel = vi.hoisted(() => ({ calls: [] as string[] }));
+vi.mock("@/lib/ai/request-journal", () => ({
+  cancelPendingForTask: vi.fn(async (id: string) => {
+    journalCancel.calls.push(id);
+    return 0;
+  }),
+}));
 
 type Mod = typeof import("@/lib/task/cancel-shot-tasks");
 let M: Mod;
@@ -78,5 +86,15 @@ describe("cancelActiveShotTasks", () => {
     ];
     await M.cancelActiveShotTasks("ep1", ["s1"]);
     expect(rollback.calls.sort()).toEqual(["t1", "t2"]);
+  });
+
+  it("叫停每個被取消任務仲喺途中嘅 provider request", async () => {
+    journalCancel.calls = [];
+    state.found = [
+      { id: "t1", type: "IMAGE_SHOT", projectId: "p1" },
+      { id: "t2", type: "VIDEO_SHOT", projectId: "p1" },
+    ];
+    await M.cancelActiveShotTasks("ep1", ["s1"]);
+    expect(journalCancel.calls.sort()).toEqual(["t1", "t2"]);
   });
 });

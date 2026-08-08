@@ -33,6 +33,7 @@ import { useStationNav } from "./station-nav";
 import { SavedHint, useAutosaveField, useSavedFlash } from "./SavedHint";
 import { ShotWorkbench } from "./ShotWorkbench";
 import { TimelineEditor } from "./timeline/TimelineEditor";
+import { VoiceCastPanel } from "./voice/VoiceCastPanel";
 import { shortModelName, isFakeModel } from "@/ui/model-format";
 import { formatUsdDisplay } from "./cost-confirm";
 import { cn } from "@/lib/utils";
@@ -1528,13 +1529,19 @@ export function VideosPanel({ view, progress, live }: PanelProps) {
 }
 
 export function VoicePanel({ view, progress, live }: PanelProps) {
-  const { voiceLines, characters } = view;
+  const { voiceLines, characters, voiceCast, voices } = view;
   return (
     <Station stage="voice" progress={progress} episodeId={view.episode.id} promptIds={["voice_analyze"]}>
       {voiceLines.length === 0 ? (
         <EmptyState view={view} stage="voice">仲未有台詞。系統會由劇本分出對白同旁白，再逐句配音。</EmptyState>
       ) : (
         <div className="flex flex-col gap-3">
+          <VoiceCastPanel
+            cast={voiceCast ?? []}
+            voices={voices ?? []}
+            episodeId={view.episode.id}
+            projectId={view.episode.projectId}
+          />
           {voiceLines.map((v) => (
             <VoiceLineRow
               key={v.id}

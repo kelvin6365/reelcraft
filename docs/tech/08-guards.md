@@ -20,6 +20,8 @@
 | `env-example-sync` | `src/lib/env.ts` zod keys ⊆ `.env.example` | 07-deployment |
 | `flashback-shot-isolation` | 閃回鏡必須同母場的場景參考圖／空間契約隔離（`pickShotLocation` + `filterBlockingForShot` 兩個 call site） | #8 |
 | `sqlite-schema-sync` | `prisma/schema.sqlite.prisma` 必須是 `prisma/schema.prisma` 的轉換輸出，不得手改或轉舊 | #8 |
+| `provider-journal-check` | 媒體生成的 provider submit 必須經 `runJournaled()`（request_id 落 DB 才 poll），收貨後必須 `markConsumed`；`generate-media.ts` 以外禁止 import adapter 的 submit/poll seam | #8 · [03-provider §斷點續傳](03-provider-layer.md) |
+| `voice-cast-check` | 每個 tts model 必須聲明食哪種音色（`capabilities.voiceModes`：`preset`／`ref`），錯配硬 fail 不得靜默降級；音色庫只能經 `src/lib/voice/presets.ts` 讀取；`ttsLineHandler` 必須 `resolveVoiceBinding()` + 未派音 `VOICE_NOT_CAST` | #8 · [03-provider §配音](03-provider-layer.md) |
 | `delivery-standards-check` | 四個 style pack 的 `negativePrompt` 必須齊備交付標準各缺陷類別；鏡頭生圖的 `referenceMediaIds` 必須由審計後的 refs 派生（孤兒參考圖守衛） | #8 · [交付標準](../plans/2026-08-03-delivery-standards-design.md) |
 
 以上 guard 已全部掛載於 `npm run check`（`scripts/check.mjs` 自動掃描 `scripts/guards/*.mjs`，新增檔案即自動生效，無須註冊）。舊清單中的 `no-model-key-guess` / `no-plaintext-key-response` / `queue-route-exhaustive` / `no-polling` **未見對應腳本**，留待 orchestrator 決定是重新補寫還是移除這幾條要求。

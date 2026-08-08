@@ -221,6 +221,23 @@ export interface VoiceLineView {
   activeTask?: ActiveTaskView | null;
 }
 
+export interface VoiceCastView {
+  speaker: string;
+  characterId: string | null;
+  lineCount: number;
+  presetId: string | null;
+  refId: string | null;
+  note: string;
+  assigned: boolean;
+}
+
+export interface VoiceView {
+  id: string;
+  name: string;
+  note: string;
+  audioUrl: string | null;
+}
+
 export interface EpisodeView {
   candidateUrlById: Record<string, string>;
   // Whether the project's resolved image model accepts reference images
@@ -248,6 +265,11 @@ export interface EpisodeView {
   props: PropView[];
   shots: ShotView[];
   voiceLines: VoiceLineView[];
+  // 配音表：呢集有幾多把聲、每把派咗邊個音色。characterId 有值 = 綁喺角色
+  // （跨集共用）；null = 旁白／機械音之類，綁喺呢一集。
+  voiceCast: VoiceCastView[];
+  // project 嘅自訂音色（上傳嘅參考音）
+  voices: VoiceView[];
   stages: StageState[];
   nextAction: NextAction;
   failedTasks: number;

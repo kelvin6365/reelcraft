@@ -1,0 +1,32 @@
+{
+  "$comment": "音色預設庫 —— provider 內置音色嘅 id 係人哋 API 嘅公開常數，唔係我哋改得嘅；name/gender/age/traits/goodFor 全部係我哋自己寫嘅派音線索，餵去 voice_cast 同埋 UI 下拉分組。加音色 = 加一筆，唔准喺 code 度 inline。vendor 必須同 capabilities.json 嗰個 model 嘅 voicePresetVendor 對得上，否則 guard 會照肥佬。",
+  "voices": [
+    { "id": "male-qn-qingse", "vendor": "minimax", "name": "青澀青年", "gender": "male", "age": "青年", "traits": ["清亮", "略帶稚氣", "誠懇"], "goodFor": "學生、初出茅廬男主、老實人" },
+    { "id": "male-qn-jingying", "vendor": "minimax", "name": "精英青年", "gender": "male", "age": "青年", "traits": ["理性", "乾淨利落", "自信"], "goodFor": "律師、醫生、職場精英" },
+    { "id": "male-qn-badao", "vendor": "minimax", "name": "霸道青年", "gender": "male", "age": "青年", "traits": ["低沉", "強勢", "壓迫感"], "goodFor": "霸總、上位者、反派" },
+    { "id": "male-qn-daxuesheng", "vendor": "minimax", "name": "大學生", "gender": "male", "age": "青年", "traits": ["活潑", "隨和", "日常感"], "goodFor": "同學、兄弟、鄰家男孩" },
+    { "id": "junlang_nanyou", "vendor": "minimax", "name": "俊朗男友", "gender": "male", "age": "青年", "traits": ["溫柔", "磁性", "親密"], "goodFor": "男朋友、暖男、深情戲" },
+    { "id": "lengdan_xiongzhang", "vendor": "minimax", "name": "冷淡學長", "gender": "male", "age": "青年", "traits": ["冷淡", "疏離", "克制"], "goodFor": "高冷角色、心事重嘅人" },
+    { "id": "badao_shaoye", "vendor": "minimax", "name": "霸道少爺", "gender": "male", "age": "青年", "traits": ["囂張", "帶刺", "少爺脾氣"], "goodFor": "富二代、紈絝、對手" },
+    { "id": "chunzhen_xuedi", "vendor": "minimax", "name": "純真學弟", "gender": "male", "age": "少年", "traits": ["單純", "偏高音", "無害"], "goodFor": "學弟、小跟班、萌系男配" },
+    { "id": "Chinese (Mandarin)_Gentleman", "vendor": "minimax", "name": "溫潤男聲", "gender": "male", "age": "中年", "traits": ["溫潤", "沉穩", "有教養"], "goodFor": "父親、師長、成熟男主" },
+    { "id": "Chinese (Mandarin)_Reliable_Executive", "vendor": "minimax", "name": "沉穩高管", "gender": "male", "age": "中年", "traits": ["厚實", "有權威", "不徐不疾"], "goodFor": "老闆、長輩、決策者" },
+    { "id": "Chinese (Mandarin)_Unrestrained_Young_Man", "vendor": "minimax", "name": "不羈青年", "gender": "male", "age": "青年", "traits": ["痞", "散漫", "帶笑意"], "goodFor": "浪子、江湖人、搞事嗰個" },
+    { "id": "Chinese (Mandarin)_Humorous_Elder", "vendor": "minimax", "name": "搞笑大爺", "gender": "male", "age": "老年", "traits": ["蒼老", "詼諧", "接地氣"], "goodFor": "老人家、市井角色、諧星" },
+    { "id": "Chinese (Mandarin)_Male_Announcer", "vendor": "minimax", "name": "播報男聲", "gender": "male", "age": "中年", "traits": ["中性平穩", "咬字清", "無情緒"], "goodFor": "旁白、新聞、系統提示" },
+    { "id": "female-shaonv", "vendor": "minimax", "name": "少女音", "gender": "female", "age": "少年", "traits": ["清脆", "年輕", "有活力"], "goodFor": "女學生、妹妹、女主早期" },
+    { "id": "female-yujie", "vendor": "minimax", "name": "御姐音", "gender": "female", "age": "青年", "traits": ["低沉", "從容", "有威勢"], "goodFor": "女強人、姐姐、女反派" },
+    { "id": "female-chengshu", "vendor": "minimax", "name": "成熟女聲", "gender": "female", "age": "中年", "traits": ["穩重", "溫厚", "有閱歷"], "goodFor": "母親、上司、長輩" },
+    { "id": "female-tianmei", "vendor": "minimax", "name": "甜美女聲", "gender": "female", "age": "青年", "traits": ["甜", "柔和", "討喜"], "goodFor": "女主、戀愛戲、乖巧角色" },
+    { "id": "wumei_yujie", "vendor": "minimax", "name": "嫵媚御姐", "gender": "female", "age": "青年", "traits": ["嫵媚", "慵懶", "帶勾"], "goodFor": "交際花、蛇蠍美人、曖昧戲" },
+    { "id": "qiaopi_mengmei", "vendor": "minimax", "name": "俏皮萌妹", "gender": "female", "age": "少年", "traits": ["跳脫", "偏高音", "鬼馬"], "goodFor": "閨蜜、活寶、喜劇女配" },
+    { "id": "danya_xuejie", "vendor": "minimax", "name": "淡雅學姐", "gender": "female", "age": "青年", "traits": ["淡雅", "克制", "書卷氣"], "goodFor": "學姐、白月光、文靜角色" },
+    { "id": "Chinese (Mandarin)_Mature_Woman", "vendor": "minimax", "name": "傲嬌御姐", "gender": "female", "age": "青年", "traits": ["帶刺", "強勢", "口硬"], "goodFor": "對手女配、傲嬌女主" },
+    { "id": "Chinese (Mandarin)_Kind-hearted_Antie", "vendor": "minimax", "name": "熱心大嬸", "gender": "female", "age": "中年", "traits": ["熱情", "市井", "大聲"], "goodFor": "鄰居、姨媽、路人甲" },
+    { "id": "Chinese (Mandarin)_News_Anchor", "vendor": "minimax", "name": "新聞女聲", "gender": "female", "age": "青年", "traits": ["標準", "無情緒", "專業"], "goodFor": "旁白、廣播、新聞插播" },
+    { "id": "Chinese (Mandarin)_Sweet_Lady", "vendor": "minimax", "name": "甜美女播", "gender": "female", "age": "青年", "traits": ["溫柔", "親和", "口語感"], "goodFor": "旁白、內心獨白、溫情戲" },
+    { "id": "lovely_girl", "vendor": "minimax", "name": "萌萌女童", "gender": "female", "age": "童聲", "traits": ["童聲", "軟糯"], "goodFor": "小女孩" },
+    { "id": "clever_boy", "vendor": "minimax", "name": "聰明男童", "gender": "male", "age": "童聲", "traits": ["童聲", "機靈"], "goodFor": "小男孩" },
+    { "id": "Robot_Armor", "vendor": "minimax", "name": "機械戰甲", "gender": "neutral", "age": "特殊", "traits": ["機械", "冰冷", "電子感"], "goodFor": "【機械音】、【系統】、AI 語音" }
+  ]
+}

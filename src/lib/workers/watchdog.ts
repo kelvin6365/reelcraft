@@ -8,6 +8,7 @@ import { publishTaskEvent } from "@/lib/task/events";
 import { getQueueForTaskType, type TaskType } from "@/lib/task/types";
 import { recoverOrphanedQueued } from "@/lib/task/recover";
 import { reapLeakedSlots } from "@/lib/quota/reap-leaked";
+import { cancelPendingForTask, pruneTerminalRequests, sweepStalePending } from "@/lib/ai/request-journal";
 
 async function cleanupZombies(): Promise<void> {
   const cutoff = new Date(Date.now() - env.TASK_HEARTBEAT_TIMEOUT_MS);
@@ -26,6 +27,8 @@ async function cleanupZombies(): Promise<void> {
         where: { id: t.id },
         data: { status: "failed", errorCode: "WATCHDOG_TIMEOUT", errorMessage: "heartbeat lost, max attempts reached", finishedAt: new Date() },
       });
+      // 冇人會再收貨 → 叫停仲喺 provider 嗰邊燒緊嘅 request（best-effort）
+      await cancelPendingForTask(t.id);
       publishTaskEvent(t.projectId, { taskId: t.id, taskType: t.type, eventType: "FAILED", errorCode: "WATCHDOG_TIMEOUT" });
       console.log(`[watchdog] failed zombie ${t.id} (${t.type})`);
     } else {
@@ -53,6 +56,12 @@ async function tick(): Promise<void> {
     const { recovered } = await recoverOrphanedQueued();
     if (recovered > 0) console.log(`[watchdog] re-enqueued ${recovered} orphaned queued task(s)`);
     await cleanupZombies();
+    // 孤兒 provider request：過咗續接窗口、而 task 已經唔喺運行狀態 → 叫停 + 埋單
+    const swept = await sweepStalePending();
+    if (swept > 0) console.log(`[watchdog] 清理咗 ${swept} 條孤兒 provider request`);
+    // 保留期到期嘅 terminal 行 → 刪走，唔好等佢無限累積
+    const pruned = await pruneTerminalRequests();
+    if (pruned > 0) console.log(`[watchdog] 刪咗 ${pruned} 條過期 provider request`);
   } catch (err) {
     console.error("[watchdog] tick error", err);
   }

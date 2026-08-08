@@ -9,6 +9,8 @@ import { getStorage } from "@/lib/storage";
 import { createMediaFromBuffer } from "@/lib/media/service";
 import { composeShot, composeShotTimed, concatShots, imageToVideoClip, probeDurationMs } from "@/lib/video/ffmpeg";
 import { placeLinesPadded } from "@/lib/timeline/placement";
+import { checkVoiceMode, parseSpeakerVoices, resolveVoiceBinding } from "@/lib/voice/binding";
+import { getCapabilities } from "@/lib/ai/capabilities";
 import { TaskError } from "@/lib/task/types";
 import type { TaskHandler } from "@/lib/workers/lifecycle";
 import { resolveTaskModels, loadEpisodeWithProject, textCallJson, promptOverridesFromTask } from "@/lib/workers/handlers/shared";
@@ -538,23 +540,41 @@ async function probeAndStoreMediaDuration(mediaId: string): Promise<number | nul
 export const ttsLineHandler: TaskHandler = async ({ task }) => {
   const line = await prisma.voiceLine.findFirst({ where: { id: task.targetId, userId: task.userId } });
   if (!line) throw new TaskError("NOT_FOUND", `voiceLine ${task.targetId} not found`, false);
-  const { project } = await loadEpisodeWithProject({ ...task, episodeId: line.episodeId });
+  const { episode, project } = await loadEpisodeWithProject({ ...task, episodeId: line.episodeId });
   const models = await resolveTaskModels(task, project);
 
-  // Character's voice clip (a MediaObject id) drives the provider's voice — this
-  // is what keeps one character on one voice across the episode (火豹 #85「同一
-  // 個人上下鏡頭音色變了」). Null until a voice is assigned; the provider then
-  // uses its default, same as before.
-  const voiceId = line.characterId
-    ? (await prisma.character.findUnique({ where: { id: line.characterId }, select: { voiceId: true } }))?.voiceId ?? undefined
-    : undefined;
+  // 邊把聲：有角色就跟角色綁定，冇角色（旁白／【機械音】／未知）跌落集級
+  // speakerVoices。呢步就係「一個角色由頭到尾一把聲」嘅唯一保證。未派音就
+  // 硬 fail —— 以前係靜靜跌返 provider 預設聲，結果成集所有人同一把聲。
+  const character = line.characterId
+    ? await prisma.character.findUnique({
+        where: { id: line.characterId },
+        select: { voicePresetId: true, voiceRefId: true },
+      })
+    : null;
+  const refVoices = await prisma.voice.findMany({
+    where: { projectId: project.id },
+    select: { id: true, audioMediaId: true },
+  });
+  const resolution = resolveVoiceBinding({
+    speaker: line.speaker,
+    character,
+    speakerVoices: parseSpeakerVoices(episode.speakerVoices),
+    refAudioById: new Map(refVoices.map((v) => [v.id, v.audioMediaId])),
+  });
+  if (!resolution.ok) {
+    throw new TaskError("VOICE_NOT_CAST", `${resolution.detail} —— 去配音站派音先至配得成`, false);
+  }
+  const modeCheck = checkVoiceMode(resolution.binding, getCapabilities(models.tts) ?? null, models.tts);
+  if (!modeCheck.ok) throw new TaskError("VOICE_MODE_UNSUPPORTED", modeCheck.message, false);
 
   const media = await generateTts(
     { userId: task.userId, taskId: task.id, projectId: project.id, episodeId: line.episodeId },
     {
       modelKey: models.tts,
       text: line.content,
-      voiceId,
+      voice: resolution.binding,
+      emotion: line.emotion,
       emotionStrength: line.emotionStrength,
       keyPrefix: `projects/${project.id}/voice/${line.id}`,
     },

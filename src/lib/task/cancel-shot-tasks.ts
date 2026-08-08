@@ -16,6 +16,7 @@
 import { prisma } from "@/lib/db";
 import { publishTaskEvent } from "@/lib/task/events";
 import { rollbackTaskFreeze } from "@/lib/billing/ledger";
+import { cancelPendingForTask } from "@/lib/ai/request-journal";
 import { TASK_TYPE } from "@/lib/task/types";
 
 export async function cancelActiveShotTasks(episodeId: string, shotIds: string[]): Promise<number> {
@@ -36,6 +37,9 @@ export async function cancelActiveShotTasks(episodeId: string, shotIds: string[]
   });
   for (const t of active) {
     await rollbackTaskFreeze(t.id); // release the reservation — no settle/rollback will run otherwise
+    // 仲喺 provider 嗰邊燒緊 GPU 嘅 request：主動叫停。冇人會再收貨，唔叫停就
+    // 係白俾錢（best-effort，失敗只 log，見 request-journal.ts）。
+    await cancelPendingForTask(t.id);
     publishTaskEvent(t.projectId, { taskId: t.id, taskType: t.type, eventType: "CANCELED" });
   }
   return active.length;

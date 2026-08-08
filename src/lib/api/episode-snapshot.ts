@@ -9,6 +9,7 @@ import { humanizeTaskError } from "@/lib/task/error-copy";
 import { resolveModelDefaults } from "@/lib/model-defaults/resolve";
 import { effectiveImageModelKey } from "@/lib/ai/generate-media";
 import { getCapabilities } from "@/lib/ai/capabilities";
+import { buildVoiceCast, type CastRow } from "@/lib/voice/cast";
 
 const CONFIRMED_STATUSES = ["images", "videos", "export", "done"];
 
@@ -52,9 +53,9 @@ export function pickPropLastError(tasks: PropTerminalTaskRow[]): Record<string, 
 }
 
 export async function buildEpisodeSnapshot(
-  episode: { id: string; projectId: string; rawText: string; scriptText: string; status: string; exportMediaId: string | null },
+  episode: { id: string; projectId: string; rawText: string; scriptText: string; status: string; exportMediaId: string | null; speakerVoices: unknown },
   inputType: string,
-): Promise<{ snapshot: EpisodeSnapshot; characters: Awaited<ReturnType<typeof prisma.character.findMany>>; locations: Awaited<ReturnType<typeof prisma.location.findMany>>; props: Awaited<ReturnType<typeof prisma.prop.findMany>>; propLatestTerminal: Record<string, PropTerminalTask>; shots: Awaited<ReturnType<typeof prisma.shot.findMany>>; voiceLines: Awaited<ReturnType<typeof prisma.voiceLine.findMany>>; activeTasks: { id: string; type: string; targetId: string; status: string; progress: number; queuedAt: Date; heartbeatAt: Date | null }[]; failedTaskTypes: string[] }> {
+): Promise<{ snapshot: EpisodeSnapshot; voiceCast: CastRow[]; characters: Awaited<ReturnType<typeof prisma.character.findMany>>; locations: Awaited<ReturnType<typeof prisma.location.findMany>>; props: Awaited<ReturnType<typeof prisma.prop.findMany>>; propLatestTerminal: Record<string, PropTerminalTask>; shots: Awaited<ReturnType<typeof prisma.shot.findMany>>; voiceLines: Awaited<ReturnType<typeof prisma.voiceLine.findMany>>; activeTasks: { id: string; type: string; targetId: string; status: string; progress: number; queuedAt: Date; heartbeatAt: Date | null }[]; failedTaskTypes: string[] }> {
   const episodeId = episode.id;
   const [characters, locations, props, scenes, shots, voiceLines, activeTasks, terminalTasks, propTerminalTasks] = await Promise.all([
     // id is UUID v7 (time-ordered) → creation/extraction order. Without an
@@ -82,6 +83,7 @@ export async function buildEpisodeSnapshot(
   ]);
 
   const propLatestTerminal = pickPropLastError(propTerminalTasks);
+  const voiceCast = buildVoiceCast(voiceLines, characters, episode.speakerVoices);
 
   // Outstanding failures, one per target: drop those a later success fixed, then
   // collapse repeated failures on the same shot to the latest. See superseded.ts.
@@ -115,11 +117,15 @@ export async function buildEpisodeSnapshot(
       total: voiceLines.length,
       withAudio: voiceLines.filter((v) => v.audioMediaId).length,
     },
+    voiceCast: {
+      total: voiceCast.length,
+      assigned: voiceCast.filter((c) => c.assigned).length,
+    },
     hasExport: Boolean(episode.exportMediaId),
     runningTaskTypes: activeTasks.map((t) => t.type),
     failedTasks: unresolvedFailures.length,
   };
-  return { snapshot, characters, locations, props, propLatestTerminal, shots, voiceLines, activeTasks, failedTaskTypes: unresolvedFailures.map((t) => t.type) };
+  return { snapshot, voiceCast, characters, locations, props, propLatestTerminal, shots, voiceLines, activeTasks, failedTaskTypes: unresolvedFailures.map((t) => t.type) };
 }
 
 export async function buildEpisodeView(userId: string, episodeId: string) {
@@ -129,7 +135,7 @@ export async function buildEpisodeView(userId: string, episodeId: string) {
   });
   if (!episode) throw new ApiError("NOT_FOUND", 404, "episode not found");
 
-  const { snapshot, characters, locations, props, propLatestTerminal, shots, voiceLines, activeTasks, failedTaskTypes } = await buildEpisodeSnapshot(episode, episode.project.inputType);
+  const { snapshot, voiceCast, characters, locations, props, propLatestTerminal, shots, voiceLines, activeTasks, failedTaskTypes } = await buildEpisodeSnapshot(episode, episode.project.inputType);
   const failedTasks = snapshot.failedTasks;
   const autorunCfg = (episode.autorunConfig ?? {}) as { mode?: "batch" | "assisted"; moneyAuthorized?: boolean };
 
@@ -167,6 +173,16 @@ export async function buildEpisodeView(userId: string, episodeId: string) {
   const imageRefSupported =
     getCapabilities(resolvedModels.image)?.supportsReferenceImages === true ||
     effectiveImageModelKey(resolvedModels.image, true) !== resolvedModels.image;
+
+  // 自訂音色（參考音）—— 配音站要拎佢做下拉選項兼試聽
+  const projectVoices = await prisma.voice.findMany({
+    where: { projectId: episode.projectId },
+    orderBy: { createdAt: "asc" },
+  });
+  const projectVoiceList = (await attachMediaUrls(projectVoices, ["audioMediaId"])).map((v) => {
+    const row = v as { id: string; name: string; note: string; audioUrl?: string | null };
+    return { id: row.id, name: row.name, note: row.note, audioUrl: row.audioUrl ?? null };
+  });
 
   const { getStorage } = await import("@/lib/storage");
   const storage = getStorage();
@@ -277,6 +293,9 @@ export async function buildEpisodeView(userId: string, episodeId: string) {
         : null,
       activeTask: activeByKey.get(`TTS_LINE:${(v as { id: string }).id}`) ?? null,
     })),
+    // 配音表 + project 嘅自訂音色清單（帶簽名 URL，UI 試聽用）
+    voiceCast,
+    voices: projectVoiceList,
     stages: computeStages(snapshot),
     nextAction: computeNextAction(snapshot, episodeId),
     failedTasks,

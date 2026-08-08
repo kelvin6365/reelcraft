@@ -34,6 +34,7 @@ model User {
   characters Character[]
   locations  Location[]
   props      Prop[]
+  voices     Voice[]
   voiceLines VoiceLine[]
   media      MediaObject[]
   tasks      Task[]
@@ -46,6 +47,7 @@ model User {
   transactions BalanceTransaction[]
   promptOverrides PromptOverride[]
   preferences  UserPreferences?
+  providerRequests ProviderRequest[]
 
   @@map("users")
 }
@@ -123,6 +125,7 @@ model Project {
   characters Character[]
   locations  Location[]
   props      Prop[]
+  voices     Voice[]
 
   @@index([userId, lastAccessedAt])
   @@map("projects")
@@ -145,6 +148,10 @@ model Episode {
   autorunConfig Json    @default(dbgenerated("'{}'")) // { autoConfirmStoryboard, skipVideo }
   // 劇本體檢 result { scenes: [{index,label,risk}], overall: {level,flags,note} } — informational, not a gate
   scriptReview  Json    @default(dbgenerated("'{}'"))
+  // 非角色 speaker 嘅音色（旁白／【機械音】／「未知」冇 Character 可綁）：
+  // { "旁白": { "presetId": "..." } | { "refId": "..." } }。集級而非 project 級，
+  // 因為同一個「旁白」喺唔同集可以係唔同人講。
+  speakerVoices Json    @default(dbgenerated("'{}'"))
   exportMediaId String?
   exportMedia   MediaObject? @relation("EpisodeExport", fields: [exportMediaId], references: [id])
   createdAt     DateTime @default(now())
@@ -253,7 +260,16 @@ model Character {
   refFaceMedia       MediaObject? @relation("CharacterRefFace", fields: [refFaceMediaId], references: [id])
   refFaceNote        String  @default("")
   candidates         Json    @default(dbgenerated("'[]'"))
-  voiceId            String?
+  // 音色綁定（二選一，唔准同時有值 —— API 層互斥賦值）：
+  //   voicePresetId = provider 內置音色 id（standards/voice-presets.json）
+  //   voiceRefId    = 用戶上傳／AI 設計嘅參考音（Voice.id），行聲音克隆
+  // 兩個都 null = 未派音；TTS 會用 provider 預設聲，全部角色同一把 —— 所以
+  // 配音站有 gate，未派晒唔俾一鍵配音。
+  voicePresetId      String?
+  voiceRefId         String?
+  voiceRef           Voice?  @relation("CharacterVoiceRef", fields: [voiceRefId], references: [id], onDelete: SetNull)
+  // AI 派音理由，純展示畀用戶覆核
+  voiceCastNote      String  @default("")
   locked             Boolean @default(false)
   // 側面/背面視角 [{label, prompt, mediaId}] — 鎖定主圖後由 lock route seed，逐個由 IMAGE_CHARACTER view 分支寫入
   views              Json    @default(dbgenerated("'[]'"))
@@ -261,7 +277,29 @@ model Character {
   voiceLines VoiceLine[]
 
   @@index([projectId])
+  @@index([voiceRefId])
   @@map("characters")
+}
+
+// 自訂音色（聲音克隆用嘅參考音）—— project-level 共用，同 Character/Location
+// 一樣跨集複用。provider 內置音色唔入表（佢哋係 standards/voice-presets.json
+// 嘅靜態常數，冇 per-user 狀態可言）。
+model Voice {
+  id           String  @id
+  userId       String
+  user         User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  projectId    String
+  project      Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  name         String
+  audioMediaId String
+  audioMedia   MediaObject @relation("VoiceRefAudio", fields: [audioMediaId], references: [id])
+  note         String  @default("")
+  createdAt    DateTime @default(now())
+
+  characters Character[] @relation("CharacterVoiceRef")
+
+  @@index([projectId])
+  @@map("voices")
 }
 
 model Location {
@@ -373,6 +411,7 @@ model MediaObject {
   propLockedImages      Prop[]      @relation("PropLockedImage")
   propEffectVideos      Prop[]      @relation("PropEffectVideo")
   voiceLineAudios       VoiceLine[] @relation("VoiceLineAudio")
+  voiceRefAudios        Voice[]     @relation("VoiceRefAudio")
 
   @@index([userId])
   @@map("media_objects")
@@ -481,6 +520,39 @@ model AiCallLog {
   @@index([modelKey, at])
   @@index([episodeId, promptId, at])
   @@map("ai_call_logs")
+}
+
+// 生成請求嘅斷點續傳日誌。Provider 側 submit 一成功就即刻寫一行（poll 之前），
+// 所以 worker 中途死／重啟之後，重跑嘅 task 唔會重新 submit，而係攞返同一個
+// requestId 續 poll —— 唔會蒸發已經開咗嘅 GPU 資源，亦唔會俾兩次錢。
+// 刻意唔存任何 URL（鐵律 #4）：續接嗰陣照原路 poll 一次，provider 嘅 result
+// endpoint 本身係冪等嘅，輸出 URL 每次攞返嚟都得。
+model ProviderRequest {
+  id        String @id
+  userId    String
+  user      User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  taskId    String
+  // 同一個 task 入面識別「邊一次生成」——由生成請求嘅描述 hash 而成，
+  // 重複描述以 #N 區分（見 src/lib/ai/request-journal.ts）。
+  stepKey   String
+  provider  String // 'fal' | 'atlascloud'
+  apiType   String // 'image' | 'video' | 'tts'
+  modelKey  String
+  // 實際 submit 落去嘅 modelId／endpoint（例如 fal 嘅 /edit swap 之後）
+  endpoint  String
+  requestId String
+  // 'pending' | 'consumed' | 'failed' | 'canceled'
+  status    String @default("pending")
+  // 收貨之後落到邊個 MediaObject —— 對數／追查用。
+  mediaId   String?
+  errorCode String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([taskId, stepKey])
+  @@index([taskId, status])
+  @@index([status, createdAt])
+  @@map("provider_requests")
 }
 
 // ========== M3: BYO-Key + billing ledger + quotas ==========

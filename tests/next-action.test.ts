@@ -11,6 +11,7 @@ const base: EpisodeSnapshot = {
   storyboardConfirmed: false,
   isSrtMode: false,
   voiceLines: { total: 0, withAudio: 0 },
+  voiceCast: { total: 0, assigned: 0 },
   hasExport: false,
   runningTaskTypes: [],
   failedTasks: 0,
@@ -87,6 +88,40 @@ describe("computeNextAction", () => {
     const a = computeNextAction(done, "e1");
     expect(a.endpoint).toBeNull();
     expect(a.label).toContain("完成");
+  });
+
+  // 未派音色就開 TTS = 成集所有角色跌返 provider 預設聲（同一把）。呢個
+  // gate 係 P1 修嘅嗰個 bug 嘅唯一防線，唔可以靜靜行過。
+  it("台詞有咗但未派晒音色 → 停喺派音，唔會跳去配音", () => {
+    const s: EpisodeSnapshot = {
+      ...base,
+      hasScript: true,
+      characters: { total: 1, locked: 1, withCandidates: 1 },
+      scenes: 1,
+      shots: { total: 3, withImage: 3, withVideo: 3 },
+      storyboardConfirmed: true,
+      voiceLines: { total: 5, withAudio: 0 },
+      voiceCast: { total: 3, assigned: 1 },
+    };
+    const a = computeNextAction(s, "e1");
+    expect(a.stage).toBe("voice");
+    expect(a.endpoint).toBeNull();
+    expect(a.label).toContain("餘 2");
+
+    // 派晒之後先至輪到配音
+    const cast = computeNextAction({ ...s, voiceCast: { total: 3, assigned: 3 } }, "e1");
+    expect(cast.stage).toBe("voice");
+    expect(cast.label).toContain("配音");
+  });
+
+  it("未派晒音色時，配音站標成「等人處理」而唔係 todo", () => {
+    const stages = computeStages({
+      ...base,
+      shots: { total: 3, withImage: 3, withVideo: 3 },
+      voiceLines: { total: 5, withAudio: 0 },
+      voiceCast: { total: 3, assigned: 1 },
+    });
+    expect(stages.find((s) => s.key === "voice")?.status).toBe("review");
   });
 });
 

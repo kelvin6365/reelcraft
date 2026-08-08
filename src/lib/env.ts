@@ -53,6 +53,18 @@ const schema = z.object({
   // watchdog can't see: handler hung on a never-resolving await while heartbeats
   // keep beating. Must exceed the slowest legitimate task (adapter poll caps at 10min).
   TASK_MAX_RUNTIME_MS: z.coerce.number().int().positive().default(15 * 60 * 1000),
+  // 斷點續傳窗口：worker 重啟之後，一條寫落 provider_requests 嘅 in-flight
+  // request 喺呢個時限之內仲會被續 poll（而唔係重新 submit）。要大過 adapter
+  // 嘅 10 分鐘 poll cap，否則長片一重啟就等於白俾錢。
+  PROVIDER_RESUME_MAX_AGE_MS: z.coerce.number().int().positive().default(30 * 60 * 1000),
+  // 關機時等 graceful drain 幾耐；逾時就 force close 並把在途 task 交還（打返
+  // queued + 重新入 job）。要細過 tsx watch 嘅 5 秒硬殺，否則 dev reload 咩都
+  // 交還唔到，要等 watchdog 兜底。
+  WORKER_SHUTDOWN_DRAIN_MS: z.coerce.number().int().positive().default(3_000),
+  // provider_requests 保留期：terminal（consumed/failed/canceled）嘅行過咗呢個
+  // 期限就由 watchdog 刪走。每張圖／每條片／每句配音都寫一行，唔清理嘅話呢張
+  // 表會變成全庫最大。pending 行永遠唔會被刪（要留返嚟續接／叫停）。
+  PROVIDER_REQUEST_RETENTION_MS: z.coerce.number().int().positive().default(7 * 24 * 60 * 60 * 1000),
 
   // Quotas — per-user concurrent slots (distributed semaphore) + daily API caps.
   QUOTA_USER_CONCURRENT_IMAGE: z.coerce.number().int().positive().default(4),

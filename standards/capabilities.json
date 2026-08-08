@@ -300,7 +300,7 @@
   {
     "modelKey": "fal::fal-ai/index-tts-2/text-to-speech",
     "apiType": "tts",
-    "capabilities": {},
+    "capabilities": { "voiceModes": ["ref"] },
     "pricing": {
       "mode": "flat",
       "perUnit": 5e-05,
@@ -312,7 +312,7 @@
   {
     "modelKey": "fal::fal-ai/minimax/speech-02-hd",
     "apiType": "tts",
-    "capabilities": {},
+    "capabilities": { "voiceModes": ["preset"], "voicePresetVendor": "minimax" },
     "pricing": {
       "mode": "flat",
       "perUnit": 5e-05,

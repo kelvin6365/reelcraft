@@ -4,6 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "node scripts/dev.mjs",
+    "dev:stable": "WORKER_WATCH=0 node scripts/dev.mjs",
     "dev:web": "next dev",
     "build": "prisma generate && next build",
     "start": "next start",

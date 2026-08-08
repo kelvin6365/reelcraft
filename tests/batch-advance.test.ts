@@ -38,6 +38,7 @@ const baseSnapshot: EpisodeSnapshot = {
   storyboardConfirmed: false,
   isSrtMode: false,
   voiceLines: { total: 0, withAudio: 0 },
+  voiceCast: { total: 0, assigned: 0 },
   hasExport: false,
   runningTaskTypes: [],
   failedTasks: 0,

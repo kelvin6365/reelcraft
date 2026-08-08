@@ -41,7 +41,16 @@ characters      id, userId, projectId, name, aliases jsonb, profile text,
                 refFaceMediaId, refFaceNote text default '',
                                             // 墊臉——使用者上載的參考臉相＋補充要求；生成候選圖時
                                             // 排第一張 reference（keepIdentity 鎖定圖排第二）
-                candidates jsonb, voiceId, locked bool default false
+                candidates jsonb, locked bool default false,
+                voicePresetId, voiceRefId, voiceCastNote text default ''
+                                            // 音色綁定，二選一：voicePresetId = provider 內置音色
+                                            // （standards/voice-presets.json）；voiceRefId = 上傳的
+                                            // 參考音（voices.id）做聲音克隆。兩者皆空 = 未派音，
+                                            // 該角色的對白不會開 TTS（見 08-guards voice-cast-check）
+
+voices          id, userId, projectId, name, audioMediaId, note text default '', createdAt
+                                            // 自訂音色（聲音克隆用的參考音），project 級跨集複用。
+                                            // provider 內置音色不入表——它們是 standards/ 的靜態常數
 
 locations       id, userId, projectId, name, summary, prompt,
                 lockedImageMediaId, candidates jsonb, locked bool default false,

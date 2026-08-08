@@ -21,6 +21,7 @@ import type { Character, Prisma } from "@prisma/client";
 import { DEFAULT_CHARACTER_VIEWS } from "@/lib/prompts/character-views";
 import { estimateShotDurationMs } from "@/lib/storyboard/duration";
 import { missingRequiredPropFields } from "@/lib/prompts/prop-views";
+import { filterCastableLines } from "@/lib/voice/castable";
 
 // 分鏡三個補完階段（攝影／表演／細節）各自獨立呼叫，逐鏡對應 plan 嘅 index。
 // 模型少交鏡時下面會寫入 null，該鏡就冇布光／表演／景別依據 —— 生圖階段唯有自己作，
@@ -963,8 +964,12 @@ export const voiceAnalyzeHandler: TaskHandler = async ({ task, reportProgress })
   }
 
   reportProgress(85);
+  // 只 fan out 派咗音色嗰啲行。未派音嘅行一定會喺 ttsLineHandler 度
+  // VOICE_NOT_CAST 失敗，與其燒一堆紅色 task 出嚟，不如唔開 —— 配音站個
+  // gate 會叫用戶去派音，派完再一鍵補配。
   const lines = await prisma.voiceLine.findMany({ where: { episodeId: episode.id, audioMediaId: null } });
-  for (const line of lines) {
+  const castable = await filterCastableLines(episode, lines);
+  for (const line of castable) {
     await submitTask({
       userId: task.userId,
       type: TASK_TYPE.TTS_LINE,
@@ -974,5 +979,5 @@ export const voiceAnalyzeHandler: TaskHandler = async ({ task, reportProgress })
       episodeId: episode.id,
     });
   }
-  return { lines: created, reusedAudio: created - lines.length };
+  return { lines: created, reusedAudio: created - lines.length, uncast: lines.length - castable.length };
 };
