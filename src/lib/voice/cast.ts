@@ -5,6 +5,7 @@
 // 對唔上（旁白／【機械音】／【系統】／「未知」）就係集級 speakerVoices 嗰邊。
 
 import { parseSpeakerVoices, type SpeakerVoiceMap } from "@/lib/voice/binding";
+import { getVoicePreset } from "@/lib/voice/presets";
 
 export interface CastLine {
   speaker: string;
@@ -74,4 +75,58 @@ export function buildVoiceCast(
       assigned: Boolean(presetId || refId),
     };
   });
+}
+
+export interface RawAssignment {
+  speaker: string;
+  voiceId: string;
+  reason: string;
+}
+
+export interface AppliedAssignment {
+  speaker: string;
+  characterId: string | null;
+  presetId: string;
+  reason: string;
+}
+
+// 收貨 voice_cast 嘅輸出。模型會杜撰音色 id、會派畀唔存在嘅 speaker、會漏人、
+// 會重複派同一個 speaker —— 逐個驗，壞嗰個丟走而唔係炸咗成次派音（重跑一次
+// 又要俾多次錢，而且多數只係一兩個 assignment 有問題）。
+export function applyCastAssignments(
+  cast: CastRow[],
+  assignments: RawAssignment[],
+): { applied: AppliedAssignment[]; rejected: string[] } {
+  const bySpeaker = new Map(cast.map((row) => [row.speaker, row]));
+  const applied: AppliedAssignment[] = [];
+  const rejected: string[] = [];
+  const done = new Set<string>();
+
+  for (const a of assignments) {
+    const row = bySpeaker.get(a.speaker);
+    if (!row) {
+      rejected.push(`${a.speaker} → ${a.voiceId}（唔喺本集聲源清單）`);
+      continue;
+    }
+    if (done.has(a.speaker)) {
+      rejected.push(`${a.speaker} → ${a.voiceId}（同一個聲源派多過一次，取第一個）`);
+      continue;
+    }
+    if (!getVoicePreset(a.voiceId)) {
+      rejected.push(`${a.speaker} → ${a.voiceId}（唔喺音色庫）`);
+      continue;
+    }
+    done.add(a.speaker);
+    applied.push({
+      speaker: row.speaker,
+      characterId: row.characterId,
+      presetId: a.voiceId,
+      reason: a.reason.slice(0, 300),
+    });
+  }
+
+  for (const row of cast) {
+    if (!done.has(row.speaker) && !row.assigned) rejected.push(`${row.speaker}（AI 冇派到，要手動揀）`);
+  }
+  return { applied, rejected };
 }

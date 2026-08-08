@@ -1,0 +1,18 @@
+{
+  "promptId": "voice_cast",
+  "variables": {
+    "voice_library_json": "[{\"id\": \"male-qn-badao\", \"name\": \"霸道青年\", \"gender\": \"male\", \"age\": \"青年\", \"traits\": [\"低沉\", \"強勢\"], \"goodFor\": \"霸總、上位者、反派\"}, {\"id\": \"female-tianmei\", \"name\": \"甜美女聲\", \"gender\": \"female\", \"age\": \"青年\", \"traits\": [\"甜\", \"柔和\"], \"goodFor\": \"女主、戀愛戲\"}, {\"id\": \"Robot_Armor\", \"name\": \"機械戰甲\", \"gender\": \"neutral\", \"age\": \"特殊\", \"traits\": [\"機械\", \"冰冷\"], \"goodFor\": \"【機械音】、【系統】\"}]",
+    "cast_json": "[{\"speaker\": \"阿明\", \"isCharacter\": true, \"lineCount\": 12, \"bio\": {\"age\": \"32\", \"personality\": \"強勢、話事人\"}}, {\"speaker\": \"小雨\", \"isCharacter\": true, \"lineCount\": 9, \"bio\": {\"age\": \"24\", \"personality\": \"溫柔\"}}, {\"speaker\": \"系統\", \"isCharacter\": false, \"lineCount\": 2, \"bio\": {}}]"
+  },
+  "mustContain": [
+    "只輸出純 JSON",
+    "voiceId 只准從",
+    "不准自己杜撰一個 id",
+    "性別必須對",
+    "年齡必須對",
+    "不得共用同一個 voiceId",
+    "isCharacter=false",
+    "assignments 必須覆蓋輸入 cast 的每一個 speaker",
+    "reason"
+  ]
+}

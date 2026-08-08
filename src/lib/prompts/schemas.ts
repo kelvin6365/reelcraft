@@ -249,6 +249,21 @@ export const VoiceAnalyzeOutput = z.object({
 });
 export type VoiceAnalyzeOutput = z.infer<typeof VoiceAnalyzeOutput>;
 
+// voice_cast — 派音。voiceId 喺 handler 度再對音色庫驗一次（模型照樣會杜撰
+// id），驗唔過嗰個 assignment 跳過而唔係成個 task 炸。
+export const VoiceCastOutput = z.object({
+  assignments: z
+    .array(
+      z.object({
+        speaker: z.string().min(1),
+        voiceId: z.string().min(1),
+        reason: z.string().default(""),
+      }),
+    )
+    .min(1),
+});
+export type VoiceCastOutput = z.infer<typeof VoiceCastOutput>;
+
 // script_review — 劇本體檢 (S3): per-scene checklist risk, same review-by-exception
 // shape as episode planning but with script-specific flags. Informational only.
 export const SCRIPT_RISK_FLAGS = [
@@ -320,6 +335,7 @@ export const outputSchemas = {
   storyboard_acting: ActingOutput,
   storyboard_detail: DetailOutput,
   voice_analyze: VoiceAnalyzeOutput,
+  voice_cast: VoiceCastOutput,
   script_review: ScriptReviewOutput,
   image_prompt_shot: ImagePromptShotOutput,
 } as const;

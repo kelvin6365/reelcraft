@@ -119,6 +119,16 @@
       "description": "抽對白台詞，標說話者/情緒/情緒強度(≤0.5)/對應鏡頭；【】標記嘅非人物聲源照抽，lineType=vo（JSON）。"
     },
     {
+      "id": "voice_cast",
+      "path": "pipeline/voice_cast.zh.txt",
+      "version": "1",
+      "variables": [
+        "voice_library_json",
+        "cast_json"
+      ],
+      "description": "為每個聲源由音色庫派一個音色：性別/年齡/性格對位，戲份頭三名唔准撞音色，非人物聲源（旁白/機械音）另有規則；voiceId 只准原文照抄唔准杜撰（JSON）。"
+    },
+    {
       "id": "image_prompt_shot",
       "path": "pipeline/image_prompt_shot.zh.txt",
       "version": "13",

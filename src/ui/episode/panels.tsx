@@ -1541,6 +1541,7 @@ export function VoicePanel({ view, progress, live }: PanelProps) {
             voices={voices ?? []}
             episodeId={view.episode.id}
             projectId={view.episode.projectId}
+            casting={Boolean(live?.["VOICE_CAST:" + view.episode.id])}
           />
           {voiceLines.map((v) => (
             <VoiceLineRow

@@ -15,6 +15,7 @@ export const TASK_TYPE_TO_STAGE: Record<string, StageKey> = {
   IMAGE_SHOT: "images",
   VIDEO_SHOT: "videos",
   VOICE_ANALYZE: "voice",
+  VOICE_CAST: "voice",
   TTS_LINE: "voice",
   COMPOSE_EPISODE: "export",
 };

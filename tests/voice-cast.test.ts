@@ -2,7 +2,7 @@
 // 生成 —— 靜默跌返 provider 預設聲會令成集所有角色（連旁白）同一把聲，而
 // 呢個 bug 冇任何 error 或者 log，淨係聽落先知。
 import { describe, expect, it } from "vitest";
-import { buildVoiceCast } from "@/lib/voice/cast";
+import { applyCastAssignments, buildVoiceCast } from "@/lib/voice/cast";
 import { checkVoiceMode, parseSpeakerVoices, resolveVoiceBinding } from "@/lib/voice/binding";
 import { getVoicePreset, listVoicePresets } from "@/lib/voice/presets";
 
@@ -130,6 +130,59 @@ describe("checkVoiceMode", () => {
 
   it("未聲明能力嘅模型唔攔（照舊行為，最多 provider 自己回錯）", () => {
     expect(checkVoiceMode(preset, null, "x::y").ok).toBe(true);
+  });
+});
+
+// AI 派音收貨。模型一定會偶爾杜撰音色 id／派畀唔存在嘅人／漏人，壞一兩個
+// assignment 唔應該炸咗成次派音（重跑要俾多次錢）。
+describe("applyCastAssignments", () => {
+  const cast = buildVoiceCast(
+    [
+      { speaker: "阿明", characterId: "c1" },
+      { speaker: "旁白", characterId: null },
+    ],
+    [char("c1")],
+    {},
+  );
+
+  it("有效嘅照落，角色綁 characterId、旁白綁集級", () => {
+    const r = applyCastAssignments(cast, [
+      { speaker: "阿明", voiceId: PRESET, reason: "強勢" },
+      { speaker: "旁白", voiceId: PRESET, reason: "播報" },
+    ]);
+    expect(r.rejected).toEqual([]);
+    expect(r.applied.map((a) => a.characterId)).toEqual(["c1", null]);
+  });
+
+  it("杜撰嘅音色 id 丟走，其餘照落", () => {
+    const r = applyCastAssignments(cast, [
+      { speaker: "阿明", voiceId: "我作嘅音色", reason: "" },
+      { speaker: "旁白", voiceId: PRESET, reason: "" },
+    ]);
+    expect(r.applied).toHaveLength(1);
+    expect(r.applied[0].speaker).toBe("旁白");
+    expect(r.rejected.some((x) => x.includes("唔喺音色庫"))).toBe(true);
+  });
+
+  it("派畀唔存在嘅 speaker 丟走", () => {
+    const r = applyCastAssignments(cast, [{ speaker: "路人甲", voiceId: PRESET, reason: "" }]);
+    expect(r.applied).toEqual([]);
+    expect(r.rejected.some((x) => x.includes("唔喺本集聲源清單"))).toBe(true);
+  });
+
+  it("同一個 speaker 派兩次，取第一個", () => {
+    const r = applyCastAssignments(cast, [
+      { speaker: "阿明", voiceId: PRESET, reason: "第一" },
+      { speaker: "阿明", voiceId: "female-tianmei", reason: "第二" },
+    ]);
+    expect(r.applied.filter((a) => a.speaker === "阿明")).toHaveLength(1);
+    expect(r.applied[0].presetId).toBe(PRESET);
+  });
+
+  // 漏人係最陰濕嗰種：靜靜派少一個，用戶以為派晒，配音出到嚟先發現嗰把聲唔啱。
+  it("漏咗嘅聲源要報出嚟，唔可以靜靜當派晒", () => {
+    const r = applyCastAssignments(cast, [{ speaker: "阿明", voiceId: PRESET, reason: "" }]);
+    expect(r.rejected.some((x) => x.includes("旁白") && x.includes("冇派到"))).toBe(true);
   });
 });
 

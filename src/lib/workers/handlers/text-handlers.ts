@@ -22,6 +22,11 @@ import { DEFAULT_CHARACTER_VIEWS } from "@/lib/prompts/character-views";
 import { estimateShotDurationMs } from "@/lib/storyboard/duration";
 import { missingRequiredPropFields } from "@/lib/prompts/prop-views";
 import { filterCastableLines } from "@/lib/voice/castable";
+import { applyCastAssignments, buildVoiceCast } from "@/lib/voice/cast";
+import { parseSpeakerVoices } from "@/lib/voice/binding";
+import { listVoicePresets } from "@/lib/voice/presets";
+import { invalidateCharacterAudio, invalidateSpeakerAudio } from "@/lib/voice/assign";
+import { getCapabilities } from "@/lib/ai/capabilities";
 
 // 分鏡三個補完階段（攝影／表演／細節）各自獨立呼叫，逐鏡對應 plan 嘅 index。
 // 模型少交鏡時下面會寫入 null，該鏡就冇布光／表演／景別依據 —— 生圖階段唯有自己作，
@@ -896,6 +901,86 @@ export const srtBuildHandler: TaskHandler = async ({ task, reportProgress }) => 
   }
   reportProgress(95);
   return { cues: cues.length, shots: cues.length, voiceLines: cues.length };
+};
+
+// AI 派音 —— 由音色庫幫每個聲源揀一把聲。純 text call，唔使錢生成音頻；
+// 用戶喺配音站逐個覆核／改都得（呢度寫入嘅只係綁定，唔會即刻合成）。
+export const voiceCastHandler: TaskHandler = async ({ task, reportProgress }) => {
+  const { episode, project } = await loadEpisodeWithProject(task);
+  const models = await resolveTaskModels(task, project);
+
+  // 派音只派得到 provider 內置音色 —— AI 冇可能幫你上傳一段參考音。TTS 模型
+  // 若果只食參考音（例如 index-tts-2），派完都用唔着，不如即刻講明。
+  const caps = getCapabilities(models.tts);
+  if (caps?.voiceModes && !caps.voiceModes.includes("preset")) {
+    throw new TaskError(
+      "VOICE_PRESET_UNSUPPORTED",
+      `配音模型 ${models.tts} 只食上傳嘅參考音，AI 派音幫唔到手 —— 請喺配音站逐個角色上傳參考音。`,
+      false,
+    );
+  }
+  const presets = listVoicePresets(caps?.voicePresetVendor);
+  if (presets.length === 0) {
+    throw new TaskError("VOICE_LIBRARY_EMPTY", `音色庫冇 ${caps?.voicePresetVendor} 嘅音色可揀`, false);
+  }
+
+  const [lines, characters] = await Promise.all([
+    prisma.voiceLine.findMany({
+      where: { episodeId: episode.id },
+      orderBy: { lineIndex: "asc" },
+      select: { speaker: true, characterId: true },
+    }),
+    prisma.character.findMany({ where: { projectId: project.id } }),
+  ]);
+  if (lines.length === 0) throw new TaskError("NO_VOICE_LINES", "未有台詞，行 VOICE_ANALYZE 先", false);
+
+  const cast = buildVoiceCast(lines, characters, episode.speakerVoices);
+  const charById = new Map(characters.map((c) => [c.id, c]));
+  const castInput = cast.map((row) => {
+    const character = row.characterId ? charById.get(row.characterId) : null;
+    return {
+      speaker: row.speaker,
+      isCharacter: Boolean(character),
+      lineCount: row.lineCount,
+      bio: character?.bio ?? {},
+      profile: character?.profile ?? "",
+    };
+  });
+
+  reportProgress(20);
+  const out = await textCallJson(
+    { userId: task.userId, taskId: task.id, projectId: project.id, episodeId: episode.id, oneOff: promptOverridesFromTask(task) },
+    models.text,
+    "voice_cast",
+    {
+      voice_library_json: JSON.stringify(
+        presets.map((p) => ({ id: p.id, name: p.name, gender: p.gender, age: p.age, traits: p.traits, goodFor: p.goodFor })),
+      ),
+      cast_json: JSON.stringify(castInput),
+    },
+  );
+
+  reportProgress(70);
+  const { applied, rejected } = applyCastAssignments(cast, out.assignments);
+  const speakerVoices = parseSpeakerVoices(episode.speakerVoices);
+  for (const a of applied) {
+    if (a.characterId) {
+      await prisma.character.update({
+        where: { id: a.characterId },
+        data: { voicePresetId: a.presetId, voiceRefId: null, voiceCastNote: a.reason },
+      });
+      await invalidateCharacterAudio(a.characterId);
+    } else {
+      speakerVoices[a.speaker] = { presetId: a.presetId };
+      await invalidateSpeakerAudio(episode.id, a.speaker);
+    }
+  }
+  await prisma.episode.update({
+    where: { id: episode.id },
+    data: { speakerVoices: speakerVoices as unknown as Prisma.InputJsonValue },
+  });
+
+  return { speakers: cast.length, assigned: applied.length, rejected };
 };
 
 export const voiceAnalyzeHandler: TaskHandler = async ({ task, reportProgress }) => {

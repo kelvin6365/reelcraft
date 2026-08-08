@@ -11,6 +11,7 @@ import {
   srtBuildHandler,
   storyboardRunHandler,
   voiceAnalyzeHandler,
+  voiceCastHandler,
 } from "@/lib/workers/handlers/text-handlers";
 import {
   composeEpisodeHandler,
@@ -31,6 +32,7 @@ registerHandler(TASK_TYPE.BUILD_SCENES, buildScenesHandler);
 registerHandler(TASK_TYPE.STORYBOARD_RUN, storyboardRunHandler);
 registerHandler(TASK_TYPE.SRT_BUILD, srtBuildHandler);
 registerHandler(TASK_TYPE.VOICE_ANALYZE, voiceAnalyzeHandler);
+registerHandler(TASK_TYPE.VOICE_CAST, voiceCastHandler);
 registerHandler(TASK_TYPE.IMAGE_CHARACTER, imageCharacterHandler);
 registerHandler(TASK_TYPE.IMAGE_LOCATION, imageLocationHandler);
 registerHandler(TASK_TYPE.IMAGE_PROP, imagePropHandler);

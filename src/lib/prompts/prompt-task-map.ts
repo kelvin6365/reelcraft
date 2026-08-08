@@ -28,6 +28,7 @@ export const PROMPT_TASK: Record<string, PromptTaskEntry> = {
   storyboard_acting: { taskType: TASK_TYPE.STORYBOARD_RUN, stage: "storyboard", scope: "episode" },
   storyboard_detail: { taskType: TASK_TYPE.STORYBOARD_RUN, stage: "storyboard", scope: "episode" },
   voice_analyze: { taskType: TASK_TYPE.VOICE_ANALYZE, stage: "voice", scope: "episode" },
+  voice_cast: { taskType: TASK_TYPE.VOICE_CAST, stage: "voice", scope: "episode" },
   episode_split: { taskType: TASK_TYPE.EPISODE_SPLIT, stage: "input", scope: "project" },
   image_prompt_shot: { taskType: TASK_TYPE.IMAGE_SHOT, stage: "images", scope: "shot" },
 };
