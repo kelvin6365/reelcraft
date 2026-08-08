@@ -292,6 +292,7 @@ export interface EpisodeView {
     activeModels?: {
       image: { modelKey: string; unitUsd: number | null };
       video: { modelKey: string; unitUsd: number | null; perSecond: number | null };
+      tts: { modelKey: string; perChar: number | null };
     } | null;
   };
 }

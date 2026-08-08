@@ -153,21 +153,15 @@ export function computeNextAction(s: EpisodeSnapshot, episodeId: string): NextAc
     return { stage: "voice", label: `派音（餘 ${uncast} 把聲未揀音色）`, endpoint: null, blockedBy: [], busy: false };
   }
   if (s.voiceLines.withAudio < s.voiceLines.total) {
-    if (s.isSrtMode) {
-      return {
-        stage: "voice",
-        label: `配音（${s.voiceLines.withAudio}/${s.voiceLines.total}）`,
-        endpoint: ep("tts-all"),
-        blockedBy: [],
-        busy: running(s, "TTS_LINE"),
-      };
-    }
+    // 兩種路線都用同一個補配入口。以前非 SRT 路線係 endpoint null + 永遠 busy，
+    // 靠 voiceAnalyzeHandler 自己 fan out TTS —— 但而家有派音呢一步喺中間，
+    // 分析台詞嗰陣多數仲未派音色，fan 唔出，就會永遠卡喺「配音中 0/N」冇掣撳。
     return {
       stage: "voice",
-      label: `配音中（${s.voiceLines.withAudio}/${s.voiceLines.total}）`,
-      endpoint: null,
+      label: `配音（${s.voiceLines.withAudio}/${s.voiceLines.total}）`,
+      endpoint: ep("tts-all"),
       blockedBy: [],
-      busy: running(s, "TTS_LINE") || s.voiceLines.withAudio < s.voiceLines.total,
+      busy: running(s, "TTS_LINE"),
     };
   }
   // 配音齊咗先生片：每鏡 durationMs 已經由真音長覆寫（syncShotDurationFromAudio），

@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import {
   Check,
   Clapperboard,
@@ -34,6 +34,7 @@ import { SavedHint, useAutosaveField, useSavedFlash } from "./SavedHint";
 import { ShotWorkbench } from "./ShotWorkbench";
 import { TimelineEditor } from "./timeline/TimelineEditor";
 import { VoiceCastPanel } from "./voice/VoiceCastPanel";
+import { VoiceBatchBar, isCastable, type VoiceFilter } from "./voice/VoiceBatchBar";
 import { shortModelName, isFakeModel } from "@/ui/model-format";
 import { formatUsdDisplay } from "./cost-confirm";
 import { cn } from "@/lib/utils";
@@ -42,6 +43,7 @@ import { MediaLightbox, type MediaLightboxMedia } from "@/components/media-light
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import {
@@ -1530,6 +1532,34 @@ export function VideosPanel({ view, progress, live }: PanelProps) {
 
 export function VoicePanel({ view, progress, live }: PanelProps) {
   const { voiceLines, characters, voiceCast, voices } = view;
+  const cast = useMemo(() => voiceCast ?? [], [voiceCast]);
+  const [filter, setFilter] = useState<VoiceFilter>("all");
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+
+  // 重新分析台詞會換走成批行 —— 剪走已經唔存在嘅 id，否則數量／花費／POST
+  // 都會帶住死 id（同 ShotWorkbench 一樣嘅理由）。
+  useEffect(() => {
+    setSelected((prev) => {
+      const liveIds = new Set(voiceLines.map((l) => l.id));
+      const pruned = new Set([...prev].filter((id) => liveIds.has(id)));
+      return pruned.size === prev.size ? prev : pruned;
+    });
+  }, [voiceLines]);
+
+  const castBySpeaker = useMemo(() => new Map(cast.map((c) => [c.speaker, c])), [cast]);
+  const rows = voiceLines.filter((v) =>
+    filter === "all" ? true : filter === "pending" ? !v.audioMediaId : Boolean(v.audioMediaId),
+  );
+
+  function toggle(id: string) {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
   return (
     <Station stage="voice" progress={progress} episodeId={view.episode.id} promptIds={["voice_analyze"]}>
       {voiceLines.length === 0 ? (
@@ -1537,21 +1567,37 @@ export function VoicePanel({ view, progress, live }: PanelProps) {
       ) : (
         <div className="flex flex-col gap-3">
           <VoiceCastPanel
-            cast={voiceCast ?? []}
+            cast={cast}
             voices={voices ?? []}
             episodeId={view.episode.id}
             projectId={view.episode.projectId}
             casting={Boolean(live?.["VOICE_CAST:" + view.episode.id])}
           />
-          {voiceLines.map((v) => (
+          <VoiceBatchBar
+            lines={voiceLines}
+            cast={cast}
+            episodeId={view.episode.id}
+            perCharUsd={view.cost?.activeModels?.tts.perChar}
+            filter={filter}
+            onFilter={setFilter}
+            selected={selected}
+            onSelected={setSelected}
+          />
+          {rows.map((v) => (
             <VoiceLineRow
               key={v.id}
               line={v}
               episodeId={view.episode.id}
               characterNames={characters.map((c) => c.name)}
               liveState={live?.[`TTS_LINE:${v.id}`] ?? v.activeTask ?? null}
+              selected={selected.has(v.id)}
+              selectable={isCastable(v, castBySpeaker)}
+              onToggle={() => toggle(v.id)}
             />
           ))}
+          {rows.length === 0 && (
+            <p className="p-6 text-center text-muted-foreground">冇符合篩選嘅對白。</p>
+          )}
         </div>
       )}
     </Station>
@@ -1567,11 +1613,17 @@ function VoiceLineRow({
   episodeId,
   characterNames,
   liveState,
+  selected,
+  selectable,
+  onToggle,
 }: {
   line: VoiceLineView;
   episodeId: string;
   characterNames: string[];
   liveState: { progress?: number } | null;
+  selected: boolean;
+  selectable: boolean;
+  onToggle: () => void;
 }) {
   const edit = useAction(qk.episode(episodeId));
   const regen = useAction(qk.episode(episodeId));
@@ -1592,8 +1644,15 @@ function VoiceLineRow({
   }
 
   return (
-    <div className="flex flex-col gap-2 rounded-lg border p-3">
+    <div className={cn("flex flex-col gap-2 rounded-lg border p-3", selected && "bg-accent/40")}>
       <div className="flex flex-wrap items-center gap-2">
+        <Checkbox
+          checked={selected}
+          onCheckedChange={onToggle}
+          disabled={!selectable}
+          aria-label={`選取第 ${line.lineIndex} 句`}
+          title={selectable ? undefined : "未派音色或者台詞係空，配落去只會失敗"}
+        />
         <Select value={line.speaker || "旁白"} onValueChange={changeSpeaker} disabled={edit.busy}>
           <SelectTrigger size="sm" className="w-32">
             <SelectValue />

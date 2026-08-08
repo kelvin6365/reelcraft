@@ -8,6 +8,7 @@ import { buildEpisodeSnapshot } from "@/lib/api/episode-snapshot";
 import { computeNextAction, type EpisodeSnapshot } from "@/lib/next-action";
 import { submitTask } from "@/lib/task/submit";
 import { TASK_TYPE } from "@/lib/task/types";
+import { submitVoiceLineBatch } from "@/lib/api/voice-batch";
 
 export interface AutorunConfig {
   autoConfirmStoryboard?: boolean;
@@ -128,9 +129,10 @@ export async function advanceEpisode(episodeId: string): Promise<string> {
     }
     case action.endpoint?.endsWith("/tts-all") ?? false: {
       if (assisted && !cfg.moneyAuthorized) return "paused:money";
-      const lines = await prisma.voiceLine.findMany({ where: { episodeId, audioMediaId: null } });
-      for (const l of lines) await submitTask({ ...ep, type: TASK_TYPE.TTS_LINE, targetType: "voiceLine", targetId: l.id, payload: { at: 0 } });
-      return `tts:${lines.length}`;
+      // 行返 API 同一個 helper —— 空台詞／未派音色嘅行要剔走，唔好排一堆
+      // 注定失敗嘅 task 出嚟。
+      const { submitted } = await submitVoiceLineBatch({ userId, episode, lineIds: null });
+      return `tts:${submitted}`;
     }
     case action.endpoint?.endsWith("/compose") ?? false: {
       await submitEp(TASK_TYPE.COMPOSE_EPISODE, { at: 0 });
