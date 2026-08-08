@@ -1,4 +1,6 @@
-// Runs all guards + typecheck. Wired to CI and pre-commit (docs/tech/08-guards.md).
+// Runs all guards + typecheck (docs/tech/08-guards.md). 呢個 repo 而家未有 CI
+// workflow 亦未裝 pre-commit hook —— 呢條命令係人手／agent 提交前自己跑嘅閘。
+// 掛咗 CI 之後記得順手改返呢句同 README、08-guards 嗰兩處措辭。
 import { readdirSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 

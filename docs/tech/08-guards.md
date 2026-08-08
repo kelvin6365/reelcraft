@@ -1,6 +1,8 @@
-# 08 · Guard 腳本（架構不變式 → CI 強制）
+# 08 · Guard 腳本（架構不變式 → 提交前強制）
 
-原則：**每個架構決策配一個 guard**。Guard = `scripts/guards/*.mjs`，靜態掃描 `src/`，違規時印出檔案+行號後 `exit 1`。全部掛載於 `npm run check`（CI + pre-commit）。AI agents 寫 code 時不會累積偏航——這是 solo×agents 工作法的核心保險。
+原則：**每個架構決策配一個 guard**。Guard = `scripts/guards/*.mjs`，靜態掃描 `src/`，違規時印出檔案+行號後 `exit 1`。全部掛載於 `npm run check`。AI agents 寫 code 時不會累積偏航——這是 solo×agents 工作法的核心保險。
+
+> **現況**：本 repo 目前**沒有** CI workflow，亦沒有安裝 pre-commit hook——`npm run check` 是提交前人手（或 agent）自己跑的閘。掛上 CI 之後，記得同步修正本節、`scripts/check.mjs` 檔頭與 README 的措辭。
 
 ## 現行清單（`scripts/guards/*.mjs`，`lib.mjs` 是共用 helper，不算獨立 guard）
 
